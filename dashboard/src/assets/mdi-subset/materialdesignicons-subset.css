@@ -1,4 +1,4 @@
-/* Auto-generated MDI subset – 230 icons */
+/* Auto-generated MDI subset – 235 icons */
 /* Do not edit manually. Run: pnpm run subset-icons */
 
 @font-face {
@@ -112,12 +112,12 @@
   content: "\F09D1";
 }
 
-.mdi-bug::before {
-  content: "\F00E4";
+.mdi-broom::before {
+  content: "\F00E2";
 }
 
-.mdi-bug-play::before {
-  content: "\F1AF7";
+.mdi-bug::before {
+  content: "\F00E4";
 }
 
 .mdi-calendar::before {
@@ -304,12 +304,20 @@
   content: "\F1640";
 }
 
+.mdi-database-refresh-outline::before {
+  content: "\F1634";
+}
+
 .mdi-delete::before {
   content: "\F01B4";
 }
 
 .mdi-delete-outline::before {
   content: "\F09E7";
+}
+
+.mdi-delete-sweep-outline::before {
+  content: "\F0C62";
 }
 
 .mdi-dots-hexagon::before {
@@ -486,6 +494,10 @@
 
 .mdi-github::before {
   content: "\F02A4";
+}
+
+.mdi-grain::before {
+  content: "\F0D7C";
 }
 
 .mdi-hand-heart::before {
@@ -692,6 +704,14 @@
   content: "\F03F6";
 }
 
+.mdi-pin::before {
+  content: "\F0403";
+}
+
+.mdi-pin-outline::before {
+  content: "\F0931";
+}
+
 .mdi-play::before {
   content: "\F040A";
 }
@@ -718,6 +738,10 @@
 
 .mdi-puzzle-outline::before {
   content: "\F0A66";
+}
+
+.mdi-qrcode::before {
+  content: "\F0432";
 }
 
 .mdi-refresh::before {
@@ -858,10 +882,6 @@
 
 .mdi-timeline-text-outline::before {
   content: "\F0BD4";
-}
-
-.mdi-toolbox::before {
-  content: "\F09AC";
 }
 
 .mdi-tools::before {
