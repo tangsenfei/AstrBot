@@ -1,0 +1,48 @@
+name: task_manager
+author: astrbot
+desc: 异步任务管理插件，支持 DeerFlow 2.0 集成，实现复杂任务的规划、执行、进度推送和断点恢复
+version: 1.0.0
+repo: https://github.com/AstrBotDevs/AstrBot
+support_platforms:
+  - qq
+  - telegram
+  - feishu
+  - dingtalk
+  - slack
+  - discord
+astrbot_version: ">=4.0.0"
+requirements:
+  - deerflow>=2.0.0
+conf_schema:
+  - key: deerflow_config_path
+    label: DeerFlow 配置文件路径
+    type: str
+    default: config.yaml
+    description: DeerFlow 的 config.yaml 配置文件路径
+  - key: checkpoint_dir
+    label: 检查点存储目录
+    type: str
+    default: data/task_checkpoints
+    description: 任务断点恢复的检查点存储目录
+  - key: default_execution_mode
+    label: 默认执行模式
+    type: str
+    default: stream
+    options:
+      - direct
+      - stream
+      - subagent
+      - stage
+      - step
+      - hybrid
+    description: 任务的默认执行模式
+  - key: enable_progress_push
+    label: 启用进度推送
+    type: bool
+    default: true
+    description: 是否启用任务进度主动推送
+  - key: progress_push_interval
+    label: 进度推送间隔(秒)
+    type: int
+    default: 5
+    description: 进度推送的最小时间间隔

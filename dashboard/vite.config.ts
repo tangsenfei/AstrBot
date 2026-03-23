@@ -37,7 +37,8 @@ export default defineConfig(({ command }) => ({
   resolve: {
     alias: {
       mermaid: 'mermaid/dist/mermaid.js',
-      '@': fileURLToPath(new URL('./src', import.meta.url))
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      '@nicebot-extension': fileURLToPath(new URL('../../nicebot-extension/frontend', import.meta.url))
     }
   },
   css: {
@@ -51,7 +52,7 @@ export default defineConfig(({ command }) => ({
   },
   optimizeDeps: {
     exclude: ['vuetify'],
-    entries: ['./src/**/*.vue']
+    entries: ['./src/**/*.vue', '../../nicebot-extension/frontend/**/*.vue']
   },
   server: {
     host: '0.0.0.0',

@@ -1,0 +1,30 @@
+name: tool_provider
+description: 工具管理插件 - 支持 MCP 和 API Wrapper 工具
+version: 1.0.0
+author: NiceBot
+repo: https://github.com/nicebot/tool_provider
+
+commands:
+  - name: tool_list
+    description: 列出所有工具
+  - name: tool_add
+    description: 添加工具
+  - name: tool_remove
+    description: 删除工具
+
+config_schema:
+  type: object
+  properties:
+    auto_reload:
+      type: boolean
+      description: 自动重载工具配置
+      default: false
+    log_level:
+      type: string
+      description: 日志级别
+      default: info
+      enum:
+        - debug
+        - info
+        - warning
+        - error

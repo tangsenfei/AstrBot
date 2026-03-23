@@ -1,0 +1,36 @@
+{
+  "tools": {
+    "feishu_send_message": {
+      "name": "feishu_send_message",
+      "source": "api_wrapper",
+      "description": "向用户发送飞书文本消息",
+      "status": "enabled",
+      "config": {
+        "name": "feishu_send_message",
+        "description": "向用户发送飞书文本消息",
+        "url": "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id",
+        "method": "POST",
+        "timeout": 30,
+        "headers": {
+          "Authorization": "Bearer t-g1043lhOWTTRHXZBBEE3BYWGWQMIO2PK5LOEGI4O",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "content": "{\"text\":\"{message}\"}",
+          "msg_type": "text",
+          "receive_id": "ou_96e3dedbd85213bf7f8176fd0033525e"
+        },
+        "params_schema": [
+          {
+            "name": "message",
+            "type": "string",
+            "description": "要发送的消息内容",
+            "required": true
+          }
+        ]
+      },
+      "created_at": "2026-03-21T21:17:31.853156",
+      "updated_at": "2026-03-21T21:17:31.853156"
+    }
+  }
+}

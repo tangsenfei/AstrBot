@@ -1,4 +1,4 @@
-/* Auto-generated MDI subset – 229 icons */
+/* Auto-generated MDI subset – 230 icons */
 /* Do not edit manually. Run: pnpm run subset-icons */
 
 @font-face {
@@ -114,6 +114,10 @@
 
 .mdi-bug::before {
   content: "\F00E4";
+}
+
+.mdi-bug-play::before {
+  content: "\F1AF7";
 }
 
 .mdi-calendar::before {
@@ -482,10 +486,6 @@
 
 .mdi-github::before {
   content: "\F02A4";
-}
-
-.mdi-grain::before {
-  content: "\F0D7C";
 }
 
 .mdi-hand-heart::before {
@@ -858,6 +858,10 @@
 
 .mdi-timeline-text-outline::before {
   content: "\F0BD4";
+}
+
+.mdi-toolbox::before {
+  content: "\F09AC";
 }
 
 .mdi-tools::before {
