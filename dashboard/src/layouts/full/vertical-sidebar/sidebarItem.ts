@@ -1,5 +1,3 @@
-import { getExtensionSidebarItems, getSidebarInsert } from '@/extensions';
-
 export interface menu {
   header?: string;
   title?: string;
@@ -16,7 +14,10 @@ export interface menu {
   subCaption?: string;
 }
 
-const defaultSidebarItems: menu[] = [
+// 注意：这个文件现在包含i18n键值而不是直接的文本
+// 在组件中使用时需要通过t()函数进行翻译
+// 所有键名都使用 core.navigation.* 格式
+const sidebarItem: menu[] = [
   {
     title: 'core.navigation.welcome',
     icon: 'mdi-hand-wave-outline',
@@ -132,46 +133,11 @@ const defaultSidebarItems: menu[] = [
       },
     ]
   }
+  // {
+  //   title: 'Project ATRI',
+  //   icon: 'mdi-grain',
+  //   to: '/project-atri'
+  // },
 ];
-
-function mergeExtensionItems(items: menu[]): menu[] {
-  const extensionItems = getExtensionSidebarItems();
-  const insertConfig = getSidebarInsert();
-  
-  if (!extensionItems.length && !insertConfig) {
-    return items;
-  }
-  
-  if (insertConfig && insertConfig.after && insertConfig.items) {
-    const result: menu[] = [];
-    let inserted = false;
-    
-    for (const item of items) {
-      result.push(item);
-      
-      if (!inserted && item.title === insertConfig.after) {
-        for (const extItemTitle of insertConfig.items) {
-          const extItem = extensionItems.find((e: menu) => e.title === extItemTitle);
-          if (extItem) {
-            result.push(extItem);
-          }
-        }
-        inserted = true;
-      }
-    }
-    
-    for (const extItem of extensionItems) {
-      if (!insertConfig.items.includes(extItem.title as string)) {
-        result.push(extItem);
-      }
-    }
-    
-    return result;
-  }
-  
-  return [...items, ...extensionItems];
-}
-
-const sidebarItem: menu[] = mergeExtensionItems(defaultSidebarItems);
 
 export default sidebarItem;
