@@ -1,6 +1,12 @@
 import { createApp } from 'vue';
 import { createPinia } from 'pinia';
 import App from './App.vue';
+
+// 首先初始化扩展系统（必须在其他导入之前）
+import './extensions-init';
+import { mergeExtensionSidebarItems } from '@/layouts/full/vertical-sidebar/sidebarItem';
+mergeExtensionSidebarItems();
+
 import { router } from './router';
 import vuetify from './plugins/vuetify';
 import confirmPlugin from './plugins/confirmPlugin';

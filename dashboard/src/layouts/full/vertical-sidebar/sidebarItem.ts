@@ -1,3 +1,5 @@
+import { getExtensions } from '@/extensions';
+
 export interface menu {
   header?: string;
   title?: string;
@@ -139,5 +141,50 @@ const sidebarItem: menu[] = [
   //   to: '/project-atri'
   // },
 ];
+
+// 标记是否已经合并过扩展
+let merged = false;
+
+// 合并扩展侧边栏项的函数
+export function mergeExtensionSidebarItems() {
+  if (merged) return; // 避免重复合并
+  
+  const extensions = getExtensions();
+  if (extensions.sidebarItems && extensions.sidebarItems.length > 0) {
+    const sidebarInsert = extensions.sidebarInsert as { after?: string } | null;
+    if (sidebarInsert && sidebarInsert.after) {
+      // 在指定位置后插入
+      const insertIndex = sidebarItem.findIndex(item => item.title === sidebarInsert.after);
+      if (insertIndex !== -1) {
+        const newItems: menu[] = extensions.sidebarItems.map((item: any) => ({
+          title: item.title,
+          icon: item.icon,
+          to: item.to
+        }));
+        sidebarItem.splice(insertIndex + 1, 0, ...newItems);
+      } else {
+        // 如果找不到指定位置，添加到末尾
+        sidebarItem.push(...extensions.sidebarItems.map((item: any) => ({
+          title: item.title,
+          icon: item.icon,
+          to: item.to
+        })));
+      }
+    } else {
+      // 没有指定插入位置，添加到末尾
+      sidebarItem.push(...extensions.sidebarItems.map((item: any) => ({
+        title: item.title,
+        icon: item.icon,
+        to: item.to
+      })));
+    }
+  }
+  merged = true;
+}
+
+// 延迟执行合并，确保扩展已注册
+if (typeof window !== 'undefined') {
+  setTimeout(() => mergeExtensionSidebarItems(), 0);
+}
 
 export default sidebarItem;

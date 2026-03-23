@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue';
 import { translations as staticTranslations } from './translations';
 import type { Locale } from './types';
+import { getExtensions } from '@/extensions';
 
 // 全局状态
 const currentLocale = ref<Locale>('zh-CN');
@@ -23,13 +24,14 @@ function loadTranslations(locale: Locale) {
   try {
     const data = staticTranslations[locale];
     if (data) {
-      translations.value = data;
+      // 创建深拷贝，避免修改原始静态数据
+      translations.value = JSON.parse(JSON.stringify(data));
     } else {
       console.warn(`Translations not found for locale: ${locale}`);
       // 回退到中文
       if (locale !== 'zh-CN') {
         console.log('Falling back to zh-CN');
-        translations.value = staticTranslations['zh-CN'];
+        translations.value = JSON.parse(JSON.stringify(staticTranslations['zh-CN']));
       }
     }
   } catch (error) {
@@ -37,7 +39,7 @@ function loadTranslations(locale: Locale) {
     // 回退到中文
     if (locale !== 'zh-CN') {
       console.log('Falling back to zh-CN');
-      translations.value = staticTranslations['zh-CN'];
+      translations.value = JSON.parse(JSON.stringify(staticTranslations['zh-CN']));
     }
   }
 }
@@ -226,4 +228,16 @@ export async function setupI18n() {
     : 'zh-CN';
 
   await initI18n(initialLocale);
-} 
+
+  // 合并扩展 i18n
+  const extensions = getExtensions();
+  if (extensions.i18n) {
+    // 获取当前语言的扩展翻译
+    const currentLocaleMessages = extensions.i18n[initialLocale];
+    if (currentLocaleMessages && typeof currentLocaleMessages === 'object') {
+      deepMerge(translations.value, currentLocaleMessages);
+      // 触发响应式更新
+      translations.value = { ...translations.value };
+    }
+  }
+}
