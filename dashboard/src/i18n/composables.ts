@@ -26,6 +26,13 @@ function loadTranslations(locale: Locale) {
     if (data) {
       // 创建深拷贝，避免修改原始静态数据
       translations.value = JSON.parse(JSON.stringify(data));
+      
+      // 合并扩展的 i18n 数据
+      const extensions = getExtensions();
+      if (extensions.i18n && (extensions.i18n as any)[locale]) {
+        const localeData = (extensions.i18n as any)[locale];
+        deepMerge(translations.value, localeData);
+      }
     } else {
       console.warn(`Translations not found for locale: ${locale}`);
       // 回退到中文
@@ -208,13 +215,36 @@ export function mergeDynamicTranslations(modulePath: string, allLocaleData: Reco
 
 function deepMerge(target: Record<string, any>, source: Record<string, any>) {
   for (const key of Object.keys(source)) {
-    if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
-      if (!(key in target) || typeof target[key] !== 'object') {
-        target[key] = {};
+    const normalizedKey = key.replace(/\//g, '.');
+    const keyParts = normalizedKey.split('.');
+    
+    if (keyParts.length > 1) {
+      let current = target;
+      for (let i = 0; i < keyParts.length - 1; i++) {
+        const part = keyParts[i];
+        if (!(part in current) || typeof current[part] !== 'object') {
+          current[part] = {};
+        }
+        current = current[part];
       }
-      deepMerge(target[key], source[key]);
+      const lastPart = keyParts[keyParts.length - 1];
+      if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+        if (!(lastPart in current) || typeof current[lastPart] !== 'object') {
+          current[lastPart] = {};
+        }
+        deepMerge(current[lastPart], source[key]);
+      } else {
+        current[lastPart] = source[key];
+      }
     } else {
-      target[key] = source[key];
+      if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+        if (!(normalizedKey in target) || typeof target[normalizedKey] !== 'object') {
+          target[normalizedKey] = {};
+        }
+        deepMerge(target[normalizedKey], source[key]);
+      } else {
+        target[normalizedKey] = source[key];
+      }
     }
   }
 }
@@ -233,7 +263,7 @@ export async function setupI18n() {
   const extensions = getExtensions();
   if (extensions.i18n) {
     // 获取当前语言的扩展翻译
-    const currentLocaleMessages = extensions.i18n[initialLocale];
+    const currentLocaleMessages = (extensions.i18n as Record<string, any>)[initialLocale];
     if (currentLocaleMessages && typeof currentLocaleMessages === 'object') {
       deepMerge(translations.value, currentLocaleMessages);
       // 触发响应式更新

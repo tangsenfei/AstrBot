@@ -28,6 +28,7 @@ SANDBOX_WORKSPACE_ROOT = "/workspace"
 _SANDBOX_SKILLS_CACHE_VERSION = 1
 
 _SKILL_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+_ANTHROPIC_SKILL_NAME_RE = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$")
 
 
 def _default_sandbox_skill_path(name: str) -> str:
@@ -92,6 +93,16 @@ class SkillInfo:
     source_label: str = "local"
     local_exists: bool = True
     sandbox_exists: bool = False
+    license: str = ""
+    compatibility: str = ""
+    metadata: dict = None
+    allowed_tools: list = None
+
+    def __post_init__(self):
+        if self.metadata is None:
+            self.metadata = {}
+        if self.allowed_tools is None:
+            self.allowed_tools = []
 
 
 def _parse_frontmatter_description(text: str) -> str:
@@ -130,6 +141,101 @@ def _parse_frontmatter_description(text: str) -> str:
     if not isinstance(description, str):
         return ""
     return description.strip()
+
+
+def _parse_frontmatter(text: str) -> dict:
+    """Parse all frontmatter fields from SKILL.md.
+
+    Returns a dict with all Anthropic Agent Skills spec fields:
+    - name (required): 1-64 chars, lowercase letters, numbers, hyphens
+    - description (required): 1-1024 chars
+    - license (optional): license info
+    - compatibility (optional): environment requirements
+    - metadata (optional): additional key-value pairs
+    - allowed-tools (optional): pre-approved tools list
+    """
+    result = {
+        "name": "",
+        "description": "",
+        "license": "",
+        "compatibility": "",
+        "metadata": {},
+        "allowed_tools": [],
+    }
+
+    if not text.startswith("---"):
+        return result
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return result
+    end_idx = None
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            end_idx = i
+            break
+    if end_idx is None:
+        return result
+
+    frontmatter = "\n".join(lines[1:end_idx])
+    try:
+        payload = yaml.safe_load(frontmatter) or {}
+    except yaml.YAMLError:
+        return result
+    if not isinstance(payload, dict):
+        return result
+
+    name = payload.get("name", "")
+    if isinstance(name, str):
+        result["name"] = name.strip()
+
+    description = payload.get("description", "")
+    if isinstance(description, str):
+        result["description"] = description.strip()
+
+    license_val = payload.get("license", "")
+    if isinstance(license_val, str):
+        result["license"] = license_val.strip()
+
+    compatibility_val = payload.get("compatibility", "")
+    if isinstance(compatibility_val, str):
+        result["compatibility"] = compatibility_val.strip()
+
+    metadata_val = payload.get("metadata", {})
+    if isinstance(metadata_val, dict):
+        result["metadata"] = {k: str(v) for k, v in metadata_val.items()}
+
+    allowed_tools_val = payload.get("allowed-tools", "")
+    if isinstance(allowed_tools_val, str):
+        result["allowed_tools"] = allowed_tools_val.split()
+    elif isinstance(allowed_tools_val, list):
+        result["allowed_tools"] = [str(t) for t in allowed_tools_val]
+
+    return result
+
+
+def validate_anthropic_skill_name(name: str) -> tuple[bool, str]:
+    """Validate skill name against Anthropic specification.
+
+    Rules:
+    - 1-64 characters
+    - Lowercase letters (a-z), numbers (0-9), and hyphens (-) only
+    - Must not start or end with a hyphen
+    - Must not contain consecutive hyphens
+
+    Returns (is_valid, error_message).
+    """
+    if not name:
+        return False, "Skill name is required."
+    if len(name) > 64:
+        return False, "Skill name must be 64 characters or less."
+    if not _ANTHROPIC_SKILL_NAME_RE.fullmatch(name):
+        return False, (
+            "Skill name must contain only lowercase letters, numbers, and hyphens. "
+            "It must not start or end with a hyphen or contain consecutive hyphens."
+        )
+    if "--" in name:
+        return False, "Skill name must not contain consecutive hyphens."
+    return True, ""
 
 
 # Regex for sanitizing paths used in prompt examples — only allow
@@ -396,12 +502,20 @@ class SkillManager:
                 modified = True
             if active_only and not active:
                 continue
-            description = ""
+            frontmatter = {
+                "name": "",
+                "description": "",
+                "license": "",
+                "compatibility": "",
+                "metadata": {},
+                "allowed_tools": [],
+            }
             try:
                 content = skill_md.read_text(encoding="utf-8")
-                description = _parse_frontmatter_description(content)
+                frontmatter = _parse_frontmatter(content)
             except Exception:
-                description = ""
+                pass
+            description = frontmatter.get("description", "")
             sandbox_exists = (
                 runtime == "sandbox" and skill_name in sandbox_cached_descriptions
             )
@@ -423,6 +537,10 @@ class SkillManager:
                 source_label=source_label,
                 local_exists=True,
                 sandbox_exists=sandbox_exists,
+                license=frontmatter.get("license", ""),
+                compatibility=frontmatter.get("compatibility", ""),
+                metadata=frontmatter.get("metadata", {}),
+                allowed_tools=frontmatter.get("allowed_tools", []),
             )
 
         if runtime == "sandbox":
@@ -592,6 +710,128 @@ class SkillManager:
                         raise FileExistsError("Skill already exists.")
                     shutil.rmtree(dest_dir)
                 shutil.move(str(src_dir), str(dest_dir))
+
+        self.set_skill_active(skill_name, True)
+        return skill_name
+
+    def install_skill_from_git(
+        self, git_url: str, *, overwrite: bool = True, branch: str = "main"
+    ) -> str:
+        """Install a skill from a Git repository.
+
+        Args:
+            git_url: Git repository URL (supports GitHub, GitLab, etc.)
+            overwrite: Whether to overwrite existing skill
+            branch: Git branch to clone (default: "main")
+
+        Returns:
+            The installed skill name
+
+        Raises:
+            ValueError: If the URL is invalid or skill structure is invalid
+            RuntimeError: If git is not available
+        """
+        import subprocess
+
+        git_exe = shutil.which("git")
+        if not git_exe:
+            raise RuntimeError(
+                "Git is not installed. Please install Git to use this feature."
+            )
+
+        git_url = git_url.strip()
+        if not git_url:
+            raise ValueError("Git URL is required.")
+
+        valid_prefixes = (
+            "https://",
+            "http://",
+            "git@",
+            "ssh://",
+        )
+        is_valid_url = any(
+            git_url.startswith(prefix) for prefix in valid_prefixes
+        )
+        if not is_valid_url:
+            raise ValueError(
+                f"Invalid Git URL. Must start with https://, http://, git@, or ssh://"
+            )
+
+        with tempfile.TemporaryDirectory(dir=get_astrbot_temp_path()) as tmp_dir:
+            clone_dir = Path(tmp_dir) / "repo"
+
+            try:
+                result = subprocess.run(
+                    [git_exe, "clone", "--depth", "1", "--branch", branch, git_url, str(clone_dir)],
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                if result.returncode != 0:
+                    error_msg = result.stderr.strip() if result.stderr else f"Failed to clone repository: {result.returncode}"
+                    raise ValueError(error_msg)
+            except subprocess.TimeoutExpired:
+                raise ValueError("Git clone timed out. Please check your network connection.")
+            except Exception as e:
+                raise ValueError(f"Failed to clone repository: {str(e)}")
+
+            root_skill_md = clone_dir / "SKILL.md"
+            root_legacy_md = clone_dir / "skill.md"
+            if root_skill_md.exists() or root_legacy_md.exists():
+                repo_name = git_url.rstrip("/").split("/")[-1]
+                if repo_name.endswith(".git"):
+                    repo_name = repo_name[:-4]
+                skill_name = repo_name
+                if not _SKILL_NAME_RE.match(skill_name):
+                    skill_name = re.sub(r"[^A-Za-z0-9._-]", "_", skill_name)
+                if not _SKILL_NAME_RE.match(skill_name):
+                    raise ValueError(
+                        f"Could not derive a valid skill name from repository URL. "
+                        f"Please ensure the repository name matches pattern: [A-Za-z0-9._-]+"
+                    )
+                if not root_skill_md.exists() and root_legacy_md.exists():
+                    root_legacy_md.rename(root_skill_md)
+                dest_dir = Path(self.skills_root) / skill_name
+                if dest_dir.exists():
+                    if not overwrite:
+                        raise FileExistsError(f"Skill '{skill_name}' already exists.")
+                    shutil.rmtree(dest_dir)
+                shutil.move(str(clone_dir), str(dest_dir))
+            else:
+                subdirs = [d for d in clone_dir.iterdir() if d.is_dir() and not d.name.startswith(".")]
+                if len(subdirs) == 0:
+                    raise ValueError(
+                        "SKILL.md not found in repository root, and no subdirectories found. "
+                        "A valid skill must contain a SKILL.md file."
+                    )
+                if len(subdirs) > 1:
+                    raise ValueError(
+                        "Repository must contain a single skill directory (or SKILL.md in root). "
+                        "Found multiple directories: " + ", ".join(d.name for d in subdirs)
+                    )
+
+                skill_dir = subdirs[0]
+                skill_name = skill_dir.name
+                if not _SKILL_NAME_RE.match(skill_name):
+                    raise ValueError(
+                        f"Invalid skill directory name: '{skill_name}'. "
+                        "Must match pattern: [A-Za-z0-9._-]+"
+                    )
+                skill_md = skill_dir / "SKILL.md"
+                legacy_md = skill_dir / "skill.md"
+                if not skill_md.exists() and not legacy_md.exists():
+                    raise ValueError(
+                        f"SKILL.md not found in skill directory '{skill_name}'. "
+                        "A valid skill must contain a SKILL.md file."
+                    )
+                if not skill_md.exists() and legacy_md.exists():
+                    _normalize_skill_markdown_path(skill_dir)
+                dest_dir = Path(self.skills_root) / skill_name
+                if dest_dir.exists():
+                    if not overwrite:
+                        raise FileExistsError(f"Skill '{skill_name}' already exists.")
+                    shutil.rmtree(dest_dir)
+                shutil.move(str(skill_dir), str(dest_dir))
 
         self.set_skill_active(skill_name, True)
         return skill_name

@@ -52,6 +52,7 @@ class SkillsRoute(Route):
             "/skills": ("GET", self.get_skills),
             "/skills/upload": ("POST", self.upload_skill),
             "/skills/batch-upload": ("POST", self.batch_upload_skills),
+            "/skills/install-from-git": ("POST", self.install_skill_from_git),
             "/skills/download": ("GET", self.download_skill),
             "/skills/update": ("POST", self.update_skill),
             "/skills/delete": ("POST", self.delete_skill),
@@ -294,6 +295,43 @@ class SkillsRoute(Route):
                 .__dict__
             )
 
+        except Exception as e:
+            logger.error(traceback.format_exc())
+            return Response().error(str(e)).__dict__
+
+    async def install_skill_from_git(self):
+        """从 Git 仓库安装 skill"""
+        if DEMO_MODE:
+            return (
+                Response()
+                .error("You are not permitted to do this operation in demo mode")
+                .__dict__
+            )
+
+        try:
+            data = await request.get_json()
+            git_url = str(data.get("git_url", "") or "").strip()
+            branch = str(data.get("branch", "main") or "main").strip()
+            overwrite = bool(data.get("overwrite", True))
+
+            if not git_url:
+                return Response().error("Git URL is required").__dict__
+
+            skill_mgr = SkillManager()
+            skill_name = skill_mgr.install_skill_from_git(
+                git_url, overwrite=overwrite, branch=branch
+            )
+
+            try:
+                await sync_skills_to_active_sandboxes()
+            except Exception:
+                logger.warning("Failed to sync installed skill to active sandboxes.")
+
+            return (
+                Response()
+                .ok({"name": skill_name}, "Skill installed successfully from Git.")
+                .__dict__
+            )
         except Exception as e:
             logger.error(traceback.format_exc())
             return Response().error(str(e)).__dict__

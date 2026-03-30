@@ -275,7 +275,7 @@ const headers = [
   { title: '描述', key: 'description', sortable: false },
   { title: '来源', key: 'source', sortable: true },
   { title: '状态', key: 'status', sortable: true },
-  { title: '操作', key: 'actions', sortable: false, align: 'end' },
+  { title: '操作', key: 'actions', sortable: false, align: 'end' as const },
 ];
 
 const apiConfig = ref({

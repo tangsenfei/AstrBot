@@ -1,4 +1,4 @@
-/* Auto-generated MDI subset – 237 icons */
+/* Auto-generated MDI subset – 241 icons */
 /* Do not edit manually. Run: pnpm run subset-icons */
 
 @font-face {
@@ -210,6 +210,14 @@
 
 .mdi-circle-small::before {
   content: "\F09DF";
+}
+
+.mdi-clipboard-list-outline::before {
+  content: "\F10D5";
+}
+
+.mdi-clipboard-text-off-outline::before {
+  content: "\F1621";
 }
 
 .mdi-clock-outline::before {
@@ -496,6 +504,10 @@
   content: "\F0871";
 }
 
+.mdi-git::before {
+  content: "\F02A2";
+}
+
 .mdi-github::before {
   content: "\F02A4";
 }
@@ -778,6 +790,10 @@
 
 .mdi-robot-off::before {
   content: "\F16A7";
+}
+
+.mdi-robot-outline::before {
+  content: "\F167A";
 }
 
 .mdi-send::before {

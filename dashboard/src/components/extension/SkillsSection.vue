@@ -14,6 +14,16 @@
             {{ tm("skills.upload") }}
           </v-btn>
           <v-btn
+            v-if="mode === 'local'"
+            color="primary"
+            prepend-icon="mdi-git"
+            class="me-2"
+            variant="tonal"
+            @click="openGitInstallDialog"
+          >
+            {{ tm("skills.installFromGit") }}
+          </v-btn>
+          <v-btn
             color="primary"
             prepend-icon="mdi-refresh"
             variant="tonal"
@@ -96,6 +106,22 @@
                     :color="sourceTypeColor(item.source_type)"
                   >
                     {{ sourceTypeLabel(item.source_type) }}
+                  </v-chip>
+                  <v-chip
+                    v-if="item.license"
+                    size="x-small"
+                    variant="tonal"
+                    color="grey"
+                  >
+                    {{ item.license }}
+                  </v-chip>
+                  <v-chip
+                    v-if="item.compatibility"
+                    size="x-small"
+                    variant="tonal"
+                    color="info"
+                  >
+                    {{ tm("skills.compatibility") }}: {{ item.compatibility }}
                   </v-chip>
                   <div
                     class="text-caption text-medium-emphasis skill-description"
@@ -546,6 +572,48 @@
       </v-card>
     </v-dialog>
 
+    <v-dialog v-model="gitInstallDialog" max-width="500px">
+      <v-card>
+        <v-card-title>{{ tm("skills.gitInstallTitle") }}</v-card-title>
+        <v-card-text>
+          <p class="text-body-2 text-medium-emphasis mb-4">
+            {{ tm("skills.gitInstallHint") }}
+          </p>
+          <v-text-field
+            v-model="gitInstallUrl"
+            :label="tm('skills.gitUrlLabel')"
+            :placeholder="tm('skills.gitUrlPlaceholder')"
+            prepend-inner-icon="mdi-git"
+            variant="outlined"
+            density="comfortable"
+            :disabled="gitInstalling"
+          />
+          <v-text-field
+            v-model="gitInstallBranch"
+            :label="tm('skills.gitBranchLabel')"
+            prepend-inner-icon="mdi-source-branch"
+            variant="outlined"
+            density="comfortable"
+            :disabled="gitInstalling"
+          />
+        </v-card-text>
+        <v-card-actions class="d-flex justify-end">
+          <v-btn variant="text" :disabled="gitInstalling" @click="closeGitInstallDialog">
+            {{ tm("skills.cancel") }}
+          </v-btn>
+          <v-btn
+            color="primary"
+            variant="tonal"
+            :loading="gitInstalling"
+            :disabled="!gitInstallUrl.trim()"
+            @click="installFromGit"
+          >
+            {{ tm("skills.gitInstallButton") }}
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <v-dialog v-model="deleteDialog" max-width="400px">
       <v-card>
         <v-card-title>{{ tm("skills.deleteTitle") }}</v-card-title>
@@ -620,6 +688,11 @@ export default {
     const deleting = ref(false);
     const skillToDelete = ref(null);
     const snackbar = reactive({ show: false, message: "", color: "success" });
+
+    const gitInstallDialog = ref(false);
+    const gitInstallUrl = ref("");
+    const gitInstallBranch = ref("main");
+    const gitInstalling = ref(false);
 
     const neoLoading = ref(false);
     const neoCandidates = ref([]);
@@ -1096,6 +1169,44 @@ export default {
       }
     };
 
+    const openGitInstallDialog = () => {
+      gitInstallUrl.value = "";
+      gitInstallBranch.value = "main";
+      gitInstallDialog.value = true;
+    };
+
+    const closeGitInstallDialog = () => {
+      if (gitInstalling.value) return;
+      gitInstallDialog.value = false;
+    };
+
+    const installFromGit = async () => {
+      const url = gitInstallUrl.value.trim();
+      if (!url) return;
+
+      gitInstalling.value = true;
+      try {
+        const res = await axios.post("/api/skills/install-from-git", {
+          git_url: url,
+          branch: gitInstallBranch.value.trim() || "main",
+          overwrite: true,
+        });
+        handleApiResponse(
+          res,
+          tm("skills.gitInstallSuccess"),
+          tm("skills.gitInstallFailed"),
+          async () => {
+            gitInstallDialog.value = false;
+            await fetchSkills();
+          },
+        );
+      } catch (_err) {
+        showMessage(tm("skills.gitInstallFailed"), "error");
+      } finally {
+        gitInstalling.value = false;
+      }
+    };
+
     const fetchNeoCandidates = async () => {
       const params = {
         skill_key: neoFilters.skill_key || undefined,
@@ -1433,6 +1544,13 @@ export default {
       sourceTypeLabel,
       sourceTypeColor,
       isSandboxPresetSkill,
+      gitInstallDialog,
+      gitInstallUrl,
+      gitInstallBranch,
+      gitInstalling,
+      openGitInstallDialog,
+      closeGitInstallDialog,
+      installFromGit,
     };
   },
 };

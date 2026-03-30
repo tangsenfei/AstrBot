@@ -153,10 +153,26 @@ class AstrBotDashboard:
     async def srv_plug_route(self, subpath, *args, **kwargs):
         """插件路由"""
         registered_web_apis = self.core_lifecycle.star_context.registered_web_apis
+        request_path = f"/{subpath}"
+        
         for api in registered_web_apis:
             route, view_handler, methods, _ = api
-            if route == f"/{subpath}" and request.method in methods:
+            
+            # 检查是否匹配
+            matched = False
+            
+            # 1. 完全匹配
+            if route == request_path:
+                matched = True
+            # 2. 通配符匹配 (例如: /task_manager/tasks/* 匹配 /task_manager/tasks/xxx/yyy)
+            elif route.endswith("/*"):
+                route_prefix = route[:-1]  # 移除末尾的 *
+                if request_path.startswith(route_prefix):
+                    matched = True
+            
+            if matched and request.method in methods:
                 return await view_handler(*args, **kwargs)
+        
         return jsonify(Response().error("未找到该路由").__dict__)
 
     async def auth_middleware(self):
