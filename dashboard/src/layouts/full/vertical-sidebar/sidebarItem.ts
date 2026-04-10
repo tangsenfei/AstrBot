@@ -1,5 +1,3 @@
-import { getExtensions } from '@/extensions';
-
 export interface menu {
   header?: string;
   title?: string;
@@ -16,10 +14,12 @@ export interface menu {
   subCaption?: string;
 }
 
+import { getExtensionSidebarItems, getSidebarInsert, getSidebarInserts } from '../../../extensions';
+
 // 注意：这个文件现在包含i18n键值而不是直接的文本
 // 在组件中使用时需要通过t()函数进行翻译
 // 所有键名都使用 core.navigation.* 格式
-const sidebarItem: menu[] = [
+const baseSidebarItem: menu[] = [
   {
     title: 'core.navigation.welcome',
     icon: 'mdi-hand-wave-outline',
@@ -142,49 +142,71 @@ const sidebarItem: menu[] = [
   // },
 ];
 
-// 标记是否已经合并过扩展
-let merged = false;
+// 合并扩展侧边栏项（支持多个插入点）
+function mergeExtensionSidebarItems(baseItems: menu[], extensionItems: menu[], inserts?: { after: string; items: string[] }[]): menu[] {
+  if (!extensionItems || extensionItems.length === 0) {
+    return baseItems;
+  }
 
-// 合并扩展侧边栏项的函数
-export function mergeExtensionSidebarItems() {
-  if (merged) return; // 避免重复合并
-  
-  const extensions = getExtensions();
-  if (extensions.sidebarItems && extensions.sidebarItems.length > 0) {
-    const sidebarInsert = extensions.sidebarInsert as { after?: string } | null;
-    if (sidebarInsert && sidebarInsert.after) {
-      // 在指定位置后插入
-      const insertIndex = sidebarItem.findIndex(item => item.title === sidebarInsert.after);
-      if (insertIndex !== -1) {
-        const newItems: menu[] = extensions.sidebarItems.map((item: any) => ({
-          title: item.title,
-          icon: item.icon,
-          to: item.to
-        }));
-        sidebarItem.splice(insertIndex + 1, 0, ...newItems);
-      } else {
-        // 如果找不到指定位置，添加到末尾
-        sidebarItem.push(...extensions.sidebarItems.map((item: any) => ({
-          title: item.title,
-          icon: item.icon,
-          to: item.to
-        })));
+  // 如果没有插入配置，直接追加到末尾
+  if (!inserts || inserts.length === 0) {
+    return [...baseItems, ...extensionItems];
+  }
+
+  const result: menu[] = [];
+  const insertedItems = new Set<string>();
+
+  // 创建插入点映射
+  const insertMap = new Map<string, string[]>();
+  for (const insert of inserts) {
+    insertMap.set(insert.after, insert.items);
+  }
+
+  for (const item of baseItems) {
+    result.push(item);
+    
+    // 检查是否有插入点匹配当前项
+    const itemsToInsert = insertMap.get(item.title || '');
+    if (itemsToInsert) {
+      for (const extItem of extensionItems) {
+        if (itemsToInsert.includes(extItem.title || '') && !insertedItems.has(extItem.title || '')) {
+          result.push(extItem);
+          insertedItems.add(extItem.title || '');
+        }
       }
-    } else {
-      // 没有指定插入位置，添加到末尾
-      sidebarItem.push(...extensions.sidebarItems.map((item: any) => ({
-        title: item.title,
-        icon: item.icon,
-        to: item.to
-      })));
     }
   }
-  merged = true;
+
+  // 将未插入的扩展项追加到末尾
+  for (const extItem of extensionItems) {
+    if (!insertedItems.has(extItem.title || '')) {
+      result.push(extItem);
+    }
+  }
+
+  return result;
 }
 
-// 延迟执行合并，确保扩展已注册
-if (typeof window !== 'undefined') {
-  setTimeout(() => mergeExtensionSidebarItems(), 0);
+export function getSidebarItems(): menu[] {
+  // 合并单个 sidebarInsert 和多个 sidebarInserts
+  const singleInsert = getSidebarInsert();
+  const multipleInserts = getSidebarInserts();
+  
+  const allInserts: { after: string; items: string[] }[] = [];
+  
+  if (singleInsert) {
+    allInserts.push(singleInsert);
+  }
+  
+  if (multipleInserts && multipleInserts.length > 0) {
+    allInserts.push(...multipleInserts);
+  }
+  
+  return mergeExtensionSidebarItems(
+    baseSidebarItem,
+    getExtensionSidebarItems(),
+    allInserts.length > 0 ? allInserts : undefined
+  );
 }
 
-export default sidebarItem;
+export default baseSidebarItem;

@@ -1,0 +1,36 @@
+{
+  "agent": {
+    "agents": {
+      "tester": {
+        "title": "Agent Test",
+        "emptyMessage": "Start a conversation",
+        "thinking": "Thinking...",
+        "tools": "Tools",
+        "skills": "Skills",
+        "knowledgeBases": "Knowledge Bases",
+        "noAbilities": "No special abilities",
+        "error": "Failed to send message",
+        "hint": "Type a message to start testing",
+        "send": "Send",
+        "clearHistory": "Clear History",
+        "currentConfig": "Current Config",
+        "basicInfo": "Basic Info",
+        "role": "Role",
+        "goal": "Goal",
+        "abilities": "Abilities",
+        "advanced": "Advanced",
+        "planning": "Planning",
+        "memory": "Memory"
+      },
+      "card": {
+        "skills": "{count} skills"
+      },
+      "editor": {
+        "abilities": {
+          "skills": "Skills",
+          "skillsHint": "Select skills to associate"
+        }
+      }
+    }
+  }
+}

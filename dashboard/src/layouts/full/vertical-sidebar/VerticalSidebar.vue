@@ -2,7 +2,7 @@
 import { ref, shallowRef, onMounted, onUnmounted, watch } from 'vue';
 import { useCustomizerStore } from '../../../stores/customizer';
 import { useI18n } from '@/i18n/composables';
-import sidebarItems from './sidebarItem';
+import { getSidebarItems } from './sidebarItem';
 import NavItem from './NavItem.vue';
 import { applySidebarCustomization } from '@/utils/sidebarCustomization';
 import ChangelogDialog from '@/components/shared/ChangelogDialog.vue';
@@ -39,7 +39,7 @@ function getInitialOpenedItems(menuItems) {
   }
 }
 
-const sidebarMenu = shallowRef(applySidebarCustomization(sidebarItems));
+const sidebarMenu = shallowRef(applySidebarCustomization(getSidebarItems()));
 
 // 侧边栏分组展开状态持久化
 const openedItems = ref(getInitialOpenedItems(sidebarMenu.value));
@@ -48,7 +48,7 @@ watch(openedItems, (val) => {
 }, { deep: true });
 
 function refreshSidebarMenu() {
-  sidebarMenu.value = applySidebarCustomization(sidebarItems);
+  sidebarMenu.value = applySidebarCustomization(getSidebarItems());
   openedItems.value = sanitizeOpenedItems(openedItems.value, sidebarMenu.value);
 }
 

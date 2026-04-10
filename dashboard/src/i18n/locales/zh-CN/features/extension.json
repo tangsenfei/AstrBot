@@ -330,18 +330,7 @@
     "sourceSandboxOnly": "Sandbox 预置 Skill",
     "sourceBoth": "本地 + Sandbox",
     "sandboxDiscoveryPending": "尚未发现 Sandbox 预置 Skill。请至少启动一次 Sandbox 会话后再查看。",
-    "sandboxPresetReadonly": "Sandbox 预置 Skill 在此处为只读，无法在本地 Skills 页面删除或启用/禁用。",
-    "installFromGit": "从 Git 安装",
-    "gitInstallTitle": "从 Git 仓库安装 Skill",
-    "gitInstallHint": "输入 Git 仓库地址，系统将自动克隆并安装 Skill。仓库必须包含一个顶层目录，且该目录下必须存在 SKILL.md 文件。",
-    "gitUrlLabel": "Git 仓库地址",
-    "gitUrlPlaceholder": "https://github.com/user/skill-repo.git",
-    "gitBranchLabel": "分支 (默认 main)",
-    "gitInstallButton": "安装",
-    "gitInstallSuccess": "Skill 安装成功",
-    "gitInstallFailed": "安装失败",
-    "license": "许可证",
-    "compatibility": "兼容性"
+    "sandboxPresetReadonly": "Sandbox 预置 Skill 在此处为只读，无法在本地 Skills 页面删除或启用/禁用。"
   },
   "card": {
     "actions": {

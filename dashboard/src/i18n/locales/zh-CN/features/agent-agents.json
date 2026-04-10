@@ -1,0 +1,36 @@
+{
+  "agent": {
+    "agents": {
+      "tester": {
+        "title": "智能体测试",
+        "emptyMessage": "开始对话吧",
+        "thinking": "思考中...",
+        "tools": "工具",
+        "skills": "技能",
+        "knowledgeBases": "知识库",
+        "noAbilities": "无特殊能力",
+        "error": "发送消息失败",
+        "hint": "输入消息开始测试",
+        "send": "发送",
+        "clearHistory": "清空历史",
+        "currentConfig": "当前配置",
+        "basicInfo": "基本信息",
+        "role": "角色",
+        "goal": "目标",
+        "abilities": "能力",
+        "advanced": "高级配置",
+        "planning": "规划",
+        "memory": "记忆"
+      },
+      "card": {
+        "skills": "{count} 个技能"
+      },
+      "editor": {
+        "abilities": {
+          "skills": "技能",
+          "skillsHint": "选择要关联的技能"
+        }
+      }
+    }
+  }
+}

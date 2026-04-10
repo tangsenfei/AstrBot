@@ -12,6 +12,7 @@ const extensions = {
   routes: [],
   sidebarItems: [],
   sidebarInsert: null,
+  sidebarInserts: [], // 支持多个插入点
   i18n: {}
 };
 
@@ -28,8 +29,13 @@ export function registerExtension(extension) {
     extensions.sidebarItems.push(...extension.sidebarItems);
   }
   
+  // 支持单个 sidebarInsert 或多个 sidebarInserts
   if (extension.sidebarInsert) {
     extensions.sidebarInsert = extension.sidebarInsert;
+  }
+  
+  if (extension.sidebarInserts && Array.isArray(extension.sidebarInserts)) {
+    extensions.sidebarInserts.push(...extension.sidebarInserts);
   }
   
   if (extension.i18n) {
@@ -55,6 +61,10 @@ export function getExtensionSidebarItems() {
 
 export function getSidebarInsert() {
   return extensions.sidebarInsert;
+}
+
+export function getSidebarInserts() {
+  return extensions.sidebarInserts;
 }
 
 export function getExtensionI18n() {

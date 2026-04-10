@@ -1,7 +1,7 @@
 import { ref, computed } from 'vue';
 import { translations as staticTranslations } from './translations';
 import type { Locale } from './types';
-import { getExtensions } from '@/extensions';
+import { getExtensionI18n } from '../extensions';
 
 // 全局状态
 const currentLocale = ref<Locale>('zh-CN');
@@ -24,21 +24,26 @@ function loadTranslations(locale: Locale) {
   try {
     const data = staticTranslations[locale];
     if (data) {
-      // 创建深拷贝，避免修改原始静态数据
-      translations.value = JSON.parse(JSON.stringify(data));
-      
-      // 合并扩展的 i18n 数据
-      const extensions = getExtensions();
-      if (extensions.i18n && (extensions.i18n as any)[locale]) {
-        const localeData = (extensions.i18n as any)[locale];
-        deepMerge(translations.value, localeData);
+      // 创建新对象，确保响应式更新
+      const mergedData = { ...data };
+      // 合并扩展 i18n
+      const extensionI18n = getExtensionI18n();
+      if (extensionI18n && extensionI18n[locale as keyof typeof extensionI18n]) {
+        deepMerge(mergedData, extensionI18n[locale as keyof typeof extensionI18n]);
       }
+      translations.value = mergedData;
     } else {
       console.warn(`Translations not found for locale: ${locale}`);
       // 回退到中文
       if (locale !== 'zh-CN') {
         console.log('Falling back to zh-CN');
-        translations.value = JSON.parse(JSON.stringify(staticTranslations['zh-CN']));
+        const mergedData = { ...staticTranslations['zh-CN'] };
+        // 合并扩展 i18n
+        const extensionI18n = getExtensionI18n();
+        if (extensionI18n && extensionI18n['zh-CN' as keyof typeof extensionI18n]) {
+          deepMerge(mergedData, extensionI18n['zh-CN' as keyof typeof extensionI18n]);
+        }
+        translations.value = mergedData;
       }
     }
   } catch (error) {
@@ -46,7 +51,13 @@ function loadTranslations(locale: Locale) {
     // 回退到中文
     if (locale !== 'zh-CN') {
       console.log('Falling back to zh-CN');
-      translations.value = JSON.parse(JSON.stringify(staticTranslations['zh-CN']));
+      const mergedData = { ...staticTranslations['zh-CN'] };
+      // 合并扩展 i18n
+      const extensionI18n = getExtensionI18n();
+      if (extensionI18n && extensionI18n['zh-CN' as keyof typeof extensionI18n]) {
+        deepMerge(mergedData, extensionI18n['zh-CN' as keyof typeof extensionI18n]);
+      }
+      translations.value = mergedData;
     }
   }
 }
@@ -215,36 +226,13 @@ export function mergeDynamicTranslations(modulePath: string, allLocaleData: Reco
 
 function deepMerge(target: Record<string, any>, source: Record<string, any>) {
   for (const key of Object.keys(source)) {
-    const normalizedKey = key.replace(/\//g, '.');
-    const keyParts = normalizedKey.split('.');
-    
-    if (keyParts.length > 1) {
-      let current = target;
-      for (let i = 0; i < keyParts.length - 1; i++) {
-        const part = keyParts[i];
-        if (!(part in current) || typeof current[part] !== 'object') {
-          current[part] = {};
-        }
-        current = current[part];
+    if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+      if (!(key in target) || typeof target[key] !== 'object') {
+        target[key] = {};
       }
-      const lastPart = keyParts[keyParts.length - 1];
-      if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
-        if (!(lastPart in current) || typeof current[lastPart] !== 'object') {
-          current[lastPart] = {};
-        }
-        deepMerge(current[lastPart], source[key]);
-      } else {
-        current[lastPart] = source[key];
-      }
+      deepMerge(target[key], source[key]);
     } else {
-      if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
-        if (!(normalizedKey in target) || typeof target[normalizedKey] !== 'object') {
-          target[normalizedKey] = {};
-        }
-        deepMerge(target[normalizedKey], source[key]);
-      } else {
-        target[normalizedKey] = source[key];
-      }
+      target[key] = source[key];
     }
   }
 }
@@ -258,16 +246,4 @@ export async function setupI18n() {
     : 'zh-CN';
 
   await initI18n(initialLocale);
-
-  // 合并扩展 i18n
-  const extensions = getExtensions();
-  if (extensions.i18n) {
-    // 获取当前语言的扩展翻译
-    const currentLocaleMessages = (extensions.i18n as Record<string, any>)[initialLocale];
-    if (currentLocaleMessages && typeof currentLocaleMessages === 'object') {
-      deepMerge(translations.value, currentLocaleMessages);
-      // 触发响应式更新
-      translations.value = { ...translations.value };
-    }
-  }
-}
+} 

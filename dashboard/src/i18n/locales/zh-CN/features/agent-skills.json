@@ -1,0 +1,112 @@
+{
+  "agent": {
+    "skills": {
+      "title": "技能管理",
+      "subtitle": "管理 Agent 技能，配置渐进式披露和工作流",
+      "tabs": {
+        "all": "全部",
+        "general": "通用",
+        "programming": "编程",
+        "analysis": "分析",
+        "creative": "创作",
+        "other": "其他"
+      },
+      "categories": {
+        "general": "通用",
+        "programming": "编程",
+        "analysis": "分析",
+        "creative": "创作",
+        "other": "其他"
+      },
+      "disclosureLevels": {
+        "metadata": "元数据",
+        "instructions": "指令",
+        "resources": "资源"
+      },
+      "buttons": {
+        "add": "添加技能",
+        "refresh": "刷新",
+        "more": "更多",
+        "import": "导入",
+        "export": "导出",
+        "market": "技能市场"
+      },
+      "search": {
+        "placeholder": "搜索技能名称或描述..."
+      },
+      "empty": "暂无技能，请添加新技能",
+      "card": {
+        "noDescription": "暂无描述",
+        "disclosureLevel": "披露级别",
+        "preapprovedTools": "{count} 个预批准工具",
+        "test": "测试",
+        "edit": "编辑",
+        "delete": "删除",
+        "version": "版本",
+        "workflow": "工作流"
+      },
+      "editor": {
+        "addTitle": "添加技能",
+        "editTitle": "编辑技能",
+        "basicInfo": "基本信息",
+        "name": "技能名称",
+        "nameHint": "使用小写字母、数字和下划线，如: code_review",
+        "description": "技能描述",
+        "descriptionHint": "描述技能的功能和用途",
+        "category": "技能分类",
+        "categoryHint": "选择技能所属的分类",
+        "version": "版本号",
+        "versionHint": "如: 1.0.0",
+        "disclosure": "渐进式披露",
+        "disclosureLevel": "披露级别",
+        "disclosureLevelHint": "选择技能的渐进式披露级别",
+        "preapprovedTools": "预批准工具",
+        "preapprovedToolsHint": "选择技能可以使用的预批准工具",
+        "workflow": "工作流配置",
+        "workflowHint": "配置技能的工作流步骤",
+        "metadata": "元数据",
+        "metadataJson": "元数据 (JSON)",
+        "tags": "标签",
+        "tagsLabel": "技能标签",
+        "tagsHint": "添加标签便于分类和搜索",
+        "formatJson": "格式化",
+        "validation": {
+          "required": "此字段为必填项",
+          "nameFormat": "名称只能包含小写字母、数字和下划线，且必须以字母开头",
+          "invalidJson": "无效的 JSON 格式"
+        }
+      },
+      "workflow": {
+        "title": "工作流编辑器",
+        "steps": "步骤列表",
+        "addStep": "添加步骤",
+        "stepName": "步骤名称",
+        "stepDescription": "步骤描述",
+        "stepTool": "使用工具",
+        "stepOrder": "顺序",
+        "noSteps": "暂无工作流步骤",
+        "jsonPreview": "JSON 预览",
+        "moveUp": "上移",
+        "moveDown": "下移",
+        "removeStep": "删除步骤"
+      },
+      "import": {
+        "title": "导入技能",
+        "selectFile": "选择 JSON 文件",
+        "hint": "请选择包含技能配置的 JSON 文件",
+        "button": "导入"
+      },
+      "delete": {
+        "title": "确认删除",
+        "confirm": "确定要删除技能 \"{name}\" 吗？此操作不可撤销。"
+      },
+      "messages": {
+        "deleteError": "删除失败",
+        "importError": "导入失败",
+        "saveError": "保存失败",
+        "saveSuccess": "保存成功",
+        "loadError": "加载失败"
+      }
+    }
+  }
+}

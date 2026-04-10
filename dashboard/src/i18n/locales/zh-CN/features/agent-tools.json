@@ -1,0 +1,101 @@
+{
+  "agent": {
+    "tools": {
+      "title": "工具管理",
+      "subtitle": "管理 Agent 可用的工具，包括内置工具、MCP 工具和自定义工具",
+      "tabs": {
+        "all": "全部",
+        "builtin": "内置",
+        "mcp": "MCP",
+        "custom": "自定义",
+        "apiWrapper": "API Wrapper"
+      },
+      "sources": {
+        "builtin": "内置",
+        "mcp": "MCP",
+        "custom": "自定义",
+        "apiWrapper": "API Wrapper"
+      },
+      "buttons": {
+        "add": "添加工具",
+        "refresh": "刷新",
+        "more": "更多",
+        "import": "导入",
+        "export": "导出"
+      },
+      "search": {
+        "placeholder": "搜索工具名称或描述..."
+      },
+      "empty": "暂无工具，请添加新工具",
+      "card": {
+        "noDescription": "暂无描述",
+        "params": "{count} 个参数",
+        "test": "测试",
+        "edit": "编辑",
+        "delete": "删除",
+        "parameters": "参数列表",
+        "metadata": "元数据"
+      },
+      "editor": {
+        "addTitle": "添加工具",
+        "editTitle": "编辑工具",
+        "basicInfo": "基本信息",
+        "name": "工具名称",
+        "nameHint": "使用小写字母、数字和下划线，如: send_message",
+        "description": "工具描述",
+        "descriptionHint": "描述工具的功能，LLM 会根据此描述决定是否调用",
+        "source": "工具来源",
+        "returnType": "返回类型",
+        "returnTypeHint": "工具返回值的数据类型",
+        "parameters": "参数定义",
+        "parametersHint": "定义工具的输入参数，使用 JSON Schema 格式",
+        "parametersJson": "参数 Schema (JSON)",
+        "metadata": "元数据",
+        "metadataJson": "元数据 (JSON)",
+        "tags": "标签",
+        "tagsLabel": "工具标签",
+        "tagsHint": "添加标签便于分类和搜索",
+        "formatJson": "格式化",
+        "validation": {
+          "required": "此字段为必填项",
+          "nameFormat": "名称只能包含小写字母、数字和下划线，且必须以字母开头",
+          "invalidJson": "无效的 JSON 格式"
+        }
+      },
+      "tester": {
+        "title": "测试工具",
+        "inputParams": "输入参数",
+        "paramsJson": "参数 (JSON)",
+        "formatJson": "格式化",
+        "reset": "重置",
+        "result": "执行结果",
+        "executing": "正在执行...",
+        "success": "执行成功",
+        "failed": "执行失败",
+        "noResult": "执行成功，无返回值",
+        "clickToTest": "点击\"执行测试\"查看结果",
+        "execute": "执行测试",
+        "invalidJson": "无效的 JSON 格式",
+        "unknownError": "未知错误",
+        "requestFailed": "请求失败"
+      },
+      "import": {
+        "title": "导入工具",
+        "selectFile": "选择 JSON 文件",
+        "hint": "请选择包含工具配置的 JSON 文件",
+        "button": "导入"
+      },
+      "delete": {
+        "title": "确认删除",
+        "confirm": "确定要删除工具 \"{name}\" 吗？此操作不可撤销。"
+      },
+      "messages": {
+        "deleteError": "删除失败",
+        "importError": "导入失败",
+        "saveError": "保存失败",
+        "saveSuccess": "保存成功",
+        "toggleError": "切换状态失败"
+      }
+    }
+  }
+}

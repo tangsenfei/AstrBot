@@ -38,6 +38,8 @@ import zhCNMigration from './locales/zh-CN/features/migration.json';
 import zhCNCommand from './locales/zh-CN/features/command.json';
 import zhCNSubagent from './locales/zh-CN/features/subagent.json';
 import zhCNWelcome from './locales/zh-CN/features/welcome.json';
+import zhCNAgentSkills from './locales/zh-CN/features/agent-skills.json';
+import zhCNAgentTools from './locales/zh-CN/features/agent-tools.json';
 
 import zhCNErrors from './locales/zh-CN/messages/errors.json';
 import zhCNSuccess from './locales/zh-CN/messages/success.json';
@@ -80,6 +82,8 @@ import enUSMigration from './locales/en-US/features/migration.json';
 import enUSCommand from './locales/en-US/features/command.json';
 import enUSSubagent from './locales/en-US/features/subagent.json';
 import enUSWelcome from './locales/en-US/features/welcome.json';
+import enUSAgentSkills from './locales/en-US/features/agent-skills.json';
+import enUSAgentTools from './locales/en-US/features/agent-tools.json';
 
 import enUSErrors from './locales/en-US/messages/errors.json';
 import enUSSuccess from './locales/en-US/messages/success.json';
@@ -122,6 +126,8 @@ import ruRUMigration from './locales/ru-RU/features/migration.json';
 import ruRUCommand from './locales/ru-RU/features/command.json';
 import ruRUSubagent from './locales/ru-RU/features/subagent.json';
 import ruRUWelcome from './locales/ru-RU/features/welcome.json';
+import ruRUAgentSkills from './locales/ru-RU/features/agent-skills.json';
+import ruRUAgentTools from './locales/ru-RU/features/agent-tools.json';
 
 import ruRUErrors from './locales/ru-RU/messages/errors.json';
 import ruRUSuccess from './locales/ru-RU/messages/success.json';
@@ -177,6 +183,11 @@ export const translations = {
       errors: zhCNErrors,
       success: zhCNSuccess,
       validation: zhCNValidation
+    },
+    // Agent 模块翻译（从 agent-skills.json 和 agent-tools.json 解构）
+    agent: {
+      ...(zhCNAgentSkills as any).agent,
+      ...(zhCNAgentTools as any).agent
     }
   },
   'en-US': {
@@ -227,6 +238,11 @@ export const translations = {
       errors: enUSErrors,
       success: enUSSuccess,
       validation: enUSValidation
+    },
+    // Agent 模块翻译（从 agent-skills.json 和 agent-tools.json 解构）
+    agent: {
+      ...(enUSAgentSkills as any).agent,
+      ...(enUSAgentTools as any).agent
     }
   },
   'ru-RU': {
@@ -277,6 +293,11 @@ export const translations = {
       errors: ruRUErrors,
       success: ruRUSuccess,
       validation: ruRUValidation
+    },
+    // Agent 模块翻译（从 agent-skills.json 和 agent-tools.json 解构）
+    agent: {
+      ...(ruRUAgentSkills as any).agent,
+      ...(ruRUAgentTools as any).agent
     }
   }
 };

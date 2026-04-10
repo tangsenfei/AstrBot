@@ -1,0 +1,101 @@
+{
+  "agent": {
+    "tools": {
+      "title": "Tools Management",
+      "subtitle": "Manage tools available to Agents, including built-in, MCP, and custom tools",
+      "tabs": {
+        "all": "All",
+        "builtin": "Built-in",
+        "mcp": "MCP",
+        "custom": "Custom",
+        "apiWrapper": "API Wrapper"
+      },
+      "sources": {
+        "builtin": "Built-in",
+        "mcp": "MCP",
+        "custom": "Custom",
+        "apiWrapper": "API Wrapper"
+      },
+      "buttons": {
+        "add": "Add Tool",
+        "refresh": "Refresh",
+        "more": "More",
+        "import": "Import",
+        "export": "Export"
+      },
+      "search": {
+        "placeholder": "Search tool name or description..."
+      },
+      "empty": "No tools available, please add a new tool",
+      "card": {
+        "noDescription": "No description",
+        "params": "{count} parameters",
+        "test": "Test",
+        "edit": "Edit",
+        "delete": "Delete",
+        "parameters": "Parameters",
+        "metadata": "Metadata"
+      },
+      "editor": {
+        "addTitle": "Add Tool",
+        "editTitle": "Edit Tool",
+        "basicInfo": "Basic Information",
+        "name": "Tool Name",
+        "nameHint": "Use lowercase letters, numbers and underscores, e.g.: send_message",
+        "description": "Description",
+        "descriptionHint": "Describe the tool's functionality, LLM will decide whether to call it based on this",
+        "source": "Source",
+        "returnType": "Return Type",
+        "returnTypeHint": "Data type of the tool's return value",
+        "parameters": "Parameters",
+        "parametersHint": "Define input parameters using JSON Schema format",
+        "parametersJson": "Parameters Schema (JSON)",
+        "metadata": "Metadata",
+        "metadataJson": "Metadata (JSON)",
+        "tags": "Tags",
+        "tagsLabel": "Tool Tags",
+        "tagsHint": "Add tags for categorization and search",
+        "formatJson": "Format",
+        "validation": {
+          "required": "This field is required",
+          "nameFormat": "Name can only contain lowercase letters, numbers and underscores, and must start with a letter",
+          "invalidJson": "Invalid JSON format"
+        }
+      },
+      "tester": {
+        "title": "Test Tool",
+        "inputParams": "Input Parameters",
+        "paramsJson": "Parameters (JSON)",
+        "formatJson": "Format",
+        "reset": "Reset",
+        "result": "Result",
+        "executing": "Executing...",
+        "success": "Success",
+        "failed": "Failed",
+        "noResult": "Success, no return value",
+        "clickToTest": "Click 'Execute Test' to see results",
+        "execute": "Execute Test",
+        "invalidJson": "Invalid JSON format",
+        "unknownError": "Unknown error",
+        "requestFailed": "Request failed"
+      },
+      "import": {
+        "title": "Import Tools",
+        "selectFile": "Select JSON file",
+        "hint": "Please select a JSON file containing tool configurations",
+        "button": "Import"
+      },
+      "delete": {
+        "title": "Confirm Delete",
+        "confirm": "Are you sure you want to delete tool \"{name}\"? This action cannot be undone."
+      },
+      "messages": {
+        "deleteError": "Failed to delete",
+        "importError": "Failed to import",
+        "saveError": "Failed to save",
+        "saveSuccess": "Saved successfully",
+        "toggleError": "Failed to toggle status"
+      }
+    }
+  }
+}

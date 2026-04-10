@@ -1,5 +1,5 @@
 import { EXTENSION_ROUTE_NAME } from './routeConstants.mjs';
-import { getExtensionRoutes } from '@/extensions';
+import { getExtensionRoutes } from '../extensions';
 
 const MainRoutes = {
   path: '/main',
@@ -171,8 +171,10 @@ const MainRoutes = {
   ]
 };
 
-// 合并扩展路由
-const extensionRoutes = getExtensionRoutes();
-MainRoutes.children.push(...extensionRoutes);
+export function getMainRoutes() {
+  const routes = { ...MainRoutes };
+  routes.children = [...MainRoutes.children, ...getExtensionRoutes()];
+  return routes;
+}
 
 export default MainRoutes;

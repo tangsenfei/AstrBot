@@ -143,7 +143,7 @@ class AstrBotDashboard:
         self.app.add_url_rule(
             "/api/plug/<path:subpath>",
             view_func=self.srv_plug_route,
-            methods=["GET", "POST"],
+            methods=["GET", "POST", "PUT", "DELETE"],
         )
 
         self.shutdown_event = shutdown_event
@@ -152,6 +152,7 @@ class AstrBotDashboard:
 
     async def srv_plug_route(self, subpath, *args, **kwargs):
         """插件路由"""
+        import re
         registered_web_apis = self.core_lifecycle.star_context.registered_web_apis
         request_path = f"/{subpath}"
         
@@ -160,6 +161,7 @@ class AstrBotDashboard:
             
             # 检查是否匹配
             matched = False
+            path_params = {}
             
             # 1. 完全匹配
             if route == request_path:
@@ -169,8 +171,23 @@ class AstrBotDashboard:
                 route_prefix = route[:-1]  # 移除末尾的 *
                 if request_path.startswith(route_prefix):
                     matched = True
+            # 3. 路径参数匹配 (例如: /agent/skills/<skill_id> 匹配 /agent/skills/xxx)
+            elif '<' in route and '>' in route:
+                # 将路由模式转换为正则表达式
+                # 例如: /agent/skills/<skill_id> -> /agent/skills/([^/]+)
+                pattern = re.sub(r'<([^>]+)>', r'([^/]+)', route)
+                pattern = f'^{pattern}$'
+                match = re.match(pattern, request_path)
+                if match:
+                    matched = True
+                    # 提取路径参数名
+                    param_names = re.findall(r'<([^>]+)>', route)
+                    # 将参数名和值配对
+                    path_params = dict(zip(param_names, match.groups()))
             
             if matched and request.method in methods:
+                # 合并路径参数到 kwargs
+                kwargs.update(path_params)
                 return await view_handler(*args, **kwargs)
         
         return jsonify(Response().error("未找到该路由").__dict__)

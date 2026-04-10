@@ -1,0 +1,15 @@
+name: agent_system
+author: astrbot
+desc: 智能体管理模块，支持 CrewAI 集成，实现多智能体协作、任务分解、执行追踪、Token 消耗监控
+version: 1.0.0
+repo: https://github.com/AstrBotDevs/AstrBot
+support_platforms:
+  - qq
+  - telegram
+  - feishu
+  - dingtalk
+  - slack
+  - discord
+astrbot_version: ">=4.0.0"
+requirements:
+  - crewai>=0.100.0
