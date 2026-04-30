@@ -43,6 +43,19 @@ import ruRUAgentCrews from './locales/ru-RU/agent/crews.json';
 import ruRUAgentRoundtables from './locales/ru-RU/agent/roundtables.json';
 import ruRUAgentFlows from './locales/ru-RU/agent/flows.json';
 
+import zhCNEvolutionCenter from './locales/zh-CN/features/evolution-center.json';
+import enUSEvolutionCenter from './locales/en-US/features/evolution-center.json';
+import ruRUEvolutionCenter from './locales/ru-RU/features/evolution-center.json';
+import zhCNNicebotNavigation from './locales/zh-CN/features/nicebot-navigation.json';
+import enUSNicebotNavigation from './locales/en-US/features/nicebot-navigation.json';
+import ruRUNicebotNavigation from './locales/ru-RU/features/nicebot-navigation.json';
+import zhCNMemoryManagement from './locales/zh-CN/features/memory-management.json';
+import enUSMemoryManagement from './locales/en-US/features/memory-management.json';
+import ruRUMemoryManagement from './locales/ru-RU/features/memory-management.json';
+import zhCNTaskManagement from './locales/zh-CN/features/task-management.json';
+import enUSTaskManagement from './locales/en-US/features/task-management.json';
+import ruRUTaskManagement from './locales/ru-RU/features/task-management.json';
+
 export const i18n = createI18n({
   legacy: false,
   locale: 'zh-CN',
@@ -74,6 +87,12 @@ export function loadI18nMessages() {
         crews: zhCNAgentCrews,
         roundtables: zhCNAgentRoundtables,
         flows: zhCNAgentFlows
+      },
+      nicebot: {
+        evolution_center: zhCNEvolutionCenter,
+        navigation: zhCNNicebotNavigation,
+        memory_management: zhCNMemoryManagement,
+        task_management: zhCNTaskManagement
       }
     },
     'en-US': {
@@ -91,6 +110,12 @@ export function loadI18nMessages() {
         crews: enUSAgentCrews,
         roundtables: enUSAgentRoundtables,
         flows: enUSAgentFlows
+      },
+      nicebot: {
+        evolution_center: enUSEvolutionCenter,
+        navigation: enUSNicebotNavigation,
+        memory_management: enUSMemoryManagement,
+        task_management: enUSTaskManagement
       }
     },
     'ru-RU': {
@@ -108,6 +133,12 @@ export function loadI18nMessages() {
         crews: ruRUAgentCrews,
         roundtables: ruRUAgentRoundtables,
         flows: ruRUAgentFlows
+      },
+      nicebot: {
+        evolution_center: ruRUEvolutionCenter,
+        navigation: ruRUNicebotNavigation,
+        memory_management: ruRUMemoryManagement,
+        task_management: ruRUTaskManagement
       }
     }
   };

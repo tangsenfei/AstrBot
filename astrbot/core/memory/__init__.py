@@ -12,6 +12,16 @@ NiceBot 记忆系统核心模块
 - 审计日志（Audit Log）— 操作追踪
 """
 
+from astrbot.core.memory.models import (
+    MemoryEvent,
+    MemoryScene,
+    MemorySemanticClaim,
+    MemoryProceduralRule,
+    MemoryIdentity,
+    MemoryPrompt,
+    MemoryAuditLog,
+)
+
 __all__ = [
     "MemoryEvent",
     "MemoryScene",

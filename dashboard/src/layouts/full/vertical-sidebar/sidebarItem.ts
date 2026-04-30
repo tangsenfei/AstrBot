@@ -97,46 +97,46 @@ const sidebarItems: menu[] = [
     to: '/evolution-center'
   },
   {
-    title: 'core.navigation.extension',
-    icon: 'mdi-puzzle',
-    to: '/extension#installed',
-    children: [
-      {
-        title: 'core.navigation.extensionTabs.installed',
-        icon: 'mdi-puzzle',
-        to: '/extension#installed'
-      },
-      {
-        title: 'core.navigation.extensionTabs.market',
-        icon: 'mdi-store',
-        to: '/extension#market'
-      },
-      {
-        title: 'core.navigation.extensionTabs.mcp',
-        icon: 'mdi-server-network',
-        to: '/extension#mcp'
-      },
-      {
-        title: 'core.navigation.extensionTabs.skills',
-        icon: 'mdi-lightning-bolt',
-        to: '/extension#skills'
-      },
-      {
-        title: 'core.navigation.extensionTabs.components',
-        icon: 'mdi-wrench',
-        to: '/extension#components'
-      }
-    ]
-  },
-  {
-    title: 'core.navigation.knowledgeBase',
-    icon: 'mdi-book-open-variant',
-    to: '/knowledge-base',
-  },
-  {
     title: 'core.navigation.groups.more',
     icon: 'mdi-dots-horizontal',
     children: [
+      {
+        title: 'core.navigation.extension',
+        icon: 'mdi-puzzle',
+        to: '/extension#installed',
+        children: [
+          {
+            title: 'core.navigation.extensionTabs.installed',
+            icon: 'mdi-puzzle',
+            to: '/extension#installed'
+          },
+          {
+            title: 'core.navigation.extensionTabs.market',
+            icon: 'mdi-store',
+            to: '/extension#market'
+          },
+          {
+            title: 'core.navigation.extensionTabs.mcp',
+            icon: 'mdi-server-network',
+            to: '/extension#mcp'
+          },
+          {
+            title: 'core.navigation.extensionTabs.skills',
+            icon: 'mdi-lightning-bolt',
+            to: '/extension#skills'
+          },
+          {
+            title: 'core.navigation.extensionTabs.components',
+            icon: 'mdi-wrench',
+            to: '/extension#components'
+          }
+        ]
+      },
+      {
+        title: 'core.navigation.knowledgeBase',
+        icon: 'mdi-book-open-variant',
+        to: '/knowledge-base',
+      },
       {
         title: 'core.navigation.conversation',
         icon: 'mdi-database',

@@ -232,7 +232,10 @@ export const translations = {
       'evolution-center': zhCNEvolutionCenter
     },
     nicebot: {
-      navigation: zhCNNicebotNavigation
+      navigation: zhCNNicebotNavigation,
+      evolution_center: zhCNEvolutionCenter,
+      memory_management: zhCNMemoryManagement,
+      task_management: zhCNTaskManagement
     },
     messages: {
       errors: zhCNErrors,
@@ -303,7 +306,10 @@ export const translations = {
       'evolution-center': enUSEvolutionCenter
     },
     nicebot: {
-      navigation: enUSNicebotNavigation
+      navigation: enUSNicebotNavigation,
+      evolution_center: enUSEvolutionCenter,
+      memory_management: enUSMemoryManagement,
+      task_management: enUSTaskManagement
     },
     messages: {
       errors: enUSErrors,
@@ -374,7 +380,10 @@ export const translations = {
       'evolution-center': ruRUEvolutionCenter
     },
     nicebot: {
-      navigation: ruRUNicebotNavigation
+      navigation: ruRUNicebotNavigation,
+      evolution_center: ruRUEvolutionCenter,
+      memory_management: ruRUMemoryManagement,
+      task_management: ruRUTaskManagement
     },
     messages: {
       errors: ruRUErrors,

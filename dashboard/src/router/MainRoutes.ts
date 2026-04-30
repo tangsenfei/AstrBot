@@ -8,13 +8,13 @@ const MainRoutes = {
   meta: {
     requiresAuth: true
   },
-  redirect: '/welcome',
+  redirect: '/dashboard/default',
   component: () => import('@/layouts/full/FullLayout.vue'),
   children: [
     {
       name: 'MainPage',
       path: '/',
-      component: () => import('@/views/WelcomePage.vue')
+      component: () => import('@/views/stats/StatsPage.vue')
     },
     {
       name: 'Welcome',
