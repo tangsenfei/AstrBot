@@ -3,8 +3,13 @@ from sqlmodel import col
 
 from astrbot.api import sp, star
 from astrbot.api.event import AstrMessageEvent, MessageEventResult
-from astrbot.core.platform.astr_message_event import MessageSession
-from astrbot.core.platform.message_type import MessageType
+from astrbot.core import logger
+from astrbot.core.agent.runners.deerflow.constants import (
+    DEERFLOW_AGENT_RUNNER_PROVIDER_ID_KEY,
+    DEERFLOW_PROVIDER_TYPE,
+    DEERFLOW_THREAD_ID_KEY,
+)
+from astrbot.core.agent.runners.deerflow.deerflow_api_client import DeerFlowAPIClient
 from astrbot.core.db.po import ProviderStat
 from astrbot.core.utils.active_event_registry import active_event_registry
 
@@ -14,8 +19,69 @@ THIRD_PARTY_AGENT_RUNNER_KEY = {
     "dify": "dify_conversation_id",
     "coze": "coze_conversation_id",
     "dashscope": "dashscope_conversation_id",
+    DEERFLOW_PROVIDER_TYPE: DEERFLOW_THREAD_ID_KEY,
 }
 THIRD_PARTY_AGENT_RUNNER_STR = ", ".join(THIRD_PARTY_AGENT_RUNNER_KEY.keys())
+
+
+async def _cleanup_deerflow_thread_if_present(
+    context: star.Context,
+    umo: str,
+) -> None:
+    try:
+        thread_id = await sp.get_async(
+            scope="umo",
+            scope_id=umo,
+            key=DEERFLOW_THREAD_ID_KEY,
+            default="",
+        )
+        if not thread_id:
+            return
+
+        cfg = context.get_config(umo=umo)
+        provider_id = cfg["provider_settings"].get(
+            DEERFLOW_AGENT_RUNNER_PROVIDER_ID_KEY,
+            "",
+        )
+        if not provider_id:
+            return
+
+        merged_provider_config = context.provider_manager.get_provider_config_by_id(
+            provider_id,
+            merged=True,
+        )
+        if not merged_provider_config:
+            logger.warning(
+                "Failed to resolve DeerFlow provider config for remote thread cleanup: provider_id=%s",
+                provider_id,
+            )
+            return
+
+        client = DeerFlowAPIClient(
+            api_base=merged_provider_config.get(
+                "deerflow_api_base",
+                "http://127.0.0.1:2026",
+            ),
+            api_key=merged_provider_config.get("deerflow_api_key", ""),
+            auth_header=merged_provider_config.get("deerflow_auth_header", ""),
+            proxy=merged_provider_config.get("proxy", ""),
+        )
+        try:
+            await client.delete_thread(thread_id)
+        finally:
+            try:
+                await client.close()
+            except Exception as e:
+                logger.warning(
+                    "Failed to close DeerFlow API client after thread cleanup: %s",
+                    e,
+                )
+    except Exception as e:
+        logger.warning(
+            "Failed to clean up DeerFlow thread for session %s: %s",
+            umo,
+            e,
+        )
 
 
 async def _clear_third_party_agent_runner_state(
@@ -26,6 +92,9 @@ async def _clear_third_party_agent_runner_state(
     session_key = THIRD_PARTY_AGENT_RUNNER_KEY.get(agent_runner_type)
     if not session_key:
         return
+
+    if agent_runner_type == DEERFLOW_PROVIDER_TYPE:
+        await _cleanup_deerflow_thread_if_present(context, umo)
 
     await sp.remove_async(
         scope="umo",
@@ -53,6 +122,7 @@ class ConversationCommands:
         return conv.persona_id
 
     async def reset(self, message: AstrMessageEvent) -> None:
+        """重置 LLM 会话"""
         umo = message.unified_msg_origin
         cfg = self.context.get_config(umo=message.unified_msg_origin)
         is_unique_session = cfg["platform_settings"]["unique_session"]
@@ -124,6 +194,7 @@ class ConversationCommands:
         message.set_result(MessageEventResult().message(ret))
 
     async def stop(self, message: AstrMessageEvent) -> None:
+        """停止当前会话正在运行的 Agent"""
         cfg = self.context.get_config(umo=message.unified_msg_origin)
         agent_runner_type = cfg["provider_settings"]["agent_runner_type"]
         umo = message.unified_msg_origin
@@ -140,7 +211,7 @@ class ConversationCommands:
             message.set_result(
                 MessageEventResult().message(
                     f"✅ Requested to stop {stopped_count} running tasks."
-                ),
+                )
             )
             return
 
@@ -149,6 +220,7 @@ class ConversationCommands:
         )
 
     async def new_conv(self, message: AstrMessageEvent) -> None:
+        """创建新对话"""
         cfg = self.context.get_config(umo=message.unified_msg_origin)
         agent_runner_type = cfg["provider_settings"]["agent_runner_type"]
         if agent_runner_type in THIRD_PARTY_AGENT_RUNNER_KEY:
@@ -180,6 +252,7 @@ class ConversationCommands:
         )
 
     async def stats(self, message: AstrMessageEvent) -> None:
+        """Show token usage statistics for the current conversation."""
         umo = message.unified_msg_origin
         cid = await self.context.conversation_manager.get_curr_conversation_id(umo)
 
