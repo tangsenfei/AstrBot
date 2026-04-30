@@ -1,11 +1,10 @@
 import os
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Generator
 
 from sqlmodel import Session, SQLModel, create_engine
 
 from astrbot.core.utils.astrbot_path import get_astrbot_data_path
-
 
 _engine = None
 
@@ -32,6 +31,7 @@ def init_db() -> None:
     """Initialize database: create all tables + FTS5 index + identity unique constraint"""
     init_engine()
     import astrbot.core.memory.models  # noqa: F401
+
     SQLModel.metadata.create_all(_engine)
 
     with _engine.connect() as conn:
@@ -39,6 +39,22 @@ def init_db() -> None:
             conn.exec_driver_sql(
                 "CREATE VIRTUAL TABLE IF NOT EXISTS memory_events_fts "
                 "USING fts5(content, content=memory_events, content_rowid=rowid)"
+            )
+            conn.exec_driver_sql(
+                "CREATE TRIGGER IF NOT EXISTS memory_events_fts_ai "
+                "AFTER INSERT ON memory_events BEGIN "
+                "INSERT INTO memory_events_fts(rowid, content) VALUES (new.rowid, new.content); END"
+            )
+            conn.exec_driver_sql(
+                "CREATE TRIGGER IF NOT EXISTS memory_events_fts_ad "
+                "AFTER DELETE ON memory_events BEGIN "
+                "INSERT INTO memory_events_fts(memory_events_fts, rowid, content) VALUES('delete', old.rowid, old.content); END"
+            )
+            conn.exec_driver_sql(
+                "CREATE TRIGGER IF NOT EXISTS memory_events_fts_au "
+                "AFTER UPDATE ON memory_events BEGIN "
+                "INSERT INTO memory_events_fts(memory_events_fts, rowid, content) VALUES('delete', old.rowid, old.content); "
+                "INSERT INTO memory_events_fts(rowid, content) VALUES (new.rowid, new.content); END"
             )
         except Exception:
             pass
