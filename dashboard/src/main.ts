@@ -4,12 +4,18 @@ import App from './App.vue';
 import vuetify from './plugins/vuetify';
 import confirmPlugin from './plugins/confirmPlugin';
 import { setupI18n } from './i18n/composables';
-import i18n, { loadI18nMessages } from './i18n'; // Vue I18n for agent modules
+import i18n, { loadI18nMessages } from './i18n';
 import '@/scss/style.scss';
 import VueApexCharts from 'vue3-apexcharts';
 
 import print from 'vue3-print-nb';
 import { loader } from '@guolao/vue-monaco-editor'
+import * as monaco from 'monaco-editor';
+import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
+import jsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
+import cssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker';
+import htmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker';
+import tsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker';
 import axios from 'axios';
 import { waitForRouterReadyInBackground } from './utils/routerReadiness.mjs';
 
@@ -17,10 +23,26 @@ document.title = 'NiceBot - 智能助手平台';
 
 import { router } from './router';
 
-// 加载 vue-i18n 消息
 loadI18nMessages();
 
-// 初始化新的i18n系统，等待完成后再挂载应用
+(self as any).MonacoEnvironment = {
+  getWorker(_: string, label: string) {
+    if (label === 'json') {
+      return new jsonWorker();
+    }
+    if (label === 'css' || label === 'scss' || label === 'less') {
+      return new cssWorker();
+    }
+    if (label === 'html' || label === 'handlebars' || label === 'razor') {
+      return new htmlWorker();
+    }
+    if (label === 'typescript' || label === 'javascript') {
+      return new tsWorker();
+    }
+    return new editorWorker();
+  },
+};
+
 setupI18n().then(async () => {
   console.log('🌍 新i18n系统初始化完成');
   
@@ -32,11 +54,10 @@ setupI18n().then(async () => {
   app.use(VueApexCharts);
   app.use(vuetify);
   app.use(confirmPlugin);
-  app.use(i18n); // Register Vue I18n for agent modules
+  app.use(i18n);
   await router.isReady();
   app.mount('#app');
   
-  // 挂载后同步 Vuetify 主题
   import('./stores/customizer').then(({ useCustomizerStore }) => {
     const customizer = useCustomizerStore(pinia);
     vuetify.theme.global.name.value = customizer.uiTheme;
@@ -57,7 +78,6 @@ setupI18n().then(async () => {
 }).catch(error => {
   console.error('❌ 新i18n系统初始化失败:', error);
   
-  // 即使i18n初始化失败，也要挂载应用（使用回退机制）
   const app = createApp(App);
   const pinia = createPinia();
   app.use(pinia);
@@ -69,7 +89,6 @@ setupI18n().then(async () => {
   app.mount('#app');
   waitForRouterReadyInBackground(router);
   
-  // 挂载后同步 Vuetify 主题
   import('./stores/customizer').then(({ useCustomizerStore }) => {
     const customizer = useCustomizerStore(pinia);
     vuetify.theme.global.name.value = customizer.uiTheme;
@@ -102,8 +121,6 @@ axios.interceptors.request.use((config) => {
   return config;
 });
 
-// Keep fetch() calls consistent with axios by automatically attaching the JWT.
-// Some parts of the UI use fetch directly; without this, those requests will 401.
 const _origFetch = window.fetch.bind(window);
 window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
   const token = localStorage.getItem('token');
@@ -120,8 +137,4 @@ window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
   return _origFetch(input, { ...init, headers });
 };
 
-loader.config({
-  paths: {
-    vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.54.0/min/vs',
-  },
-})
+loader.config({ monaco })
