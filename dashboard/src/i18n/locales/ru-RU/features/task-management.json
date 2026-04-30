@@ -1,0 +1,73 @@
+{
+  "tabs": {
+    "simple": "Simple Tasks",
+    "deep": "Deep Tasks"
+  },
+  "simple": {
+    "title": "Future Tasks",
+    "beta": "Beta",
+    "subtitle": "View future tasks assigned to AstrBot. AstrBot will be automatically woken up, execute the task, and then notify the task creator. You need to enable 'Proactive Capability' in the configuration first.",
+    "proactive": {
+      "supported": "Platforms supporting proactive messaging: {platforms}.",
+      "unsupported": "No platforms currently support proactive messaging."
+    },
+    "actions": {
+      "create": "Create Task",
+      "refresh": "Refresh",
+      "delete": "Delete",
+      "cancel": "Cancel",
+      "submit": "Submit"
+    },
+    "table": {
+      "title": "Task List",
+      "empty": "No tasks yet",
+      "notAvailable": "N/A",
+      "timezoneLocal": "Local Timezone",
+      "headers": {
+        "name": "Task Name",
+        "type": "Type",
+        "cron": "Schedule",
+        "session": "Session",
+        "nextRun": "Next Run",
+        "lastRun": "Last Run",
+        "note": "Note",
+        "actions": "Actions"
+      },
+      "type": {
+        "once": "One-time",
+        "activeAgent": "Active Agent",
+        "workflow": "Workflow",
+        "unknown": "Unknown ( {type} )"
+      }
+    },
+    "form": {
+      "title": "Create New Task",
+      "chatHint": "The task will be automatically executed at the specified time, and the result will be sent to the specified session.",
+      "runOnce": "One-time Task",
+      "name": "Task Name",
+      "note": "Task Content",
+      "cron": "Cron Expression",
+      "cronPlaceholder": "e.g.: 0 9 * * * (daily at 9:00)",
+      "runAt": "Execution Time",
+      "session": "Session ID",
+      "timezone": "Timezone (optional)",
+      "enabled": "Enabled"
+    },
+    "messages": {
+      "loadFailed": "Failed to load tasks",
+      "updateFailed": "Failed to update task",
+      "deleteSuccess": "Deleted successfully",
+      "deleteFailed": "Delete failed",
+      "createSuccess": "Created successfully",
+      "createFailed": "Creation failed",
+      "sessionRequired": "Please enter a session ID",
+      "noteRequired": "Please enter task content",
+      "cronRequired": "Please enter a cron expression",
+      "runAtRequired": "Please select an execution time"
+    }
+  },
+  "deep": {
+    "comingSoon": "Coming Soon",
+    "description": "Deep task feature is coming soon, stay tuned..."
+  }
+}

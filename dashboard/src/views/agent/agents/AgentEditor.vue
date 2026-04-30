@@ -56,7 +56,7 @@
 
       <!-- 表单内容 -->
 
-      <v-card-text class="flex-grow-1 overflow-y-auto pa-4">
+      <v-card-text class="flex-grow-1 overflow-y-auto pa-4" style="max-height: calc(100vh - 180px);">
 
         <v-form ref="formRef" v-model="formValid">
 
@@ -286,7 +286,7 @@
 
                 class="mb-4"
 
-                @update:model-value="loadModels"
+                @update:model-value="onProviderChange"
 
               />
 
@@ -1049,7 +1049,7 @@ const providersMap = ref<Map<string, any>>(new Map());
 
 // 加载模型列表
 
-async function loadModels() {
+async function loadModels(clearModel: boolean = true) {
 
   if (!formData.value.model.provider) return;
 
@@ -1059,21 +1059,57 @@ async function loadModels() {
 
   modelOptions.value = [];
 
+  // 仅在需要时清空已选模型，避免供应商切换后模型不匹配
+
+  if (clearModel) {
+
+    formData.value.model.name = '';
+
+  }
+
   try {
 
-    // 从已加载的提供商列表中获取模型信
+    // 调用 AstrBot 核心 API 获取指定供应商的模型列表
 
-    const provider = providersMap.value.get(formData.value.model.provider);
+    const response = await axios.get('/api/config/provider/model_list', {
 
-    if (provider && provider.model) {
+      params: { provider_id: formData.value.model.provider }
 
-      modelOptions.value = [{
+    });
 
-        title: provider.model,
+    if (response.data.status === 'ok') {
 
-        value: provider.model,
+      const result = response.data.data || {};
 
-      }];
+      const models = result.models || [];
+
+      modelOptions.value = models.map((model: string) => ({
+
+        title: model,
+
+        value: model,
+
+      }));
+
+    } else {
+
+      // API 返回错误，使用 provider 配置中的默认模型作为回退
+
+      const provider = providersMap.value.get(formData.value.model.provider);
+
+      if (provider && provider.model) {
+
+        const fallbackModels = Array.isArray(provider.model) ? provider.model : [provider.model];
+
+        modelOptions.value = fallbackModels.map((model: string) => ({
+
+          title: model,
+
+          value: model,
+
+        }));
+
+      }
 
     }
 
@@ -1081,11 +1117,41 @@ async function loadModels() {
 
     console.error('Failed to load models:', error);
 
+    // 网络错误时，使用 provider 配置中的默认模型作为回退
+
+    const provider = providersMap.value.get(formData.value.model.provider);
+
+    if (provider && provider.model) {
+
+      const fallbackModels = Array.isArray(provider.model) ? provider.model : [provider.model];
+
+      modelOptions.value = fallbackModels.map((model: string) => ({
+
+        title: model,
+
+        value: model,
+
+      }));
+
+    }
+
   } finally {
 
     loadingModels.value = false;
 
   }
+
+}
+
+
+
+// 提供商变更处理
+
+function onProviderChange(value: string) {
+
+  // 用户手动切换提供商时，清空模型选择
+
+  loadModels(true);
 
 }
 
@@ -1136,21 +1202,13 @@ watch(() => props.agent, (newAgent) => {
       },
 
       planning: {
-
-        enabled: newAgent.planning?.enabled || false,
-
-        maxSteps: newAgent.planning?.maxSteps || 5,
-
+        enabled: newAgent.planning || false,
+        maxSteps: { low: 3, medium: 5, high: 10 }[newAgent.planning_effort as string] || 5,
       },
-
       memory: {
-
-        enabled: newAgent.memory?.enabled || false,
-
-        type: newAgent.memory?.type || 'short_term',
-
-        maxMessages: newAgent.memory?.maxMessages || 20,
-
+        enabled: newAgent.memory_config?.enabled || false,
+        type: newAgent.memory_config?.type || 'short_term',
+        maxMessages: newAgent.memory_config?.maxMessages || 20,
       },
 
       behavior: {
@@ -1169,11 +1227,11 @@ watch(() => props.agent, (newAgent) => {
 
 
 
-    // 加载对应提供商的模型列表
+    // 加载对应提供商的模型列表（保留已有模型值）
 
     if (formData.value.model.provider) {
 
-      loadModels();
+      loadModels(false);
 
     }
 
@@ -1283,24 +1341,24 @@ async function handleSave() {
 
     // 构建保存数据，转换模型字段
 
+    const { model, planning, memory, ...rest } = formData.value;
+
     const saveData = {
-
-      ...formData.value,
-
-      provider_id: formData.value.model.provider,
-
-      model_name: formData.value.model.name,
-
+      ...rest,
+      provider_id: model.provider,
+      model_name: model.name,
       llm_config: {
-
-        temperature: formData.value.model.temperature,
-
-        max_tokens: formData.value.model.maxTokens,
-
-        top_p: formData.value.model.topP,
-
+        temperature: model.temperature,
+        max_tokens: model.maxTokens,
+        top_p: model.topP,
       },
-
+      planning: planning.enabled,
+      planning_effort: planning.maxSteps <= 3 ? 'low' : (planning.maxSteps <= 7 ? 'medium' : 'high'),
+      memory_config: {
+        enabled: memory.enabled,
+        type: memory.type,
+        maxMessages: memory.maxMessages,
+      },
     };
 
     await emit('save', saveData);
@@ -1346,6 +1404,34 @@ onMounted(() => {
 .agent-editor-drawer .v-card {
 
   border-radius: 0;
+
+}
+
+.agent-editor-drawer :deep(.v-window) {
+
+  height: 100%;
+
+}
+
+.agent-editor-drawer :deep(.v-window__container) {
+
+  height: 100%;
+
+}
+
+.agent-editor-drawer :deep(.v-window-item) {
+
+  min-height: 100%;
+
+}
+
+.agent-editor-drawer :deep(.v-tabs) {
+
+  flex-shrink: 0;
+
+  height: 48px !important;
+
+  min-height: 48px !important;
 
 }
 

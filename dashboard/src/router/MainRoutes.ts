@@ -1,5 +1,4 @@
 import { EXTENSION_ROUTE_NAME } from './routeConstants.mjs';
-import { getExtensionRoutes } from '../extensions';
 
 const MainRoutes = {
   path: '/main',
@@ -38,6 +37,90 @@ const MainRoutes = {
       name: 'Providers',
       path: '/providers',
       component: () => import('@/views/ProviderPage.vue')
+    },
+    {
+      name: 'ToolProvider',
+      path: '/tool-provider',
+      component: () => import('@/views/ToolProviderPage.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      name: 'TaskManagement',
+      path: '/task-management',
+      component: () => import('@/views/TaskManagementPage.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      name: 'MemoryManagement',
+      path: '/memory-management',
+      component: () => import('@/views/MemoryManagementPage.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      name: 'EvolutionCenter',
+      path: '/evolution-center',
+      component: () => import('@/views/EvolutionCenterPage.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      name: 'Knowledge',
+      path: '/knowledge',
+      component: () => import('@/views/agent/knowledge/KnowledgePage.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      name: 'Agents',
+      path: '/agents',
+      component: () => import('@/views/agent/agents/AgentsPage.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      name: 'Crews',
+      path: '/crews',
+      component: () => import('@/views/agent/crews/CrewsPage.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      name: 'AgentTasks',
+      path: '/agent/tasks',
+      component: () => import('@/views/agent/tasks/TasksPage.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      name: 'AgentTaskDetail',
+      path: '/agent/tasks/:id',
+      component: () => import('@/views/agent/tasks/TaskDetail.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      name: 'Flows',
+      path: '/flows',
+      component: () => import('@/views/agent/flows/FlowsPage.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      name: 'AgentTools',
+      path: '/agent/tools',
+      component: () => import('@/views/agent/tools/ToolsPage.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      name: 'AgentSkills',
+      path: '/agent/skills',
+      component: () => import('@/views/agent/skills/SkillsPage.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      name: 'Roundtables',
+      path: '/roundtables',
+      component: () => import('@/views/agent/roundtables/RoundtablePage.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      name: 'RoundtableExecution',
+      path: '/roundtables/:id/execution',
+      component: () => import('@/views/agent/roundtables/RoundtableExecution.vue'),
+      meta: { requiresAuth: true }
     },
     {
       name: 'Configs',
@@ -116,35 +199,11 @@ const MainRoutes = {
         }
       ]
     },
-
-    // 旧版本的知识库路由
     {
       name: 'KnowledgeBase',
       path: '/alkaid/knowledge-base',
       component: () => import('@/views/alkaid/KnowledgeBase.vue'),
     },
-    // {
-    //   name: 'Alkaid',
-    //   path: '/alkaid',
-    //   component: () => import('@/views/AlkaidPage.vue'),
-    //   children: [
-    //     {
-    //       path: 'knowledge-base',
-    //       name: 'KnowledgeBase',
-    //       component: () => import('@/views/alkaid/KnowledgeBase.vue')
-    //     },
-    //     {
-    //       path: 'long-term-memory',
-    //       name: 'LongTermMemory',
-    //       component: () => import('@/views/alkaid/LongTermMemory.vue')
-    //     },
-    //     {
-    //       path: 'other',
-    //       name: 'OtherFeatures',
-    //       component: () => import('@/views/alkaid/Other.vue')
-    //     }
-    //   ]
-    // },
     {
       name: 'Chat',
       path: '/chat',
@@ -170,11 +229,5 @@ const MainRoutes = {
     }
   ]
 };
-
-export function getMainRoutes() {
-  const routes = { ...MainRoutes };
-  routes.children = [...MainRoutes.children, ...getExtensionRoutes()];
-  return routes;
-}
 
 export default MainRoutes;

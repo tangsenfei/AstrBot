@@ -117,7 +117,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { useI18n } from '@/i18n/composables';
-import { getSidebarItems } from '@/layouts/full/vertical-sidebar/sidebarItem';
+import sidebarItems from '@/layouts/full/vertical-sidebar/sidebarItem';
 import { 
   getSidebarCustomization, 
   setSidebarCustomization, 
@@ -135,7 +135,7 @@ const draggedItem = ref(null);
 function initializeItems() {
   const customization = getSidebarCustomization();
   const { mainItems: resolvedMain, moreItems: resolvedMore } = resolveSidebarItems(
-    getSidebarItems(),
+    sidebarItems,
     customization
   );
   mainItems.value = resolvedMain;

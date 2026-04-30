@@ -5,11 +5,18 @@
       "subtitle": "Manage Agent skills, configure progressive disclosure and workflows",
       "tabs": {
         "all": "All",
-        "general": "General",
-        "programming": "Programming",
-        "analysis": "Analysis",
-        "creative": "Creative",
-        "other": "Other"
+        "builtin": "Built-in",
+        "astrbot": "AstrBot",
+        "claudcode": "ClaudeCode",
+        "crewai": "CrewAI",
+        "custom": "Custom"
+      },
+      "sources": {
+        "builtin": "Built-in",
+        "astrbot": "AstrBot",
+        "claudcode": "ClaudeCode",
+        "crewai": "CrewAI",
+        "custom": "Custom"
       },
       "categories": {
         "general": "General",
@@ -43,7 +50,10 @@
         "edit": "Edit",
         "delete": "Delete",
         "version": "Version",
-        "workflow": "Workflow"
+        "workflow": "Workflow",
+        "builtinTag": "Built-in",
+        "builtinTypeFlowGenerator": "Flow Generator",
+        "builtinTypeExpertAgent": "Expert Agent"
       },
       "editor": {
         "addTitle": "Add Skill",

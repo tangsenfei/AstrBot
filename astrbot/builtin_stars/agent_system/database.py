@@ -84,6 +84,7 @@ class Database:
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 description TEXT,
+                source TEXT DEFAULT 'custom',
                 category TEXT,
                 tools TEXT DEFAULT '[]',
                 workflow TEXT DEFAULT '{}',
@@ -132,6 +133,7 @@ class Database:
                 verbose INTEGER DEFAULT 0,
                 allow_delegation INTEGER DEFAULT 0,
                 enabled INTEGER DEFAULT 1,
+                agent_type TEXT DEFAULT 'custom',
                 metadata TEXT DEFAULT '{}',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
@@ -299,6 +301,50 @@ class Database:
             )
         """)
 
+        # 智能体记忆表
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS agent_memories (
+                id TEXT PRIMARY KEY,
+                agent_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                summary TEXT DEFAULT '',
+                scope TEXT DEFAULT 'default',
+                importance REAL DEFAULT 0.5,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (agent_id) REFERENCES agents(id)
+            )
+        """)
+
+        # 圆桌会议表
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS roundtables (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                topic TEXT NOT NULL,
+                deliverable TEXT,
+                mode TEXT DEFAULT 'free',
+                meeting_type TEXT DEFAULT 'standard',
+                host_agent_id TEXT,
+                participants TEXT DEFAULT '[]',
+                rounds INTEGER DEFAULT 3,
+                config TEXT DEFAULT '{}',
+                status TEXT DEFAULT 'pending',
+                result TEXT DEFAULT '{}',
+                discussion_records TEXT DEFAULT '[]',
+                current_round INTEGER DEFAULT 0,
+                current_speaker TEXT DEFAULT '',
+                stage TEXT DEFAULT 'pending',
+                streaming_content TEXT DEFAULT '',
+                materials TEXT DEFAULT '{}',
+                export_format TEXT DEFAULT 'markdown',
+                preparation_records TEXT DEFAULT '[]',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (host_agent_id) REFERENCES agents(id)
+            )
+        """)
+
         # 数据库迁移
         self._migrate_tables()
 
@@ -319,10 +365,32 @@ class Database:
             ("agents", "verbose", "INTEGER DEFAULT 0"),
             ("agents", "allow_delegation", "INTEGER DEFAULT 0"),
             ("agents", "memory_config", "TEXT DEFAULT '{}'"),
+            ("skills", "source", "TEXT DEFAULT 'custom'"),
             ("agent_tasks", "flow_id", "TEXT"),
             ("agent_tasks", "total_tokens", "INTEGER DEFAULT 0"),
             ("agent_tasks", "input_tokens", "INTEGER DEFAULT 0"),
             ("agent_tasks", "output_tokens", "INTEGER DEFAULT 0"),
+            ("roundtables", "discussion_records", "TEXT DEFAULT '[]'"),
+            ("roundtables", "current_round", "INTEGER DEFAULT 0"),
+            ("roundtables", "current_speaker", "TEXT DEFAULT ''"),
+            ("roundtables", "stage", "TEXT DEFAULT 'pending'"),
+            ("roundtables", "streaming_content", "TEXT DEFAULT ''"),
+            ("roundtables", "meeting_type", "TEXT DEFAULT 'standard'"),
+            ("roundtables", "materials", "TEXT DEFAULT '{}'"),
+            ("roundtables", "export_format", "TEXT DEFAULT 'markdown'"),
+            ("roundtables", "preparation_records", "TEXT DEFAULT '[]'"),
+            ("agents", "is_builtin", "INTEGER DEFAULT 0"),
+            ("agents", "agent_type", "TEXT DEFAULT 'custom'"),
+            ("agent_tasks", "meeting_id", "TEXT"),
+            ("agent_tasks", "task_type", "TEXT DEFAULT 'crew'"),
+            ("agent_memories", "id", "TEXT PRIMARY KEY"),
+            ("agent_memories", "agent_id", "TEXT NOT NULL"),
+            ("agent_memories", "role", "TEXT NOT NULL"),
+            ("agent_memories", "content", "TEXT NOT NULL"),
+            ("agent_memories", "summary", "TEXT DEFAULT ''"),
+            ("agent_memories", "scope", "TEXT DEFAULT 'default'"),
+            ("agent_memories", "importance", "REAL DEFAULT 0.5"),
+            ("agent_memories", "created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
         ]
 
         for table, column, col_type in migrations:
@@ -334,6 +402,23 @@ class Database:
                     self.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
             except Exception as e:
                 logger.warning(f"Migration warning for {table}.{column}: {e}")
+
+        self._migrate_agent_type()
+
+    def _migrate_agent_type(self) -> None:
+        try:
+            cursor = self.execute("SELECT id, is_builtin, agent_type FROM agents")
+            rows = cursor.fetchall()
+            for row in rows:
+                agent_id, is_builtin, agent_type = row[0], row[1], row[2]
+                if agent_type in (None, '', 'custom') and is_builtin:
+                    self.execute(
+                        "UPDATE agents SET agent_type = 'builtin' WHERE id = ?",
+                        (agent_id,)
+                    )
+                    logger.info(f"Migrated agent {agent_id} to agent_type='builtin'")
+        except Exception as e:
+            logger.warning(f"Agent type migration warning: {e}")
 
     def _create_indexes(self) -> None:
         """创建索引"""
@@ -349,10 +434,17 @@ class Database:
             "CREATE INDEX IF NOT EXISTS idx_agent_tasks_status ON agent_tasks(status)",
             "CREATE INDEX IF NOT EXISTS idx_agent_tasks_crew ON agent_tasks(crew_id)",
             "CREATE INDEX IF NOT EXISTS idx_agent_tasks_flow ON agent_tasks(flow_id)",
+            "CREATE INDEX IF NOT EXISTS idx_agent_tasks_meeting ON agent_tasks(meeting_id)",
+            "CREATE INDEX IF NOT EXISTS idx_agent_tasks_type ON agent_tasks(task_type)",
             "CREATE INDEX IF NOT EXISTS idx_sub_tasks_parent ON sub_tasks(parent_task_id)",
             "CREATE INDEX IF NOT EXISTS idx_sub_tasks_agent ON sub_tasks(agent_id)",
             "CREATE INDEX IF NOT EXISTS idx_execution_logs_task ON execution_logs(task_id)",
             "CREATE INDEX IF NOT EXISTS idx_token_stats_task ON token_stats(task_id)",
+            "CREATE INDEX IF NOT EXISTS idx_roundtables_status ON roundtables(status)",
+            "CREATE INDEX IF NOT EXISTS idx_roundtables_host ON roundtables(host_agent_id)",
+            "CREATE INDEX IF NOT EXISTS idx_agent_memories_agent ON agent_memories(agent_id)",
+            "CREATE INDEX IF NOT EXISTS idx_agent_memories_scope ON agent_memories(scope)",
+            "CREATE INDEX IF NOT EXISTS idx_agent_memories_importance ON agent_memories(importance)",
         ]
 
         for index_sql in indexes:
@@ -392,11 +484,13 @@ class Database:
             return dict(row)
         return None
 
-    def select_all(self, table: str, where: str = "1=1", where_params: tuple = (), order_by: str | None = None) -> list[dict[str, Any]]:
+    def select_all(self, table: str, where: str = "1=1", where_params: tuple = (), order_by: str | None = None, limit: int | None = None) -> list[dict[str, Any]]:
         """查询多条数据"""
         sql = f"SELECT * FROM {table} WHERE {where}"
         if order_by:
             sql += f" ORDER BY {order_by}"
+        if limit:
+            sql += f" LIMIT {limit}"
         cursor = self.execute(sql, where_params)
         return [dict(row) for row in cursor.fetchall()]
 

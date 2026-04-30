@@ -80,7 +80,7 @@ class Checkpoint:
 
 @dataclass
 class TodoItem:
-    """DeerFlow Todo 项"""
+    """Todo 项"""
     id: str
     content: str
     status: TodoStatus = TodoStatus.PENDING
@@ -88,7 +88,7 @@ class TodoItem:
     error: str | None = None
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
-    
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
@@ -99,7 +99,7 @@ class TodoItem:
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
         }
-    
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TodoItem":
         return cls(
@@ -114,8 +114,8 @@ class TodoItem:
 
 
 @dataclass
-class DeerFlowTask:
-    """DeerFlow 任务"""
+class TaskItem:
+    """任务项"""
     id: str
     title: str
     description: str
@@ -130,7 +130,7 @@ class DeerFlowTask:
     updated_at: datetime = field(default_factory=datetime.now)
     started_at: datetime | None = None
     completed_at: datetime | None = None
-    
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
@@ -148,9 +148,9 @@ class DeerFlowTask:
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
         }
-    
+
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "DeerFlowTask":
+    def from_dict(cls, data: dict[str, Any]) -> "TaskItem":
         return cls(
             id=data["id"],
             title=data["title"],
@@ -179,7 +179,7 @@ class LLMProviderConfig:
     models: list[str] = field(default_factory=list)
     default_model: str | None = None
     is_enabled: bool = True
-    
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
@@ -190,7 +190,7 @@ class LLMProviderConfig:
             "default_model": self.default_model,
             "is_enabled": self.is_enabled,
         }
-    
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "LLMProviderConfig":
         return cls(
@@ -205,8 +205,8 @@ class LLMProviderConfig:
 
 
 @dataclass
-class DeerFlowLLMConfig:
-    """DeerFlow LLM 配置"""
+class TaskManagerConfig:
+    """任务管理器配置"""
     provider: str = ""
     model: str = ""
     api_key: str | None = None
@@ -215,7 +215,7 @@ class DeerFlowLLMConfig:
     is_plan_mode: bool = True
     subagent_enabled: bool = False
     subagent_model: str | None = None
-    
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "provider": self.provider,
@@ -227,9 +227,9 @@ class DeerFlowLLMConfig:
             "subagent_enabled": self.subagent_enabled,
             "subagent_model": self.subagent_model,
         }
-    
+
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "DeerFlowLLMConfig":
+    def from_dict(cls, data: dict[str, Any]) -> "TaskManagerConfig":
         return cls(
             provider=data.get("provider", ""),
             model=data.get("model", ""),

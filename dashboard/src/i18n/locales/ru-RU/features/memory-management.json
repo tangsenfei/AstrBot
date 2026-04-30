@@ -1,0 +1,43 @@
+{
+  "title": "Memory Management",
+  "description": "Manage AI assistant's short-term and long-term memory",
+  "tabs": {
+    "overview": "Overview",
+    "short_term": "Short-term Memory",
+    "long_term": "Long-term Memory",
+    "settings": "Settings"
+  },
+  "stats": {
+    "short_term": "Short-term Memory Entries",
+    "long_term": "Long-term Memory Entries",
+    "users": "User Count"
+  },
+  "short_term": {
+    "title": "Short-term Memory",
+    "hint": "Short-term memory stores temporary information in the current conversation context and is automatically cleaned up after a certain period."
+  },
+  "long_term": {
+    "title": "Long-term Memory",
+    "hint": "Long-term memory stores important information persistently and can be used across sessions."
+  },
+  "settings": {
+    "title": "Memory Settings",
+    "enabled": "Enable Memory",
+    "max_short_term": "Max Short-term Entries",
+    "max_long_term": "Max Long-term Entries",
+    "retention_days": "Retention Days"
+  },
+  "table": {
+    "user": "User",
+    "content": "Content",
+    "category": "Category",
+    "created": "Created",
+    "actions": "Actions"
+  },
+  "actions": {
+    "refresh": "Refresh",
+    "export": "Export",
+    "import": "Import",
+    "save": "Save"
+  }
+}

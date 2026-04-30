@@ -3,36 +3,47 @@
 
   <v-card
 
-
     class="agent-card"
-
 
     :class="{ 'agent-disabled': !agent.enabled }"
 
-
     hover
-
 
   >
 
 
     <v-card-text class="pb-2">
 
-
       <!-- 标题和状态-->
-
 
       <div class="d-flex align-start justify-space-between mb-2">
 
-
         <div class="flex-grow-1">
 
-
-          <div class="text-h6 text-truncate" :title="agent.name">
+          <div class="text-h6 text-truncate d-flex align-center" :title="agent.name">
 
 
             {{ agent.name }}
-
+            <v-chip
+              v-if="agentType === 'builtin'"
+              size="x-small"
+              color="amber-darken-2"
+              variant="tonal"
+              class="ml-2"
+            >
+              <v-icon icon="mdi-shield-crown" start size="x-small" />
+              {{ $t('agent.agents.type.builtin') }}
+            </v-chip>
+            <v-chip
+              v-if="agentType === 'expert'"
+              size="x-small"
+              color="purple"
+              variant="tonal"
+              class="ml-2"
+            >
+              <v-icon icon="mdi-account-star" start size="x-small" />
+              {{ $t('agent.agents.type.expert') }}
+            </v-chip>
 
           </div>
 
@@ -90,7 +101,6 @@
 
 
 
-
       <!-- 角色描述 -->
 
 
@@ -105,11 +115,10 @@
 
 
 
-
       <!-- 模型信息 -->
 
 
-      <div v-if="agent.model" class="d-flex align-center mb-2">
+      <div v-if="agent.provider_id || agent.model_name" class="d-flex align-center mb-2">
 
 
         <v-icon icon="mdi-robot" size="small" class="mr-1" />
@@ -118,14 +127,13 @@
         <span class="text-caption text-grey">
 
 
-          {{ agent.model.provider }} / {{ agent.model.name }}
+          {{ agent.provider_id }} / {{ agent.model_name }}
 
 
         </span>
 
 
       </div>
-
 
 
 
@@ -165,7 +173,6 @@
 
 
 
-
         <v-tooltip v-if="agent.skills && agent.skills.length > 0" location="top">
 
 
@@ -195,8 +202,7 @@
 
 
 
-
-        <v-tooltip v-if="agent.knowledgeBases && agent.knowledgeBases.length > 0" location="top">
+        <v-tooltip v-if="agent.knowledge_id" location="top">
 
 
           <template v-slot:activator="{ props }">
@@ -208,23 +214,19 @@
               <v-icon icon="mdi-database" start size="small" />
 
 
-              {{ agent.knowledgeBases.length }}
-
-
             </v-chip>
 
 
           </template>
 
 
-          {{ $t('agent.agents.card.knowledgeBases', { count: agent.knowledgeBases.length }) }}
+          {{ $t('agent.agents.card.knowledgeBase') }}
 
 
         </v-tooltip>
 
 
       </div>
-
 
 
 
@@ -238,7 +240,7 @@
         <v-chip
 
 
-          v-if="agent.planning && agent.planning.enabled"
+          v-if="agent.planning"
 
 
           size="x-small"
@@ -264,11 +266,10 @@
 
 
 
-
         <v-chip
 
 
-          v-if="agent.memory && agent.memory.enabled"
+          v-if="agent.memory_config && Object.keys(agent.memory_config).length > 0"
 
 
           size="x-small"
@@ -300,9 +301,7 @@
 
 
 
-
     <v-divider />
-
 
 
 
@@ -311,128 +310,70 @@
 
 
     <v-card-actions class="pa-2">
-
-
       <v-btn
-
-
         icon
-
-
         size="small"
-
-
         variant="text"
-
-
         color="info"
-
-
         @click="$emit('test', agent)"
-
-
-        :title="$t('agent.agents.card.test')"
-
-
+        :title="$t('agent.agents.card.chat')"
       >
-
-
-        <v-icon icon="mdi-message-text" />
-
-
+        <v-icon icon="mdi-chat" />
       </v-btn>
-
-
       <v-btn
-
-
         icon
-
-
         size="small"
-
-
         variant="text"
-
-
         color="primary"
-
-
         @click="$emit('edit', agent)"
-
-
         :title="$t('agent.agents.card.edit')"
-
-
       >
-
-
         <v-icon icon="mdi-pencil" />
-
-
       </v-btn>
-
-
       <v-btn
-
-
+        v-if="agentType === 'expert'"
         icon
-
-
         size="small"
-
-
         variant="text"
-
-
-        color="default"
-
-
-        @click="$emit('copy', agent)"
-
-
-        :title="$t('agent.agents.card.copy')"
-
-
+        color="purple"
+        @click="$emit('createFromExpert', agent)"
+        :title="$t('agent.agents.card.createFromExpert')"
       >
-
-
         <v-icon icon="mdi-content-copy" />
-
-
       </v-btn>
-
-
       <v-btn
-
-
+        v-if="agentType === 'builtin' || agentType === 'expert'"
         icon
-
-
         size="small"
-
-
         variant="text"
-
-
-        color="error"
-
-
-        @click="$emit('delete', agent)"
-
-
-        :title="$t('agent.agents.card.delete')"
-
-
+        color="amber-darken-2"
+        @click="$emit('reset', agent)"
+        :title="$t('agent.agents.card.reset')"
       >
-
-
-        <v-icon icon="mdi-delete" />
-
-
+        <v-icon icon="mdi-restore" />
       </v-btn>
-
-
+      <v-btn
+        v-if="agentType === 'custom'"
+        icon
+        size="small"
+        variant="text"
+        color="default"
+        @click="$emit('copy', agent)"
+        :title="$t('agent.agents.card.copy')"
+      >
+        <v-icon icon="mdi-content-copy" />
+      </v-btn>
+      <v-btn
+        v-if="agentType === 'custom'"
+        icon
+        size="small"
+        variant="text"
+        color="error"
+        @click="$emit('delete', agent)"
+        :title="$t('agent.agents.card.delete')"
+      >
+        <v-icon icon="mdi-delete" />
+      </v-btn>
     </v-card-actions>
 
 
@@ -440,7 +381,6 @@
 
 
 </template>
-
 
 
 
@@ -456,7 +396,6 @@ import { useI18n } from 'vue-i18n';
 
 
 
-
 const props = defineProps<{
 
 
@@ -468,33 +407,20 @@ const props = defineProps<{
 
 
 
-
 const emit = defineEmits<{
-
-
   (e: 'edit', agent: any): void;
-
-
   (e: 'test', agent: any): void;
-
-
   (e: 'copy', agent: any): void;
-
-
   (e: 'delete', agent: any): void;
-
-
   (e: 'toggle', agent: any): void;
-
-
+  (e: 'reset', agent: any): void;
+  (e: 'createFromExpert', agent: any): void;
 }>();
 
 
 
 
-
 const { t } = useI18n();
-
 
 
 
@@ -513,13 +439,19 @@ const statusColor = computed(() => {
 
 
 
-
 const statusLabel = computed(() => {
   return props.agent.enabled
     ? t('agent.agents.status.enabled')
     : t('agent.agents.status.disabled');
 });
 
+const agentType = computed(() => {
+  return props.agent.agent_type || 'custom';
+});
+
+const isBuiltin = computed(() => {
+  return props.agent.is_builtin === true || props.agent.agent_type === 'builtin' || props.agent.agent_type === 'expert';
+});
 
 
 
@@ -537,7 +469,6 @@ function handleToggle() {
 
 
 </script>
-
 
 
 
@@ -565,7 +496,6 @@ function handleToggle() {
 
 
 
-
 .agent-card:hover {
 
 
@@ -580,7 +510,6 @@ function handleToggle() {
 
 
 
-
 .agent-disabled {
 
 
@@ -588,7 +517,6 @@ function handleToggle() {
 
 
 }
-
 
 
 
@@ -616,7 +544,6 @@ function handleToggle() {
 
 
 
-
 .v-card-actions {
 
 
@@ -627,5 +554,3 @@ function handleToggle() {
 
 
 </style>
-
-

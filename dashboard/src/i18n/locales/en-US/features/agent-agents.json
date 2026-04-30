@@ -2,12 +2,13 @@
   "agent": {
     "agents": {
       "tester": {
-        "title": "Agent Test",
+        "title": "Agent Chat",
         "emptyMessage": "Start a conversation",
         "thinking": "Thinking...",
         "tools": "Tools",
         "skills": "Skills",
         "knowledgeBases": "Knowledge Bases",
+        "knowledgeBase": "Knowledge Base",
         "noAbilities": "No special abilities",
         "error": "Failed to send message",
         "hint": "Type a message to start testing",
@@ -20,7 +21,12 @@
         "abilities": "Abilities",
         "advanced": "Advanced",
         "planning": "Planning",
-        "memory": "Memory"
+        "memory": "Memory",
+        "llmConfig": "LLM Config",
+        "provider": "Provider",
+        "model": "Model",
+        "temperature": "Temperature",
+        "maxTokens": "Max Tokens"
       },
       "card": {
         "skills": "{count} skills"

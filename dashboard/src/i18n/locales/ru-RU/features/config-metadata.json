@@ -3,7 +3,7 @@
         "name": "AI",
         "agent_runner": {
             "description": "Запуск агентов (Agent Runner)",
-            "hint": "Выберите среду для работы AI-диалогов. По умолчанию используется встроенный агент AstrBot, поддерживающий базу знаний, персонализацию и вызов технических инструментов. Не изменяйте этот раздел, если не планируете использовать сторонние платформы, такие как Dify, Coze или DeerFlow.",
+            "hint": "Выберите среду для работы AI-диалогов. По умолчанию используется встроенный агент AstrBot, поддерживающий базу знаний, персонализацию и вызов технических инструментов. Не изменяйте этот раздел, если не планируете использовать сторонние платформы, такие как Dify или Coze.",
             "provider_settings": {
                 "enable": {
                     "description": "Включить",
@@ -15,8 +15,7 @@
                         "Встроенный агент",
                         "Dify",
                         "Coze",
-                        "Приложение Alibaba Cloud Bailian",
-                        "DeerFlow"
+                        "Приложение Alibaba Cloud Bailian"
                     ]
                 },
                 "coze_agent_runner_provider_id": {
@@ -27,9 +26,6 @@
                 },
                 "dashscope_agent_runner_provider_id": {
                     "description": "ID провайдера Alibaba Cloud Bailian"
-                },
-                "deerflow_agent_runner_provider_id": {
-                    "description": "ID провайдера DeerFlow Agent Runner"
                 }
             }
         },
@@ -1537,45 +1533,6 @@
             "coze_api_base": {
                 "description": "API Base URL",
                 "hint": "Base URL for the Coze API. Default: https://api.coze.cn"
-            },
-            "deerflow_api_base": {
-                "description": "API Base URL",
-                "hint": "URL шлюза DeerFlow. По умолчанию: http://127.0.0.1:2026"
-            },
-            "deerflow_api_key": {
-                "description": "API-ключ DeerFlow",
-                "hint": "Опционально. Заполните, если шлюз защищен Bearer-авторизацией."
-            },
-            "deerflow_auth_header": {
-                "description": "Заголовок Authorization",
-                "hint": "Опционально. Свой заголовок Authorization; приоритетнее ключа."
-            },
-            "deerflow_assistant_id": {
-                "description": "ID ассистента",
-                "hint": "Assistant ID для LangGraph. По умолчанию lead_agent."
-            },
-            "deerflow_model_name": {
-                "description": "Переопределение имени модели",
-                "hint": "Опционально. Переопределяет модель DeerFlow."
-            },
-            "deerflow_thinking_enabled": {
-                "description": "Включить режим рассуждения (Thinking)"
-            },
-            "deerflow_plan_mode": {
-                "description": "Включить режим планирования (Plan)",
-                "hint": "Управляет is_plan_mode в DeerFlow."
-            },
-            "deerflow_subagent_enabled": {
-                "description": "Включить субагента",
-                "hint": "Управляет subagent_enabled в DeerFlow."
-            },
-            "deerflow_max_concurrent_subagents": {
-                "description": "Макс. параллельных субагентов",
-                "hint": "Максимум параллельных субагентов. По умолчанию 3."
-            },
-            "deerflow_recursion_limit": {
-                "description": "Лимит рекурсии",
-                "hint": "Лимит рекурсии для LangGraph."
             },
             "auto_save_history": {
                 "description": "История диалогов управляется Coze",

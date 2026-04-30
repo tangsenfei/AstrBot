@@ -1,12 +1,5 @@
-/**
- * Vue I18n Configuration
- * 为 agent 模块提供 vue-i18n 支持
- */
-
 import { createI18n } from 'vue-i18n';
-import { getExtensionI18n } from '../extensions';
 
-// 导入静态翻译文件（agent 模块）
 import zhCNAgentSkills from './locales/zh-CN/features/agent-skills.json';
 import zhCNAgentTools from './locales/zh-CN/features/agent-tools.json';
 import zhCNAgentAgents from './locales/zh-CN/features/agent-agents.json';
@@ -17,31 +10,70 @@ import ruRUAgentSkills from './locales/ru-RU/features/agent-skills.json';
 import ruRUAgentTools from './locales/ru-RU/features/agent-tools.json';
 import ruRUAgentAgents from './locales/ru-RU/features/agent-agents.json';
 
-// 创建 i18n 实例（初始为空消息）
+import zhCNAgentNavigation from './locales/zh-CN/agent/navigation.json';
+import zhCNAgentExpertTeam from './locales/zh-CN/agent/expert-team.json';
+import zhCNAgentKnowledge from './locales/zh-CN/agent/knowledge.json';
+import zhCNAgentAgentsModule from './locales/zh-CN/agent/agents.json';
+import zhCNAgentToolsModule from './locales/zh-CN/agent/tools.json';
+import zhCNAgentTasks from './locales/zh-CN/agent/tasks.json';
+import zhCNAgentSkillsModule from './locales/zh-CN/agent/skills.json';
+import zhCNAgentCrews from './locales/zh-CN/agent/crews.json';
+import zhCNAgentRoundtables from './locales/zh-CN/agent/roundtables.json';
+import zhCNAgentFlows from './locales/zh-CN/agent/flows.json';
+
+import enUSAgentNavigation from './locales/en-US/agent/navigation.json';
+import enUSAgentExpertTeam from './locales/en-US/agent/expert-team.json';
+import enUSAgentKnowledge from './locales/en-US/agent/knowledge.json';
+import enUSAgentAgentsModule from './locales/en-US/agent/agents.json';
+import enUSAgentToolsModule from './locales/en-US/agent/tools.json';
+import enUSAgentTasks from './locales/en-US/agent/tasks.json';
+import enUSAgentSkillsModule from './locales/en-US/agent/skills.json';
+import enUSAgentCrews from './locales/en-US/agent/crews.json';
+import enUSAgentRoundtables from './locales/en-US/agent/roundtables.json';
+import enUSAgentFlows from './locales/en-US/agent/flows.json';
+
+import ruRUAgentNavigation from './locales/ru-RU/agent/navigation.json';
+import ruRUAgentExpertTeam from './locales/ru-RU/agent/expert-team.json';
+import ruRUAgentKnowledge from './locales/ru-RU/agent/knowledge.json';
+import ruRUAgentAgentsModule from './locales/ru-RU/agent/agents.json';
+import ruRUAgentToolsModule from './locales/ru-RU/agent/tools.json';
+import ruRUAgentTasks from './locales/ru-RU/agent/tasks.json';
+import ruRUAgentSkillsModule from './locales/ru-RU/agent/skills.json';
+import ruRUAgentCrews from './locales/ru-RU/agent/crews.json';
+import ruRUAgentRoundtables from './locales/ru-RU/agent/roundtables.json';
+import ruRUAgentFlows from './locales/ru-RU/agent/flows.json';
+
 export const i18n = createI18n({
-  legacy: false, // 使用 Composition API 模式
-  locale: 'zh-CN', // 默认语言
-  fallbackLocale: 'zh-CN', // 回退语言
+  legacy: false,
+  locale: 'zh-CN',
+  fallbackLocale: 'zh-CN',
   messages: {
     'zh-CN': {},
     'en-US': {},
     'ru-RU': {},
   },
-  missingWarn: false, // 禁用缺失警告
-  fallbackWarn: false, // 禁用回退警告
-  silentTranslationWarn: true, // 静默翻译警告
+  missingWarn: false,
+  fallbackWarn: false,
+  silentTranslationWarn: true,
 });
 
-// 加载 i18n 消息的函数 - 在扩展注册后调用
 export function loadI18nMessages() {
-  // 加载静态翻译（agent 模块）
-  // 注意：需要保持 agent 命名空间，因为页面使用 $t('agent.skills.xxx')
   const staticTranslations = {
     'zh-CN': {
       agent: {
         ...(zhCNAgentSkills as any).agent,
         ...(zhCNAgentTools as any).agent,
         ...(zhCNAgentAgents as any).agent,
+        navigation: zhCNAgentNavigation,
+        expertTeam: zhCNAgentExpertTeam,
+        knowledge: zhCNAgentKnowledge,
+        agents: zhCNAgentAgentsModule,
+        tools: zhCNAgentToolsModule,
+        tasks: zhCNAgentTasks,
+        skills: zhCNAgentSkillsModule,
+        crews: zhCNAgentCrews,
+        roundtables: zhCNAgentRoundtables,
+        flows: zhCNAgentFlows
       }
     },
     'en-US': {
@@ -49,6 +81,16 @@ export function loadI18nMessages() {
         ...(enUSAgentSkills as any).agent,
         ...(enUSAgentTools as any).agent,
         ...(enUSAgentAgents as any).agent,
+        navigation: enUSAgentNavigation,
+        expertTeam: enUSAgentExpertTeam,
+        knowledge: enUSAgentKnowledge,
+        agents: enUSAgentAgentsModule,
+        tools: enUSAgentToolsModule,
+        tasks: enUSAgentTasks,
+        skills: enUSAgentSkillsModule,
+        crews: enUSAgentCrews,
+        roundtables: enUSAgentRoundtables,
+        flows: enUSAgentFlows
       }
     },
     'ru-RU': {
@@ -56,13 +98,20 @@ export function loadI18nMessages() {
         ...(ruRUAgentSkills as any).agent,
         ...(ruRUAgentTools as any).agent,
         ...(ruRUAgentAgents as any).agent,
+        navigation: ruRUAgentNavigation,
+        expertTeam: ruRUAgentExpertTeam,
+        knowledge: ruRUAgentKnowledge,
+        agents: ruRUAgentAgentsModule,
+        tools: ruRUAgentToolsModule,
+        tasks: ruRUAgentTasks,
+        skills: ruRUAgentSkillsModule,
+        crews: ruRUAgentCrews,
+        roundtables: ruRUAgentRoundtables,
+        flows: ruRUAgentFlows
       }
     }
   };
 
-  console.log('[Vue I18n] Loading static translations:', staticTranslations);
-
-  // 先加载静态翻译
   (['zh-CN', 'en-US', 'ru-RU'] as const).forEach((locale) => {
     const localeData = staticTranslations[locale];
     if (localeData) {
@@ -71,25 +120,8 @@ export function loadI18nMessages() {
       i18n.global.setLocaleMessage(locale, mergedMessages);
     }
   });
-
-  // 再加载扩展 i18n（覆盖静态翻译）
-  const extI18n: any = getExtensionI18n();
-  console.log('[Vue I18n] Loading messages from extension:', extI18n);
-  
-  if (extI18n) {
-    ['zh-CN', 'en-US', 'ru-RU'].forEach((locale) => {
-      const localeData = extI18n[locale];
-      if (localeData) {
-        const currentMessages = i18n.global.getLocaleMessage(locale) || {};
-        const mergedMessages = deepMerge(currentMessages, localeData);
-        i18n.global.setLocaleMessage(locale, mergedMessages);
-        console.log(`[Vue I18n] Loaded messages for ${locale}`, mergedMessages);
-      }
-    });
-  }
 }
 
-// 深度合并对象
 function deepMerge(target: any, source: any): any {
   if (!source) return target;
   if (!target) return source;
@@ -107,7 +139,6 @@ function deepMerge(target: any, source: any): any {
   return result;
 }
 
-// 立即尝试加载（如果扩展已注册）
 loadI18nMessages();
 
 export default i18n;

@@ -713,23 +713,10 @@ const rules = {
 
 
 const categoryOptions = computed(() => [
-
-
-  { title: t('agent.skills.categories.general'), value: 'general' },
-
-
-  { title: t('agent.skills.categories.programming'), value: 'programming' },
-
-
-  { title: t('agent.skills.categories.analysis'), value: 'analysis' },
-
-
-  { title: t('agent.skills.categories.creative'), value: 'creative' },
-
-
-  { title: t('agent.skills.categories.other'), value: 'other' },
-
-
+  { title: t('agent.skills.sources.astrbot'), value: 'astrbot' },
+  { title: t('agent.skills.sources.claudcode'), value: 'claudcode' },
+  { title: t('agent.skills.sources.crewai'), value: 'crewai' },
+  { title: t('agent.skills.sources.custom'), value: 'custom' },
 ]);
 
 

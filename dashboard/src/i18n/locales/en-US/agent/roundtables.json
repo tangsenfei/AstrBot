@@ -1,0 +1,149 @@
+{
+  "title": "Roundtables",
+  "subtitle": "Organize structured multi-agent discussions and generate meeting minutes",
+  "buttons": {
+    "add": "New Roundtable",
+    "refresh": "Refresh"
+  },
+  "search": {
+    "placeholder": "Search roundtables..."
+  },
+  "tabs": {
+    "all": "All",
+    "pending": "Pending",
+    "running": "Running",
+    "completed": "Completed",
+    "failed": "Failed"
+  },
+  "empty": "No roundtables yet, click the button above to create",
+  "mode": {
+    "moderated": "Moderated",
+    "free": "Free Discussion"
+  },
+  "status": {
+    "pending": "Pending",
+    "running": "Running",
+    "completed": "Completed",
+    "failed": "Failed"
+  },
+  "table": {
+    "name": "Name",
+    "topic": "Topic",
+    "mode": "Mode",
+    "rounds": "Rounds",
+    "status": "Status",
+    "createdAt": "Created",
+    "actions": "Actions"
+  },
+  "actions": {
+    "execute": "Execute",
+    "viewResult": "View Result",
+    "back": "Back to List",
+    "export": "Export Result"
+  },
+  "notFound": "Roundtable not found or has been deleted",
+  "delete": {
+    "title": "Delete Roundtable",
+    "confirm": "Are you sure you want to delete roundtable \"{name}\"? This action cannot be undone."
+  },
+  "editor": {
+    "addTitle": "New Roundtable",
+    "editTitle": "Edit Roundtable",
+    "basicInfo": "Basic Information",
+    "basic": {
+      "name": "Meeting Name",
+      "nameHint": "Set an easily identifiable name for the roundtable",
+      "topic": "Discussion Topic",
+      "topicHint": "Describe the core topic of this roundtable",
+      "deliverable": "Deliverable Description",
+      "deliverableHint": "Describe the expected output format"
+    },
+    "participants": {
+      "title": "Participants",
+      "hint": "Select agents to participate in the discussion, at least 2",
+      "select": "Select Participants",
+      "minWarning": "Please select at least 2 participants"
+    },
+    "moderator": {
+      "title": "Moderator Settings",
+      "enabled": "With Moderator",
+      "enabledHint": "Designate a moderator to guide the discussion",
+      "disabled": "No Moderator",
+      "disabledHint": "Participants discuss freely without a fixed moderator",
+      "select": "Select Moderator"
+    },
+    "meetingType": {
+      "title": "Meeting Type",
+      "select": "Select Meeting Type"
+    },
+    "materials": {
+      "title": "Meeting Materials",
+      "none": "No Materials",
+      "url": "URL Reference",
+      "file": "File Materials",
+      "manual": "Manual Input",
+      "noneHint": "No additional materials",
+      "urlLabel": "Reference Link",
+      "urlHint": "Enter reference links related to the meeting topic",
+      "fileLabel": "Upload File",
+      "fileHint": "Supports PDF, Word, Markdown, TXT formats",
+      "fileContent": "File Content",
+      "manualLabel": "Additional Info",
+      "manualHint": "The moderator will guide you to supplement relevant information based on the meeting type",
+      "manualHint2": "Enter supplementary information for participants",
+      "answerLabel": "Your Answer (optional)"
+    },
+    "export": {
+      "title": "Export Format",
+      "format": "Select Export Format"
+    },
+    "rounds": {
+      "title": "Discussion Rounds",
+      "hint": "{count} rounds of discussion"
+    },
+    "advanced": {
+      "title": "Advanced Configuration",
+      "maxLength": "Speech Length Limit",
+      "maxLengthHint": "Limit the maximum characters per speech",
+      "outputFormat": "Output Format",
+      "outputFormatHint": "Select the output format for meeting minutes",
+      "formatMarkdown": "Markdown",
+      "formatJson": "JSON",
+      "formatText": "Plain Text"
+    },
+    "validation": {
+      "required": "This field is required",
+      "minParticipants": "Please select at least 2 participants",
+      "moderatorRequired": "A moderator must be specified in moderated mode"
+    }
+  },
+  "execution": {
+    "progressTitle": "Execution Progress",
+    "currentRound": "Round {current} / {total}",
+    "discussionRecords": "Discussion Records",
+    "round": "Round {round}",
+    "moderator": "Moderator",
+    "basicInfo": "Meeting Info",
+    "summary": "Meeting Minutes",
+    "conclusions": "Key Conclusions",
+    "actionItems": "Action Items",
+    "decisions": "Decision Points",
+    "noSummary": "No meeting minutes yet",
+    "noRecords": "No discussion records yet",
+    "readyTitle": "Roundtable Ready",
+    "readyDesc": "Click the start button to begin the multi-agent discussion",
+    "noError": "Unknown error",
+    "liveDiscussion": "Live Discussion",
+    "live": "Live updating",
+    "opening": "Opening",
+    "speech": "Speech",
+    "thinking": "Thinking...",
+    "waitingStart": "Waiting to start..."
+  },
+  "messages": {
+    "deleteError": "Delete failed",
+    "saveSuccess": "Saved successfully",
+    "saveFailed": "Save failed",
+    "executionError": "Execution failed"
+  }
+}

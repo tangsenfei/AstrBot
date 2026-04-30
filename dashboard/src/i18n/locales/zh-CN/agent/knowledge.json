@@ -1,0 +1,92 @@
+{
+  "title": "知识库",
+  "subtitle": "管理 AI 助手的知识库，支持多种知识源导入",
+  "buttons": {
+    "add": "添加知识库",
+    "refresh": "刷新"
+  },
+  "search": {
+    "placeholder": "搜索知识库..."
+  },
+  "stats": {
+    "total": "共 {count} 个知识库"
+  },
+  "empty": "暂无知识库，请点击上方按钮创建",
+  "status": {
+    "active": "已激活",
+    "empty": "空知识库"
+  },
+  "sources": {
+    "text": "文本知识",
+    "file": "文件知识",
+    "url": "URL 知识",
+    "database": "数据库知识"
+  },
+  "card": {
+    "noDescription": "暂无描述",
+    "sources": "{count} 个知识源",
+    "noModel": "未配置嵌入模型",
+    "addSource": "添加知识源",
+    "test": "检索测试",
+    "edit": "编辑",
+    "delete": "删除"
+  },
+  "editor": {
+    "addTitle": "添加知识库",
+    "editTitle": "编辑知识库",
+    "basicInfo": "基本信息",
+    "name": "知识库名称",
+    "nameHint": "为知识库设置一个易于识别的名称",
+    "description": "描述",
+    "descriptionHint": "描述知识库的用途和内容",
+    "embeddingConfig": "嵌入模型配置",
+    "provider": "嵌入模型提供商",
+    "model": "嵌入模型",
+    "collectionName": "向量集合名称",
+    "collectionNameHint": "用于存储向量数据的集合名称，可自动生成",
+    "knowledgeSources": "知识源管理",
+    "textContent": "文本内容",
+    "textContentPlaceholder": "请输入要添加的文本内容...",
+    "addTextSource": "添加文本",
+    "selectFiles": "选择文件",
+    "fileHint": "支持 PDF、Markdown、TXT、Word 等格式",
+    "uploadFiles": "上传文件",
+    "url": "URL 地址",
+    "urlPlaceholder": "https://example.com/article",
+    "selector": "内容选择器",
+    "selectorPlaceholder": "#content 或 .article-body",
+    "selectorHint": "可选，用于提取页面特定区域的内容",
+    "fetchUrl": "抓取内容",
+    "dbType": "数据库类型",
+    "connectionString": "连接字符串",
+    "connectionStringPlaceholder": "postgresql://user:pass@host:port/db",
+    "query": "查询语句",
+    "queryPlaceholder": "SELECT content FROM documents",
+    "importFromDb": "从数据库导入",
+    "addedSources": "已添加的知识源",
+    "validation": {
+      "required": "此字段为必填项"
+    }
+  },
+  "retrieval": {
+    "title": "检索测试",
+    "query": "查询内容",
+    "queryPlaceholder": "输入要检索的内容...",
+    "topK": "返回数量",
+    "search": "搜索",
+    "results": "检索结果",
+    "score": "相似度",
+    "noResults": "未找到相关内容"
+  },
+  "delete": {
+    "title": "删除知识库",
+    "confirm": "确定要删除知识库 \"{name}\" 吗？ 此操作不可恢复。"
+  },
+  "messages": {
+    "deleteError": "删除失败",
+    "retrievalError": "检索失败",
+    "uploadError": "文件上传失败",
+    "fetchError": "URL 抓取失败",
+    "dbImportError": "数据库导入失败"
+  }
+}

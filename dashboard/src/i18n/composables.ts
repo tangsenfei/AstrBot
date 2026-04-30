@@ -1,7 +1,6 @@
 import { ref, computed } from 'vue';
 import { translations as staticTranslations } from './translations';
 import type { Locale } from './types';
-import { getExtensionI18n } from '../extensions';
 
 // 全局状态
 const currentLocale = ref<Locale>('zh-CN');
@@ -24,40 +23,19 @@ function loadTranslations(locale: Locale) {
   try {
     const data = staticTranslations[locale];
     if (data) {
-      // 创建新对象，确保响应式更新
-      const mergedData = { ...data };
-      // 合并扩展 i18n
-      const extensionI18n = getExtensionI18n();
-      if (extensionI18n && extensionI18n[locale as keyof typeof extensionI18n]) {
-        deepMerge(mergedData, extensionI18n[locale as keyof typeof extensionI18n]);
-      }
-      translations.value = mergedData;
+      translations.value = { ...data };
     } else {
       console.warn(`Translations not found for locale: ${locale}`);
-      // 回退到中文
       if (locale !== 'zh-CN') {
         console.log('Falling back to zh-CN');
-        const mergedData = { ...staticTranslations['zh-CN'] };
-        // 合并扩展 i18n
-        const extensionI18n = getExtensionI18n();
-        if (extensionI18n && extensionI18n['zh-CN' as keyof typeof extensionI18n]) {
-          deepMerge(mergedData, extensionI18n['zh-CN' as keyof typeof extensionI18n]);
-        }
-        translations.value = mergedData;
+        translations.value = { ...staticTranslations['zh-CN'] };
       }
     }
   } catch (error) {
     console.error(`Failed to load translations for ${locale}:`, error);
-    // 回退到中文
     if (locale !== 'zh-CN') {
       console.log('Falling back to zh-CN');
-      const mergedData = { ...staticTranslations['zh-CN'] };
-      // 合并扩展 i18n
-      const extensionI18n = getExtensionI18n();
-      if (extensionI18n && extensionI18n['zh-CN' as keyof typeof extensionI18n]) {
-        deepMerge(mergedData, extensionI18n['zh-CN' as keyof typeof extensionI18n]);
-      }
-      translations.value = mergedData;
+      translations.value = { ...staticTranslations['zh-CN'] };
     }
   }
 }

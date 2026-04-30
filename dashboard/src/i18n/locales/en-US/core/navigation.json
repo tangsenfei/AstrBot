@@ -1,8 +1,8 @@
 {
   "welcome": "Welcome",
-  "dashboard": "Dashboard",
-  "platforms": "Platforms",
-  "providers": "Providers",
+  "dashboard": "Overview",
+  "platforms": "Channels",
+  "providers": "Models",
   "commands": "Commands",
   "persona": "Persona",
   "subagent": "SubAgents",

@@ -13,13 +13,11 @@ import { loader } from '@guolao/vue-monaco-editor'
 import axios from 'axios';
 import { waitForRouterReadyInBackground } from './utils/routerReadiness.mjs';
 
-// 导入扩展初始化（必须在 router 之前）
-import './extensions-init';
+document.title = 'NiceBot - 智能助手平台';
 
-// 导入 router（在扩展初始化之后）
 import { router } from './router';
 
-// 在扩展初始化后加载 vue-i18n 消息
+// 加载 vue-i18n 消息
 loadI18nMessages();
 
 // 初始化新的i18n系统，等待完成后再挂载应用

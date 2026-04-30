@@ -8,13 +8,6 @@ from astrbot.core.agent.runners.coze.coze_agent_runner import CozeAgentRunner
 from astrbot.core.agent.runners.dashscope.dashscope_agent_runner import (
     DashscopeAgentRunner,
 )
-from astrbot.core.agent.runners.deerflow.constants import (
-    DEERFLOW_AGENT_RUNNER_PROVIDER_ID_KEY,
-    DEERFLOW_PROVIDER_TYPE,
-)
-from astrbot.core.agent.runners.deerflow.deerflow_agent_runner import (
-    DeerFlowAgentRunner,
-)
 from astrbot.core.agent.runners.dify.dify_agent_runner import DifyAgentRunner
 from astrbot.core.astr_agent_hooks import MAIN_AGENT_HOOKS
 from astrbot.core.message.components import Image
@@ -48,7 +41,6 @@ AGENT_RUNNER_TYPE_KEY = {
     "dify": "dify_agent_runner_provider_id",
     "coze": "coze_agent_runner_provider_id",
     "dashscope": "dashscope_agent_runner_provider_id",
-    DEERFLOW_PROVIDER_TYPE: DEERFLOW_AGENT_RUNNER_PROVIDER_ID_KEY,
 }
 THIRD_PARTY_RUNNER_ERROR_EXTRA_KEY = "_third_party_runner_error"
 STREAM_CONSUMPTION_CLOSE_TIMEOUT_SEC = 30
@@ -334,8 +326,6 @@ class ThirdPartyAgentSubStage(Stage):
             runner = CozeAgentRunner[AstrAgentContext]()
         elif self.runner_type == "dashscope":
             runner = DashscopeAgentRunner[AstrAgentContext]()
-        elif self.runner_type == DEERFLOW_PROVIDER_TYPE:
-            runner = DeerFlowAgentRunner[AstrAgentContext]()
         else:
             raise ValueError(
                 f"Unsupported third party agent runner type: {self.runner_type}",

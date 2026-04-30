@@ -12,6 +12,11 @@ from typing import TYPE_CHECKING, Any
 
 from astrbot.core import logger
 
+from astrbot.builtin_stars.agent_system.services.crewai_integration import (
+    CREWAI_AVAILABLE,
+    CrewAIAgentFactory,
+)
+
 if TYPE_CHECKING:
     from ..database import Database
     from astrbot.core.star.context import Context
@@ -25,9 +30,10 @@ from ..models import (
 class FlowService:
     """Flow 管理服务"""
 
-    def __init__(self, db: "Database", context: "Context | None" = None):
+    def __init__(self, db: "Database", context: "Context | None" = None, crew_service=None):
         self.db = db
         self._context = context
+        self._crew_service = crew_service
 
     @property
     def context(self) -> "Context | None":
@@ -269,6 +275,198 @@ class FlowService:
         self.db.delete("flows", where="id = ?", where_params=(flow_id,))
         logger.info(f"Deleted flow: {flow_id}")
         return True
+
+    async def _execute_crew_node(self, crew_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
+        """执行 Crew 节点
+
+        优先使用 CrewAI Crew 执行，降级到模拟执行。
+
+        Args:
+            crew_id: Crew ID
+            input_data: 输入数据
+
+        Returns:
+            Crew 执行结果
+        """
+        if CREWAI_AVAILABLE and self._context:
+            try:
+                return await self._execute_crew_with_crewai(crew_id, input_data)
+            except Exception as e:
+                logger.warning(f"CrewAI Crew execution failed, falling back to crew_service: {e}")
+
+        if self._crew_service:
+            try:
+                crew_result = await self._crew_service.execute_crew(crew_id, input_data)
+                return {
+                    "crew_id": crew_id,
+                    "success": crew_result.get("success", True),
+                    "result": crew_result.get("output", {}).get("final_output", ""),
+                    "output": crew_result.get("output", {}),
+                    "tokens": crew_result.get("output", {}).get("tokens", {"input": 0, "output": 0, "total": 0}),
+                }
+            except Exception as e:
+                logger.warning(f"Crew service execution also failed: {e}")
+
+        return {
+            "crew_id": crew_id,
+            "success": True,
+            "result": f"[模拟] Crew {crew_id} 执行完成（CrewAI 和 CrewService 均不可用）",
+            "input": input_data,
+        }
+
+    async def _execute_crew_with_crewai(self, crew_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
+        """使用 CrewAI Crew 执行"""
+        from ..models import (
+            Crew, CrewTask, ProcessType, Agent as AgentModel,
+            AgentType, PlanningEffort,
+        )
+
+        crew_row = self.db.select_one("crews", where="id = ?", where_params=(crew_id,))
+        if not crew_row:
+            raise ValueError(f"Crew '{crew_id}' 不存在")
+
+        crew = self._row_to_crew(crew_row)
+
+        crewai_agents = []
+        agent_map = {}
+        for agent_id in crew.agents:
+            agent_row = self.db.select_one("agents", where="id = ?", where_params=(agent_id,))
+            if not agent_row:
+                raise ValueError(f"Agent '{agent_id}' 不存在")
+
+            agent_model = self._row_to_agent_model(agent_row)
+            crewai_agent = CrewAIAgentFactory.create_agent(agent_model, self._context, disable_planning=True)
+            if not crewai_agent:
+                raise ValueError(f"无法为 Agent '{agent_id}' 创建 CrewAI Agent")
+
+            crewai_agents.append(crewai_agent)
+            agent_map[agent_id] = crewai_agent
+
+        tasks = self._get_crew_tasks(crew.tasks)
+        crewai_tasks = []
+        task_map = {}
+
+        for task_model in tasks:
+            agent = None
+            if task_model.agent_id and task_model.agent_id in agent_map:
+                agent = agent_map[task_model.agent_id]
+            elif crewai_agents:
+                agent = crewai_agents[0]
+
+            context_tasks = []
+            for ctx_id in task_model.context:
+                if ctx_id in task_map:
+                    context_tasks.append(task_map[ctx_id])
+
+            crewai_task = CrewAIAgentFactory.create_task(
+                task_model, agent=agent, context_tasks=context_tasks if context_tasks else None
+            )
+            if crewai_task:
+                crewai_tasks.append(crewai_task)
+                task_map[task_model.id] = crewai_task
+
+        if not crewai_tasks:
+            raise ValueError("没有可执行的任务")
+
+        crewai_crew = CrewAIAgentFactory.create_crew(
+            crew, crewai_agents, crewai_tasks, self._context
+        )
+        if not crewai_crew:
+            raise ValueError("无法创建 CrewAI Crew")
+
+        crew_output = await crewai_crew.kickoff_async(inputs=input_data)
+
+        response_text = ""
+        if hasattr(crew_output, 'raw') and crew_output.raw:
+            response_text = crew_output.raw
+        elif hasattr(crew_output, '__str__'):
+            response_text = str(crew_output)
+
+        tokens = {"input": 0, "output": 0, "total": 0}
+        if hasattr(crew_output, 'token_usage') and crew_output.token_usage:
+            tokens["input"] = getattr(crew_output.token_usage, 'prompt_tokens', 0) or 0
+            tokens["output"] = getattr(crew_output.token_usage, 'completion_tokens', 0) or 0
+            tokens["total"] = getattr(crew_output.token_usage, 'total_tokens', 0) or 0
+
+        return {
+            "crew_id": crew_id,
+            "success": True,
+            "result": response_text,
+            "tokens": tokens,
+            "crewai_execution": True,
+        }
+
+    def _row_to_crew(self, row: dict[str, Any]) -> Crew:
+        """将数据库行转换为 Crew 对象"""
+        return Crew(
+            id=row["id"],
+            name=row["name"],
+            description=row.get("description", ""),
+            agents=self._parse_json(row.get("agents", "[]")),
+            tasks=self._parse_json(row.get("tasks", "[]")),
+            process=ProcessType(row.get("process", "sequential")),
+            manager_llm=row.get("manager_llm"),
+            memory=bool(row.get("memory", 0)),
+            cache=bool(row.get("cache", 1)),
+            max_rpm=row.get("max_rpm"),
+            share_agent_output=bool(row.get("share_agent_output", 1)),
+            verbose=bool(row.get("verbose", 0)),
+            enabled=bool(row.get("enabled", 1)),
+            metadata=self._parse_json(row.get("metadata", "{}")),
+            created_at=datetime.fromisoformat(row["created_at"]) if "created_at" in row else datetime.now(),
+            updated_at=datetime.fromisoformat(row["updated_at"]) if "updated_at" in row else datetime.now(),
+        )
+
+    def _row_to_agent_model(self, row: dict[str, Any]) -> AgentModel:
+        """将数据库行转换为 Agent 数据模型"""
+        agent_type_val = row.get("agent_type", "custom")
+        if agent_type_val in (None, ''):
+            agent_type_val = "custom"
+
+        return AgentModel(
+            id=row["id"],
+            name=row["name"],
+            role=row.get("role", ""),
+            goal=row.get("goal", ""),
+            backstory=row.get("backstory", ""),
+            tools=self._parse_json(row.get("tools", "[]")),
+            skills=self._parse_json(row.get("skills", "[]")),
+            knowledge_id=row.get("knowledge_id"),
+            provider_id=row.get("provider_id"),
+            model_name=row.get("model_name"),
+            llm_config=self._parse_json(row.get("llm_config", "{}")),
+            memory_config=self._parse_json(row.get("memory_config", "{}")),
+            planning=bool(row.get("planning", 0)),
+            planning_effort=PlanningEffort(row.get("planning_effort", "medium")),
+            max_iter=row.get("max_iter", 20),
+            max_rpm=row.get("max_rpm"),
+            verbose=bool(row.get("verbose", 0)),
+            allow_delegation=bool(row.get("allow_delegation", 0)),
+            enabled=bool(row.get("enabled", 1)),
+            agent_type=AgentType(agent_type_val),
+            metadata=self._parse_json(row.get("metadata", "{}")),
+            created_at=datetime.fromisoformat(row["created_at"]) if "created_at" in row else datetime.now(),
+            updated_at=datetime.fromisoformat(row["updated_at"]) if "updated_at" in row else datetime.now(),
+        )
+
+    def _get_crew_tasks(self, task_ids: list[str]) -> list[CrewTask]:
+        """获取 Crew 的任务列表"""
+        tasks = []
+        for task_id in task_ids:
+            row = self.db.select_one("crew_tasks", where="id = ?", where_params=(task_id,))
+            if row:
+                tasks.append(CrewTask(
+                    id=row["id"],
+                    name=row["name"],
+                    description=row.get("description", ""),
+                    expected_output=row.get("expected_output", ""),
+                    agent_id=row.get("agent_id"),
+                    tools=self._parse_json(row.get("tools", "[]")),
+                    context=self._parse_json(row.get("context", "[]")),
+                    async_execution=bool(row.get("async_execution", 0)),
+                    config=self._parse_json(row.get("config", "{}")),
+                ))
+        return tasks
 
     def validate_flow(self, flow_id: str) -> dict[str, Any]:
         """验证 Flow 配置
@@ -869,23 +1067,18 @@ class FlowService:
                 }
 
             elif node.type == FlowNodeType.CREW:
-                # Crew 执行节点
                 crew_id = node.config.get("crew_id")
                 if not crew_id:
                     raise ValueError(f"Crew 节点 '{node.name}' 缺少 crew_id 配置")
 
-                # 获取 Crew
                 crew_row = self.db.select_one("crews", where="id = ?", where_params=(crew_id,))
                 if not crew_row:
                     raise ValueError(f"Crew '{crew_id}' 不存在")
 
-                # 执行 Crew（简化版，实际应调用 CrewService）
-                result["success"] = True
-                result["output"] = {
-                    "crew_id": crew_id,
-                    "result": f"[模拟] Crew {crew_id} 执行完成",
-                    "input": input_data,
-                }
+                crew_result = await self._execute_crew_node(crew_id, input_data)
+
+                result["success"] = crew_result.get("success", True)
+                result["output"] = crew_result
 
             elif node.type == FlowNodeType.HUMAN:
                 # 人工反馈节点

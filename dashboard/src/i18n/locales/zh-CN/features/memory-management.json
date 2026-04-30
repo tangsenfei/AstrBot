@@ -1,0 +1,43 @@
+{
+  "title": "记忆管理",
+  "description": "管理 AI 助手的短期和长期记忆",
+  "tabs": {
+    "overview": "概览",
+    "short_term": "短期记忆",
+    "long_term": "长期记忆",
+    "settings": "设置"
+  },
+  "stats": {
+    "short_term": "短期记忆条目",
+    "long_term": "长期记忆条目",
+    "users": "用户数量"
+  },
+  "short_term": {
+    "title": "短期记忆",
+    "hint": "短期记忆用于存储当前对话上下文中的临时信息，会在一定时间后自动清理。"
+  },
+  "long_term": {
+    "title": "长期记忆",
+    "hint": "长期记忆用于持久化存储重要信息，可跨会话使用。"
+  },
+  "settings": {
+    "title": "记忆设置",
+    "enabled": "启用记忆功能",
+    "max_short_term": "短期记忆最大条目数",
+    "max_long_term": "长期记忆最大条目数",
+    "retention_days": "记忆保留天数"
+  },
+  "table": {
+    "user": "用户",
+    "content": "内容",
+    "category": "分类",
+    "created": "创建时间",
+    "actions": "操作"
+  },
+  "actions": {
+    "refresh": "刷新",
+    "export": "导出",
+    "import": "导入",
+    "save": "保存"
+  }
+}

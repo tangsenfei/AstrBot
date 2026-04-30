@@ -1,0 +1,28 @@
+{
+  "title": "Evolution Center",
+  "description": "AI assistant self-learning and capability evolution management",
+  "evolution_tasks": {
+    "title": "Evolution Tasks",
+    "empty": "No evolution tasks yet, click the button above to create"
+  },
+  "capabilities": {
+    "title": "Capability Switches"
+  },
+  "stats": {
+    "title": "Statistics",
+    "total_tasks": "Total Tasks",
+    "completed": "Completed",
+    "improvements": "Improvements"
+  },
+  "status": {
+    "pending": "Pending",
+    "running": "Running",
+    "completed": "Completed",
+    "failed": "Failed"
+  },
+  "actions": {
+    "create_task": "Create Evolution Task",
+    "view_detail": "View Details",
+    "cancel": "Cancel"
+  }
+}

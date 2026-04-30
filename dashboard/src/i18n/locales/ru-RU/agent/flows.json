@@ -1,0 +1,157 @@
+{
+  "title": "Flow Orchestration",
+  "subtitle": "Visually orchestrate agent workflows",
+  "buttons": {
+    "add": "New Flow",
+    "refresh": "Refresh",
+    "save": "Save",
+    "run": "Run",
+    "more": "More",
+    "import": "Import",
+    "export": "Export"
+  },
+  "search": {
+    "placeholder": "Search flows..."
+  },
+  "empty": "No flows yet, click the button above to create",
+  "status": {
+    "draft": "Draft",
+    "active": "Active",
+    "archived": "Archived",
+    "enabled": "Enabled",
+    "disabled": "Disabled"
+  },
+  "tabs": {
+    "all": "All",
+    "enabled": "Enabled",
+    "disabled": "Disabled"
+  },
+  "card": {
+    "noDescription": "No description",
+    "nodes": "Nodes",
+    "edges": "Edges",
+    "edit": "Edit",
+    "execute": "Execute",
+    "copy": "Copy",
+    "enable": "Enable",
+    "disable": "Disable",
+    "delete": "Delete"
+  },
+  "import": {
+    "title": "Import Flow",
+    "selectFile": "Select File",
+    "hint": "Support importing JSON format flow definition files",
+    "button": "Import"
+  },
+  "execute": {
+    "title": "Execute Flow",
+    "hint": "Enter initial data, flow \"{name}\" will start execution",
+    "input": "Initial Input",
+    "button": "Start Execution"
+  },
+  "canvas": {
+    "title": "Flow Canvas",
+    "zoomIn": "Zoom In",
+    "zoomOut": "Zoom Out",
+    "fitView": "Fit View",
+    "reset": "Reset"
+  },
+  "nodes": {
+    "start": "Start",
+    "crew": "Crew Execution",
+    "router": "Conditional Router",
+    "human": "Human Approval",
+    "listen": "Listen Event",
+    "and": "AND Gate",
+    "or": "OR Gate"
+  },
+  "palette": {
+    "title": "Node Palette",
+    "dragHint": "Drag nodes to the canvas",
+    "search": "Search nodes...",
+    "categories": {
+      "start": "Start Nodes",
+      "listen": "Listen Nodes",
+      "router": "Router Nodes",
+      "parallel": "Parallel Nodes",
+      "crew": "Crew Nodes",
+      "human": "Human Nodes"
+    },
+    "nodes": {
+      "start": { "label": "Start", "description": "Flow starting point" },
+      "listen": { "label": "Listen", "description": "Listen for messages or events" },
+      "router": { "label": "Router", "description": "Conditional routing branches" },
+      "and": { "label": "AND", "description": "Wait for all branches to complete" },
+      "or": { "label": "OR", "description": "Wait for any branch to complete" },
+      "crew": { "label": "Crew", "description": "Execute crew task" },
+      "human": { "label": "Human", "description": "Wait for human approval" }
+    }
+  },
+  "properties": {
+    "title": "Properties",
+    "noSelection": "Select a node to configure properties",
+    "basic": "Basic Configuration",
+    "nodeName": "Node Name",
+    "startHint": "Start node is the flow's entry point",
+    "listenConfig": "Listen Configuration",
+    "eventType": "Event Type",
+    "condition": "Condition Expression",
+    "conditionHint": "Enter a condition expression that returns true or false",
+    "routerConfig": "Router Configuration",
+    "routerHint": "Configure conditional branches",
+    "branches": "Branch List",
+    "addBranch": "Add Branch",
+    "branch": "Branch",
+    "branchName": "Branch Name",
+    "branchCondition": "Branch Condition",
+    "andHint": "AND Gate: Wait for all input branches to complete",
+    "orHint": "OR Gate: Wait for any branch to complete",
+    "crewConfig": "Crew Configuration",
+    "selectCrew": "Select Crew",
+    "inputMapping": "Input Mapping",
+    "inputMappingHint": "Configure input parameter mapping",
+    "humanConfig": "Human Configuration",
+    "prompt": "Prompt",
+    "promptHint": "Prompt message to display to the user",
+    "options": "Options",
+    "optionsHint": "Optional choices, one per line",
+    "timeout": "Timeout",
+    "seconds": "seconds",
+    "deleteNode": "Delete Node",
+    "eventTypes": {
+      "message": "Message Event",
+      "command": "Command Event",
+      "schedule": "Schedule Event"
+    }
+  },
+  "editor": {
+    "addTitle": "New Flow",
+    "editTitle": "Edit Flow",
+    "flowName": "Flow Name",
+    "validate": "Validate",
+    "simulate": "Simulate",
+    "nodes": "Nodes",
+    "edges": "Edges",
+    "validation": {
+      "noStart": "Flow must have a start node",
+      "multipleStart": "Flow can only have one start node",
+      "invalidEdge": "Invalid connections exist"
+    }
+  },
+  "delete": {
+    "title": "Delete Flow",
+    "confirm": "Are you sure you want to delete flow \"{name}\"? "
+  },
+  "messages": {
+    "loadFailed": "Load failed",
+    "saveSuccess": "Saved successfully",
+    "saveFailed": "Save failed",
+    "deleteSuccess": "Deleted successfully",
+    "deleteFailed": "Delete failed",
+    "runSuccess": "Flow started",
+    "copyError": "Copy failed",
+    "executeError": "Execution failed",
+    "importError": "Import failed",
+    "runFailed": "Start failed"
+  }
+}

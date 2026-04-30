@@ -40,6 +40,22 @@ import zhCNSubagent from './locales/zh-CN/features/subagent.json';
 import zhCNWelcome from './locales/zh-CN/features/welcome.json';
 import zhCNAgentSkills from './locales/zh-CN/features/agent-skills.json';
 import zhCNAgentTools from './locales/zh-CN/features/agent-tools.json';
+import zhCNToolProvider from './locales/zh-CN/features/tool-provider.json';
+import zhCNTaskManagement from './locales/zh-CN/features/task-management.json';
+import zhCNMemoryManagement from './locales/zh-CN/features/memory-management.json';
+import zhCNEvolutionCenter from './locales/zh-CN/features/evolution-center.json';
+import zhCNNicebotNavigation from './locales/zh-CN/features/nicebot-navigation.json';
+
+import zhCNAgentNavigation from './locales/zh-CN/agent/navigation.json';
+import zhCNAgentExpertTeam from './locales/zh-CN/agent/expert-team.json';
+import zhCNAgentKnowledge from './locales/zh-CN/agent/knowledge.json';
+import zhCNAgentAgents from './locales/zh-CN/agent/agents.json';
+import zhCNAgentToolsModule from './locales/zh-CN/agent/tools.json';
+import zhCNAgentTasks from './locales/zh-CN/agent/tasks.json';
+import zhCNAgentSkillsModule from './locales/zh-CN/agent/skills.json';
+import zhCNAgentCrews from './locales/zh-CN/agent/crews.json';
+import zhCNAgentRoundtables from './locales/zh-CN/agent/roundtables.json';
+import zhCNAgentFlows from './locales/zh-CN/agent/flows.json';
 
 import zhCNErrors from './locales/zh-CN/messages/errors.json';
 import zhCNSuccess from './locales/zh-CN/messages/success.json';
@@ -84,6 +100,22 @@ import enUSSubagent from './locales/en-US/features/subagent.json';
 import enUSWelcome from './locales/en-US/features/welcome.json';
 import enUSAgentSkills from './locales/en-US/features/agent-skills.json';
 import enUSAgentTools from './locales/en-US/features/agent-tools.json';
+import enUSToolProvider from './locales/en-US/features/tool-provider.json';
+import enUSTaskManagement from './locales/en-US/features/task-management.json';
+import enUSMemoryManagement from './locales/en-US/features/memory-management.json';
+import enUSEvolutionCenter from './locales/en-US/features/evolution-center.json';
+import enUSNicebotNavigation from './locales/en-US/features/nicebot-navigation.json';
+
+import enUSAgentNavigation from './locales/en-US/agent/navigation.json';
+import enUSAgentExpertTeam from './locales/en-US/agent/expert-team.json';
+import enUSAgentKnowledge from './locales/en-US/agent/knowledge.json';
+import enUSAgentAgents from './locales/en-US/agent/agents.json';
+import enUSAgentToolsModule from './locales/en-US/agent/tools.json';
+import enUSAgentTasks from './locales/en-US/agent/tasks.json';
+import enUSAgentSkillsModule from './locales/en-US/agent/skills.json';
+import enUSAgentCrews from './locales/en-US/agent/crews.json';
+import enUSAgentRoundtables from './locales/en-US/agent/roundtables.json';
+import enUSAgentFlows from './locales/en-US/agent/flows.json';
 
 import enUSErrors from './locales/en-US/messages/errors.json';
 import enUSSuccess from './locales/en-US/messages/success.json';
@@ -128,6 +160,22 @@ import ruRUSubagent from './locales/ru-RU/features/subagent.json';
 import ruRUWelcome from './locales/ru-RU/features/welcome.json';
 import ruRUAgentSkills from './locales/ru-RU/features/agent-skills.json';
 import ruRUAgentTools from './locales/ru-RU/features/agent-tools.json';
+import ruRUToolProvider from './locales/ru-RU/features/tool-provider.json';
+import ruRUTaskManagement from './locales/ru-RU/features/task-management.json';
+import ruRUMemoryManagement from './locales/ru-RU/features/memory-management.json';
+import ruRUEvolutionCenter from './locales/ru-RU/features/evolution-center.json';
+import ruRUNicebotNavigation from './locales/ru-RU/features/nicebot-navigation.json';
+
+import ruRUAgentNavigation from './locales/ru-RU/agent/navigation.json';
+import ruRUAgentExpertTeam from './locales/ru-RU/agent/expert-team.json';
+import ruRUAgentKnowledge from './locales/ru-RU/agent/knowledge.json';
+import ruRUAgentAgents from './locales/ru-RU/agent/agents.json';
+import ruRUAgentToolsModule from './locales/ru-RU/agent/tools.json';
+import ruRUAgentTasks from './locales/ru-RU/agent/tasks.json';
+import ruRUAgentSkillsModule from './locales/ru-RU/agent/skills.json';
+import ruRUAgentCrews from './locales/ru-RU/agent/crews.json';
+import ruRUAgentRoundtables from './locales/ru-RU/agent/roundtables.json';
+import ruRUAgentFlows from './locales/ru-RU/agent/flows.json';
 
 import ruRUErrors from './locales/ru-RU/messages/errors.json';
 import ruRUSuccess from './locales/ru-RU/messages/success.json';
@@ -177,17 +225,33 @@ export const translations = {
       migration: zhCNMigration,
       command: zhCNCommand,
       subagent: zhCNSubagent,
-      welcome: zhCNWelcome
+      welcome: zhCNWelcome,
+      'tool-provider': zhCNToolProvider,
+      'task-management': zhCNTaskManagement,
+      'memory-management': zhCNMemoryManagement,
+      'evolution-center': zhCNEvolutionCenter
+    },
+    nicebot: {
+      navigation: zhCNNicebotNavigation
     },
     messages: {
       errors: zhCNErrors,
       success: zhCNSuccess,
       validation: zhCNValidation
     },
-    // Agent 模块翻译（从 agent-skills.json 和 agent-tools.json 解构）
     agent: {
       ...(zhCNAgentSkills as any).agent,
-      ...(zhCNAgentTools as any).agent
+      ...(zhCNAgentTools as any).agent,
+      navigation: zhCNAgentNavigation,
+      expertTeam: zhCNAgentExpertTeam,
+      knowledge: zhCNAgentKnowledge,
+      agents: zhCNAgentAgents,
+      tools: zhCNAgentToolsModule,
+      tasks: zhCNAgentTasks,
+      skills: zhCNAgentSkillsModule,
+      crews: zhCNAgentCrews,
+      roundtables: zhCNAgentRoundtables,
+      flows: zhCNAgentFlows
     }
   },
   'en-US': {
@@ -232,17 +296,33 @@ export const translations = {
       migration: enUSMigration,
       command: enUSCommand,
       subagent: enUSSubagent,
-      welcome: enUSWelcome
+      welcome: enUSWelcome,
+      'tool-provider': enUSToolProvider,
+      'task-management': enUSTaskManagement,
+      'memory-management': enUSMemoryManagement,
+      'evolution-center': enUSEvolutionCenter
+    },
+    nicebot: {
+      navigation: enUSNicebotNavigation
     },
     messages: {
       errors: enUSErrors,
       success: enUSSuccess,
       validation: enUSValidation
     },
-    // Agent 模块翻译（从 agent-skills.json 和 agent-tools.json 解构）
     agent: {
       ...(enUSAgentSkills as any).agent,
-      ...(enUSAgentTools as any).agent
+      ...(enUSAgentTools as any).agent,
+      navigation: enUSAgentNavigation,
+      expertTeam: enUSAgentExpertTeam,
+      knowledge: enUSAgentKnowledge,
+      agents: enUSAgentAgents,
+      tools: enUSAgentToolsModule,
+      tasks: enUSAgentTasks,
+      skills: enUSAgentSkillsModule,
+      crews: enUSAgentCrews,
+      roundtables: enUSAgentRoundtables,
+      flows: enUSAgentFlows
     }
   },
   'ru-RU': {
@@ -287,17 +367,33 @@ export const translations = {
       migration: ruRUMigration,
       command: ruRUCommand,
       subagent: ruRUSubagent,
-      welcome: ruRUWelcome
+      welcome: ruRUWelcome,
+      'tool-provider': ruRUToolProvider,
+      'task-management': ruRUTaskManagement,
+      'memory-management': ruRUMemoryManagement,
+      'evolution-center': ruRUEvolutionCenter
+    },
+    nicebot: {
+      navigation: ruRUNicebotNavigation
     },
     messages: {
       errors: ruRUErrors,
       success: ruRUSuccess,
       validation: ruRUValidation
     },
-    // Agent 模块翻译（从 agent-skills.json 和 agent-tools.json 解构）
     agent: {
       ...(ruRUAgentSkills as any).agent,
-      ...(ruRUAgentTools as any).agent
+      ...(ruRUAgentTools as any).agent,
+      navigation: ruRUAgentNavigation,
+      expertTeam: ruRUAgentExpertTeam,
+      knowledge: ruRUAgentKnowledge,
+      agents: ruRUAgentAgents,
+      tools: ruRUAgentToolsModule,
+      tasks: ruRUAgentTasks,
+      skills: ruRUAgentSkillsModule,
+      crews: ruRUAgentCrews,
+      roundtables: ruRUAgentRoundtables,
+      flows: ruRUAgentFlows
     }
   }
 };

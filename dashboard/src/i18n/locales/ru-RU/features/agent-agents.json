@@ -2,12 +2,13 @@
   "agent": {
     "agents": {
       "tester": {
-        "title": "Тест агента",
+        "title": "Чат агента",
         "emptyMessage": "Начните разговор",
         "thinking": "Думаю...",
         "tools": "Инструменты",
         "skills": "Навыки",
         "knowledgeBases": "Базы знаний",
+        "knowledgeBase": "База знаний",
         "noAbilities": "Нет особых способностей",
         "error": "Не удалось отправить сообщение",
         "hint": "Введите сообщение для начала тестирования",
@@ -20,7 +21,12 @@
         "abilities": "Способности",
         "advanced": "Расширенные",
         "planning": "Планирование",
-        "memory": "Память"
+        "memory": "Память",
+        "llmConfig": "Конфигурация LLM",
+        "provider": "Провайдер",
+        "model": "Модель",
+        "temperature": "Температура",
+        "maxTokens": "Макс. токенов"
       },
       "card": {
         "skills": "{count} навыков"

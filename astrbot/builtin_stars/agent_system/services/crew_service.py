@@ -12,6 +12,11 @@ from typing import TYPE_CHECKING, Any
 
 from astrbot.core import logger
 
+from astrbot.builtin_stars.agent_system.services.crewai_integration import (
+    CREWAI_AVAILABLE,
+    CrewAIAgentFactory,
+)
+
 if TYPE_CHECKING:
     from ..database import Database
     from astrbot.core.star.context import Context
@@ -130,6 +135,8 @@ class CrewService:
             for agent_id in agents:
                 agent = self.db.select_one("agents", where="id = ?", where_params=(agent_id,))
                 if not agent:
+                    agent = self.db.select_one("agents", where="name = ?", where_params=(agent_id,))
+                if not agent:
                     raise ValueError(f"Agent '{agent_id}' 不存在")
 
         # 创建 CrewTask 记录
@@ -142,6 +149,8 @@ class CrewService:
                 # 验证 agent_id 是否存在
                 if task_data.get("agent_id"):
                     agent = self.db.select_one("agents", where="id = ?", where_params=(task_data["agent_id"],))
+                    if not agent:
+                        agent = self.db.select_one("agents", where="name = ?", where_params=(task_data["agent_id"],))
                     if not agent:
                         raise ValueError(f"任务关联的 Agent '{task_data['agent_id']}' 不存在")
 
@@ -247,6 +256,8 @@ class CrewService:
             for agent_id in data["agents"]:
                 agent = self.db.select_one("agents", where="id = ?", where_params=(agent_id,))
                 if not agent:
+                    agent = self.db.select_one("agents", where="name = ?", where_params=(agent_id,))
+                if not agent:
                     raise ValueError(f"Agent '{agent_id}' 不存在")
 
         # 更新任务
@@ -265,6 +276,8 @@ class CrewService:
                     # 验证 agent_id 是否存在
                     if task_data.get("agent_id"):
                         agent = self.db.select_one("agents", where="id = ?", where_params=(task_data["agent_id"],))
+                        if not agent:
+                            agent = self.db.select_one("agents", where="name = ?", where_params=(task_data["agent_id"],))
                         if not agent:
                             raise ValueError(f"任务关联的 Agent '{task_data['agent_id']}' 不存在")
 
@@ -331,6 +344,8 @@ class CrewService:
     async def execute_crew(self, crew_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """执行 Crew 任务
 
+        优先使用 CrewAI Crew 执行，降级到自研串行执行。
+
         Args:
             crew_id: Crew ID
             input_data: 输入数据
@@ -351,7 +366,6 @@ class CrewService:
         if not crew.agents:
             raise ValueError(f"Crew '{crew_id}' 没有配置 Agent")
 
-        # 创建 AgentTask 记录
         task_id = f"task_exec_{uuid.uuid4().hex[:8]}"
         now = datetime.now()
 
@@ -397,19 +411,26 @@ class CrewService:
         start_time = datetime.now()
 
         try:
-            # 获取任务详情
-            tasks = self._get_crew_tasks(crew.tasks)
-
-            # 根据 process 类型执行
-            if crew.process == ProcessType.SEQUENTIAL:
-                execution_result = await self._execute_sequential(crew, tasks, input_data)
+            if CREWAI_AVAILABLE and self._context:
+                try:
+                    execution_result = await self._execute_with_crewai(crew, input_data)
+                except Exception as crewai_err:
+                    logger.warning(f"CrewAI execution failed, falling back to built-in: {crewai_err}")
+                    tasks = self._get_crew_tasks(crew.tasks)
+                    if crew.process == ProcessType.SEQUENTIAL:
+                        execution_result = await self._execute_sequential(crew, tasks, input_data)
+                    else:
+                        execution_result = await self._execute_hierarchical(crew, tasks, input_data)
             else:
-                execution_result = await self._execute_hierarchical(crew, tasks, input_data)
+                tasks = self._get_crew_tasks(crew.tasks)
+                if crew.process == ProcessType.SEQUENTIAL:
+                    execution_result = await self._execute_sequential(crew, tasks, input_data)
+                else:
+                    execution_result = await self._execute_hierarchical(crew, tasks, input_data)
 
             result["success"] = True
             result["output"] = execution_result
 
-            # 更新任务状态
             self.db.update(
                 "agent_tasks",
                 {
@@ -428,7 +449,6 @@ class CrewService:
             result["error"] = str(e)
             logger.error(f"Crew execution failed: {crew_id} - {e}")
 
-            # 更新任务状态为失败
             self.db.update(
                 "agent_tasks",
                 {
@@ -446,6 +466,124 @@ class CrewService:
         result["status"] = TaskStatus.COMPLETED.value if result["success"] else TaskStatus.FAILED.value
 
         return result
+
+    async def _execute_with_crewai(self, crew: Crew, input_data: dict[str, Any]) -> dict[str, Any]:
+        """使用 CrewAI Crew 执行"""
+        from ..models import Agent as AgentModel
+
+        crewai_agents = []
+        agent_map = {}
+        for agent_id in crew.agents:
+            agent_row = self.db.select_one("agents", where="id = ?", where_params=(agent_id,))
+            if not agent_row:
+                raise ValueError(f"Agent '{agent_id}' 不存在")
+
+            agent_model = self._row_to_agent_model(agent_row)
+            crewai_agent = CrewAIAgentFactory.create_agent(agent_model, self._context, disable_planning=True)
+            if not crewai_agent:
+                raise ValueError(f"无法为 Agent '{agent_id}' 创建 CrewAI Agent")
+
+            crewai_agents.append(crewai_agent)
+            agent_map[agent_id] = crewai_agent
+
+        tasks = self._get_crew_tasks(crew.tasks)
+        crewai_tasks = []
+        task_map = {}
+
+        for task_model in tasks:
+            agent = None
+            if task_model.agent_id and task_model.agent_id in agent_map:
+                agent = agent_map[task_model.agent_id]
+            elif crewai_agents:
+                agent = crewai_agents[0]
+
+            context_tasks = []
+            for ctx_id in task_model.context:
+                if ctx_id in task_map:
+                    context_tasks.append(task_map[ctx_id])
+
+            crewai_task = CrewAIAgentFactory.create_task(
+                task_model, agent=agent, context_tasks=context_tasks if context_tasks else None
+            )
+            if crewai_task:
+                crewai_tasks.append(crewai_task)
+                task_map[task_model.id] = crewai_task
+
+        if not crewai_tasks:
+            raise ValueError("没有可执行的任务")
+
+        crewai_crew = CrewAIAgentFactory.create_crew(
+            crew, crewai_agents, crewai_tasks, self._context
+        )
+        if not crewai_crew:
+            raise ValueError("无法创建 CrewAI Crew")
+
+        crew_output = await crewai_crew.kickoff_async(inputs=input_data)
+
+        response_text = ""
+        if hasattr(crew_output, 'raw') and crew_output.raw:
+            response_text = crew_output.raw
+        elif hasattr(crew_output, '__str__'):
+            response_text = str(crew_output)
+
+        task_results = {}
+        if hasattr(crew_output, 'tasks_output') and crew_output.tasks_output:
+            for i, task_output in enumerate(crew_output.tasks_output):
+                task_id = tasks[i].id if i < len(tasks) else f"task_{i}"
+                task_results[task_id] = {
+                    "task_id": task_id,
+                    "task_name": tasks[i].name if i < len(tasks) else f"Task {i}",
+                    "success": True,
+                    "output": str(task_output) if task_output else "",
+                }
+
+        tokens = {"input": 0, "output": 0, "total": 0}
+        if hasattr(crew_output, 'token_usage') and crew_output.token_usage:
+            tokens["input"] = getattr(crew_output.token_usage, 'prompt_tokens', 0) or 0
+            tokens["output"] = getattr(crew_output.token_usage, 'completion_tokens', 0) or 0
+            tokens["total"] = getattr(crew_output.token_usage, 'total_tokens', 0) or 0
+
+        return {
+            "process": crew.process.value,
+            "tasks": task_results,
+            "final_output": response_text,
+            "tokens": tokens,
+            "crewai_execution": True,
+        }
+
+    def _row_to_agent_model(self, row: dict[str, Any]) -> "AgentModel":
+        """将数据库行转换为 Agent 数据模型"""
+        from ..models import Agent, AgentType, PlanningEffort
+
+        agent_type_val = row.get("agent_type", "custom")
+        if agent_type_val in (None, ''):
+            agent_type_val = "custom"
+
+        return Agent(
+            id=row["id"],
+            name=row["name"],
+            role=row.get("role", ""),
+            goal=row.get("goal", ""),
+            backstory=row.get("backstory", ""),
+            tools=self._parse_json(row.get("tools", "[]")),
+            skills=self._parse_json(row.get("skills", "[]")),
+            knowledge_id=row.get("knowledge_id"),
+            provider_id=row.get("provider_id"),
+            model_name=row.get("model_name"),
+            llm_config=self._parse_json(row.get("llm_config", "{}")),
+            memory_config=self._parse_json(row.get("memory_config", "{}")),
+            planning=bool(row.get("planning", 0)),
+            planning_effort=PlanningEffort(row.get("planning_effort", "medium")),
+            max_iter=row.get("max_iter", 20),
+            max_rpm=row.get("max_rpm"),
+            verbose=bool(row.get("verbose", 0)),
+            allow_delegation=bool(row.get("allow_delegation", 0)),
+            enabled=bool(row.get("enabled", 1)),
+            agent_type=AgentType(agent_type_val),
+            metadata=self._parse_json(row.get("metadata", "{}")),
+            created_at=datetime.fromisoformat(row["created_at"]) if "created_at" in row else datetime.now(),
+            updated_at=datetime.fromisoformat(row["updated_at"]) if "updated_at" in row else datetime.now(),
+        )
 
     async def test_crew(self, crew_id: str) -> dict[str, Any]:
         """测试 Crew

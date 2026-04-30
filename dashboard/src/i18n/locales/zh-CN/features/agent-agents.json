@@ -2,12 +2,13 @@
   "agent": {
     "agents": {
       "tester": {
-        "title": "智能体测试",
+        "title": "智能体对话",
         "emptyMessage": "开始对话吧",
         "thinking": "思考中...",
         "tools": "工具",
         "skills": "技能",
         "knowledgeBases": "知识库",
+        "knowledgeBase": "知识库",
         "noAbilities": "无特殊能力",
         "error": "发送消息失败",
         "hint": "输入消息开始测试",
@@ -20,7 +21,12 @@
         "abilities": "能力",
         "advanced": "高级配置",
         "planning": "规划",
-        "memory": "记忆"
+        "memory": "记忆",
+        "llmConfig": "LLM配置",
+        "provider": "提供商",
+        "model": "模型",
+        "temperature": "温度",
+        "maxTokens": "最大Token"
       },
       "card": {
         "skills": "{count} 个技能"

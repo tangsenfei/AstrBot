@@ -40,7 +40,7 @@
             </v-btn>
 
 
-            <v-btn variant="outlined" @click="loadSkills" :loading="loading" class="mr-2">
+            <v-btn variant="outlined" @click="refreshAll" :loading="loading" class="mr-2">
 
 
               <v-icon start icon="mdi-refresh" />
@@ -176,26 +176,12 @@
 
 
                 <v-tabs v-model="activeTab" color="primary">
-
-
                   <v-tab value="all">{{ $t('agent.skills.tabs.all') }}</v-tab>
-
-
-                  <v-tab value="general">{{ $t('agent.skills.tabs.general') }}</v-tab>
-
-
-                  <v-tab value="programming">{{ $t('agent.skills.tabs.programming') }}</v-tab>
-
-
-                  <v-tab value="analysis">{{ $t('agent.skills.tabs.analysis') }}</v-tab>
-
-
-                  <v-tab value="creative">{{ $t('agent.skills.tabs.creative') }}</v-tab>
-
-
-                  <v-tab value="other">{{ $t('agent.skills.tabs.other') }}</v-tab>
-
-
+                  <v-tab value="builtin">{{ $t('agent.skills.tabs.builtin') }}</v-tab>
+                  <v-tab value="astrbot">{{ $t('agent.skills.tabs.astrbot') }}</v-tab>
+                  <v-tab value="claudcode">{{ $t('agent.skills.tabs.claudcode') }}</v-tab>
+                  <v-tab value="crewai">{{ $t('agent.skills.tabs.crewai') }}</v-tab>
+                  <v-tab value="custom">{{ $t('agent.skills.tabs.custom') }}</v-tab>
                 </v-tabs>
 
 
@@ -613,21 +599,12 @@ const { t } = useI18n();
 
 
 
-// 状
-
-
+// 状态
 const loading = ref(false);
-
-
 const skills = ref<any[]>([]);
-
-
+const builtinSkills = ref<any[]>([]);
 const availableTools = ref<any[]>([]);
-
-
 const activeTab = ref('all');
-
-
 const searchQuery = ref('');
 
 
@@ -692,107 +669,67 @@ const importing = ref(false);
 
 
 // 计算属性
-
-
 const filteredSkills = computed(() => {
+  // 合并普通技能和内置技能
+  const builtinIds = new Set(builtinSkills.value.map(s => s.id));
+  let result = [
+    ...skills.value,
+    ...builtinSkills.value.filter(bs => !skills.value.some(s => s.id === bs.id)),
+  ];
 
-
-  let result = skills.value;
-
-
-
-
-
-  // 按分类筛
-
-
+  // 按来源筛选
   if (activeTab.value !== 'all') {
-
-
-    result = result.filter(skill => skill.category === activeTab.value);
-
-
+    result = result.filter(skill => skill.source === activeTab.value);
   }
-
-
-
-
 
   // 按搜索词筛选
-
-
   if (searchQuery.value) {
-
-
     const query = searchQuery.value.toLowerCase();
-
-
     result = result.filter(skill =>
-
-
       skill.name.toLowerCase().includes(query) ||
-
-
       (skill.description && skill.description.toLowerCase().includes(query))
-
-
     );
-
-
   }
 
-
-
-
-
   return result;
-
-
 });
 
 
 
 
 
-// 加载技能列
-
-
+// 加载技能列表
 async function loadSkills() {
-
-
-  loading.value = true;
-
-
   try {
-
-
     const response = await axios.get('/api/plug/agent/skills');
-
-
     if (response.data.status === 'ok') {
-
-
       skills.value = response.data.data || [];
-
-
     }
-
-
   } catch (error) {
-
-
     console.error('Failed to load skills:', error);
-
-
-  } finally {
-
-
-    loading.value = false;
-
-
   }
+}
 
+// 加载内置技能列表
+async function loadBuiltinSkills() {
+  try {
+    const response = await axios.get('/api/plug/agent/skills/builtin');
+    if (response.data.status === 'ok') {
+      builtinSkills.value = response.data.data || [];
+    }
+  } catch (error) {
+    console.error('Failed to load builtin skills:', error);
+  }
+}
 
+// 刷新所有技能数据
+async function refreshAll() {
+  loading.value = true;
+  try {
+    await Promise.all([loadSkills(), loadBuiltinSkills()]);
+  } finally {
+    loading.value = false;
+  }
 }
 
 
@@ -999,7 +936,6 @@ async function handleSaveSkill(skillData: any) {
 
     showEditor.value = false;
 
-
     await loadSkills();
 
 
@@ -1151,14 +1087,8 @@ function openMarket() {
 
 
 onMounted(() => {
-
-
-  loadSkills();
-
-
+  refreshAll();
   loadAvailableTools();
-
-
 });
 
 

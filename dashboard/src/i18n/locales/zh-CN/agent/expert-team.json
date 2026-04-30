@@ -1,0 +1,26 @@
+{
+  "title": "专家团队",
+  "description": "按领域分类的专业 AI 智能体模板",
+  "search": "搜索专家...",
+  "noResults": "未找到匹配的专家",
+  "createAgent": "使用此模板创建",
+  "preview": "查看详情",
+  "role": "角色",
+  "goal": "目标",
+  "category": {
+    "all": "全部",
+    "engineering": "工程开发",
+    "product": "产品管理",
+    "design": "设计体验",
+    "marketing": "营销增长",
+    "security": "安全合规",
+    "finance": "财务金融",
+    "game": "游戏开发",
+    "sales": "销售",
+    "testing": "测试",
+    "support": "客户支持",
+    "project": "项目管理",
+    "academic": "学术研究",
+    "specialized": "专项能力"
+  }
+}

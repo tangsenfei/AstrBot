@@ -1,0 +1,28 @@
+{
+  "title": "进化中心",
+  "description": "AI 助手自我学习和能力进化管理",
+  "evolution_tasks": {
+    "title": "进化任务",
+    "empty": "暂无进化任务，点击上方按钮创建新任务"
+  },
+  "capabilities": {
+    "title": "能力开关"
+  },
+  "stats": {
+    "title": "统计数据",
+    "total_tasks": "总任务数",
+    "completed": "已完成",
+    "improvements": "改进数"
+  },
+  "status": {
+    "pending": "待执行",
+    "running": "执行中",
+    "completed": "已完成",
+    "failed": "失败"
+  },
+  "actions": {
+    "create_task": "创建进化任务",
+    "view_detail": "查看详情",
+    "cancel": "取消"
+  }
+}

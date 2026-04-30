@@ -1,0 +1,227 @@
+{
+  "title": "智能体管理",
+  "subtitle": "创建和管理 AI 智能体，配置角色、能力和模型",
+  "buttons": {
+    "add": "添加智能体",
+    "refresh": "刷新",
+    "more": "更多",
+    "templates": "从模板创建",
+    "import": "导入",
+    "export": "导出"
+  },
+  "templates": {
+    "title": "选择模板",
+    "assistant": {
+      "name": "通用助手",
+      "description": "一个通用的 AI 助手，可以回答各种问题",
+      "role": "助手",
+      "goal": "帮助用户完成各种任务，回答他们的问题",
+      "backstory": "我是一个智能助手，擅长理解和回答各种问题。"
+    },
+    "researcher": {
+      "name": "研究员",
+      "description": "擅长研究和分析的研究员智能体",
+      "role": "研究员",
+      "goal": "深入研究各种主题，提供详细的分析报告",
+      "backstory": "我是一个专业的研究员，擅长收集和分析信息。"
+    },
+    "coder": {
+      "name": "程序员",
+      "description": "擅长编程和代码审查的程序员智能体",
+      "role": "程序员",
+      "goal": "编写高质量的代码，解决技术问题",
+      "backstory": "我是一个经验丰富的程序员，精通多种编程语言。"
+    }
+  },
+  "search": {
+    "placeholder": "搜索智能体..."
+  },
+  "tabs": {
+    "all": "全部",
+    "builtin": "内置",
+    "expert": "专家团",
+    "custom": "自定义"
+  },
+  "empty": "暂无智能体，请点击上方按钮创建",
+  "status": {
+    "enabled": "已启用",
+    "disabled": "已禁用"
+  },
+  "card": {
+    "noRole": "暂无角色描述",
+    "tools": "{count} 个工具",
+    "skills": "{count} 个技能",
+    "knowledgeBases": "{count} 个知识库",
+    "knowledgeBase": "知识库",
+    "planning": "Planning",
+    "memory": "Memory",
+    "test": "测试",
+    "chat": "对话",
+    "edit": "编辑",
+    "copy": "复制",
+    "delete": "删除",
+    "reset": "重置为初始状态",
+    "createFromExpert": "以专家为模板创建自定义智能体"
+  },
+  "type": {
+    "builtin": "内置",
+    "expert": "专家"
+  },
+  "editor": {
+    "addTitle": "添加智能体",
+    "editTitle": "编辑智能体",
+    "tabs": {
+      "basic": "基本信息",
+      "abilities": "能力配置",
+      "model": "模型配置",
+      "advanced": "高级配置"
+    },
+    "basic": {
+      "name": "智能体名称",
+      "nameHint": "为智能体设置一个易于识别的名称",
+      "role": "角色",
+      "roleHint": "定义智能体的角色定位，如'助手'、'研究员'等",
+      "goal": "目标",
+      "goalHint": "描述智能体的主要目标和任务",
+      "backstory": "背景故事",
+      "backstoryHint": "为智能体设置背景故事，增强角色感"
+    },
+    "abilities": {
+      "tools": "工具选择",
+      "toolsHint": "选择智能体可以使用的工具",
+      "selectTools": "选择工具",
+      "skills": "技能选择",
+      "skillsHint": "选择智能体具备的技能",
+      "selectSkills": "选择技能",
+      "knowledgeBases": "知识库选择",
+      "knowledgeBasesHint": "选择智能体可以访问的知识库",
+      "selectKnowledgeBases": "选择知识库"
+    },
+    "model": {
+      "provider": "LLM 提供商",
+      "providerHint": "选择用于智能体的语言模型提供商",
+      "selectProvider": "选择提供商",
+      "model": "模型",
+      "modelHint": "选择具体的模型",
+      "selectModel": "选择模型",
+      "parameters": "模型参数",
+      "temperature": "温度",
+      "temperatureHint": "控制输出的随机性，0 为确定性，1 为最大随机性",
+      "maxTokens": "最大 Token 数",
+      "maxTokensHint": "限制单次响应的最大 Token 数量",
+      "topP": "Top P",
+      "topPHint": "控制输出的多样性，0.1 表示只考虑前 10% 概率的词汇"
+    },
+    "advanced": {
+      "planning": "启用 Planning",
+      "planningHint": "让智能体自动规划任务步骤",
+      "enablePlanning": "启用自动规划",
+      "memory": "启用记忆",
+      "memoryHint": "让智能体具备记忆能力",
+      "enableMemory": "启用记忆功能",
+      "maxSteps": "最大步骤数",
+      "maxStepsHint": "规划的最大步骤数",
+      "memoryType": "记忆类型",
+      "maxMessages": "最大消息数",
+      "maxMessagesHint": "记忆保留的最大消息数量",
+      "behavior": "行为配置",
+      "maxRetries": "最大重试次数",
+      "maxRetriesHint": "任务失败时的最大重试次数",
+      "timeout": "超时时间",
+      "seconds": "秒",
+      "verbose": "详细模式",
+      "verboseHint": "输出详细的执行日志",
+      "memoryTypes": {
+        "shortTerm": "短期记忆",
+        "longTerm": "长期记忆"
+      }
+    },
+    "validation": {
+      "required": "此项为必填"
+    }
+  },
+  "tester": {
+    "title": "智能体对话",
+    "emptyMessage": "发送消息开始对话",
+    "thinking": "思考中",
+    "toolsUsed": "使用的工具",
+    "inputPlaceholder": "输入消息... (Ctrl+Enter 发送)",
+    "hint": "按 Ctrl+Enter 发送消息",
+    "send": "发送",
+    "currentConfig": "当前配置",
+    "basicInfo": "基本信息",
+    "role": "角色",
+    "goal": "目标",
+    "abilities": "能力配置",
+    "tools": "工具",
+    "skills": "技能",
+    "knowledgeBases": "知识库",
+    "knowledgeBase": "知识库",
+    "noAbilities": "暂无能力配置",
+    "advanced": "高级配置",
+    "planning": "Planning",
+    "memory": "Memory",
+    "clearHistory": "清空对话",
+    "error": "对话出错",
+    "llmConfig": "LLM 配置",
+    "provider": "提供商",
+    "model": "模型",
+    "temperature": "温度",
+    "maxTokens": "最大Token",
+    "notConfigured": "未配置",
+    "default": "默认"
+  },
+  "delete": {
+    "title": "删除智能体",
+    "confirm": "确定要删除智能体 \"{name}\" 吗？ "
+  },
+  "import": {
+    "title": "导入智能体",
+    "selectFile": "选择文件",
+    "hint": "支持导入 JSON 格式的智能体定义文件",
+    "button": "导入"
+  },
+  "reset": {
+    "title": "重置智能体",
+    "confirm": "确定要将 {name} 重置为初始状态吗？",
+    "warning": "重置后，该智能体的角色、目标、背景故事和工具配置将恢复为系统默认设置，您的自定义修改将丢失。",
+    "confirmButton": "确认重置",
+    "failed": "重置失败"
+  },
+  "expert": {
+    "templateLibrary": "专家模板库",
+    "batchLlm": "统一设置LLM",
+    "batchLlmTitle": "统一设置专家团 LLM",
+    "batchLlmHint": "将为所有已创建的专家智能体统一设置 LLM 提供者和模型。",
+    "batchLlmApply": "应用",
+    "batchLlmFailed": "统一设置 LLM 失败",
+    "preview": "查看详情",
+    "createFromTemplate": "使用此模板创建",
+    "createTitle": "从专家模板创建智能体",
+    "createButton": "创建",
+    "createFailed": "创建专家智能体失败",
+    "role": "角色",
+    "goal": "目标",
+    "capabilities": "核心能力",
+    "principles": "行为原则",
+    "llmConfig": "LLM 配置",
+    "provider": "LLM 提供者",
+    "model": "模型",
+    "selectProvider": "选择提供者",
+    "selectModel": "选择模型",
+    "noTemplates": "暂无专家模板",
+    "noExperts": "暂无专家智能体，系统将在启动时自动初始化",
+    "createdExperts": "已创建的专家智能体"
+  },
+  "messages": {
+    "loadFailed": "加载失败",
+    "saveSuccess": "保存成功",
+    "saveFailed": "保存失败",
+    "deleteSuccess": "删除成功",
+    "deleteFailed": "删除失败",
+    "copySuccess": "复制成功",
+    "copyFailed": "复制失败",
+    "copyError": "复制失败",
+    "importError": "导入失败"
+  }
+}

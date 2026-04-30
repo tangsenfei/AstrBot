@@ -1,0 +1,77 @@
+{
+  "title": "Tools",
+  "subtitle": "Manage and configure tools available to agents",
+  "buttons": {
+    "add": "Add Tool",
+    "refresh": "Refresh",
+    "more": "More",
+    "import": "Import",
+    "export": "Export"
+  },
+  "search": {
+    "placeholder": "Search tools..."
+  },
+  "tabs": {
+    "all": "All",
+    "builtin": "Built-in",
+    "mcp": "MCP",
+    "custom": "Custom",
+    "apiWrapper": "API Wrapper"
+  },
+  "empty": "No tools yet, click the button above to add",
+  "sources": {
+    "builtin": "Built-in",
+    "mcp": "MCP",
+    "custom": "Custom",
+    "apiWrapper": "API Wrapper"
+  },
+  "card": {
+    "noDescription": "No description",
+    "params": "{count} parameters",
+    "test": "Test",
+    "edit": "Edit",
+    "delete": "Delete",
+    "parameters": "Parameters",
+    "metadata": "Metadata"
+  },
+  "editor": {
+    "addTitle": "Add Tool",
+    "editTitle": "Edit Tool",
+    "basicInfo": "Basic Information",
+    "name": "Tool Name",
+    "nameHint": "Unique identifier for the tool, lowercase letters, numbers and underscores only",
+    "description": "Description",
+    "descriptionHint": "Description of the tool's purpose",
+    "source": "Source",
+    "returnType": "Return Type",
+    "returnTypeHint": "Data type returned by the tool",
+    "parameters": "Parameter Definition",
+    "parametersHint": "Define the tool's input parameters",
+    "parametersJson": "Parameters JSON",
+    "formatJson": "Format JSON",
+    "metadata": "Metadata",
+    "metadataJson": "Metadata JSON",
+    "tags": "Tags",
+    "tagsLabel": "Tags (comma-separated)",
+    "tagsHint": "Add tags to categorize the tool",
+    "validation": {
+      "required": "This field is required",
+      "nameFormat": "Name must start with a lowercase letter and contain only lowercase letters, numbers and underscores",
+      "invalidJson": "Invalid JSON format"
+    }
+  },
+  "import": {
+    "title": "Import Tools",
+    "selectFile": "Select File",
+    "hint": "Support importing JSON format tool definition files",
+    "button": "Import"
+  },
+  "delete": {
+    "title": "Delete Tool",
+    "confirm": "Are you sure you want to delete tool \"{name}\"? "
+  },
+  "messages": {
+    "deleteError": "Delete failed",
+    "importError": "Import failed"
+  }
+}

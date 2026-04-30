@@ -22,9 +22,9 @@
 
         {{ $t('agent.agents.tester.title') }}: {{ agent.name }}
 
-        <v-chip size="small" color="primary" variant="flat" class="ml-3">
+        <v-chip v-if="agent.provider_id || agent.model_name" size="small" color="primary" variant="flat" class="ml-3">
 
-          {{ agent.model?.provider }} / {{ agent.model?.name }}
+          {{ agent.provider_id }} / {{ agent.model_name }}
 
         </v-chip>
 
@@ -93,65 +93,66 @@
 
 
                   <!-- 助手消息 -->
-
                   <div v-else class="d-flex justify-start">
-
                     <v-card variant="outlined" max-width="70%" class="message-card">
-
                       <v-card-text>
-
+                        <div v-if="message.planning_steps" class="planning-steps mb-2">
+                          <v-expansion-panels density="compact">
+                            <v-expansion-panel>
+                              <v-expansion-panel-title class="pa-2">
+                                <div class="d-flex align-center ga-1">
+                                  <v-icon size="x-small" color="primary">mdi-clipboard-list-outline</v-icon>
+                                  <span class="text-caption">执行计划</span>
+                                </div>
+                              </v-expansion-panel-title>
+                              <v-expansion-panel-text class="planning-content">
+                                <div class="text-body-2 text-medium-emphasis" style="white-space: pre-wrap;">{{ message.planning_steps }}</div>
+                              </v-expansion-panel-text>
+                            </v-expansion-panel>
+                          </v-expansion-panels>
+                        </div>
+                        <div v-if="message.thinking" class="thinking-section mb-2">
+                          <v-expansion-panels density="compact" :model-value="!message.thinkingDone ? [0] : []">
+                            <v-expansion-panel value="0">
+                              <v-expansion-panel-title class="pa-2">
+                                <div class="d-flex align-center ga-1">
+                                  <v-icon size="x-small" :color="message.thinkingDone ? 'success' : 'warning'">
+                                    {{ message.thinkingDone ? 'mdi-head-lightbulb' : 'mdi-head-lightbulb-outline' }}
+                                  </v-icon>
+                                  <span class="text-caption">{{ message.thinkingDone ? '思考过程' : '正在思考...' }}</span>
+                                </div>
+                              </v-expansion-panel-title>
+                              <v-expansion-panel-text class="thinking-content">
+                                <pre class="thinking-text">{{ message.thinking }}</pre>
+                              </v-expansion-panel-text>
+                            </v-expansion-panel>
+                          </v-expansion-panels>
+                        </div>
                         <pre class="message-text">{{ message.content }}</pre>
-
-                        <div v-if="message.thinking" class="mt-2 pt-2 border-t">
-
-                          <div class="text-caption text-grey mb-1">
-
-                            <v-icon icon="mdi-head-lightbulb" size="small" class="mr-1" />
-
-                            {{ $t('agent.agents.tester.thinking') }}
-
-                          </div>
-
-                          <pre class="thinking-text">{{ message.thinking }}</pre>
-
-                        </div>
-
                         <div v-if="message.tools && message.tools.length > 0" class="mt-2 pt-2 border-t">
-
                           <div class="text-caption text-grey mb-1">
-
                             <v-icon icon="mdi-tools" size="small" class="mr-1" />
-
                             {{ $t('agent.agents.tester.toolsUsed') }}
-
                           </div>
-
                           <v-chip
-
                             v-for="tool in message.tools"
-
                             :key="tool"
-
                             size="x-small"
-
                             color="primary"
-
                             variant="flat"
-
                             class="mr-1"
-
                           >
-
                             {{ tool }}
-
                           </v-chip>
-
                         </div>
-
+                        <div v-if="message.memory_used && message.memory_used > 0" class="memory-info mt-1">
+                          <v-chip size="x-small" variant="tonal" color="info" label>
+                            <v-icon start size="x-small">mdi-brain</v-icon>
+                            使用了 {{ message.memory_used }} 条记忆
+                          </v-chip>
+                        </div>
                       </v-card-text>
-
                     </v-card>
-
                   </div>
 
                 </div>
@@ -215,21 +216,21 @@
                 </span>
 
                 <v-btn
-
+                  v-if="!sending"
                   color="primary"
-
                   @click="sendMessage"
-
-                  :loading="sending"
-
                   :disabled="!inputMessage.trim()"
-
                 >
-
                   <v-icon start icon="mdi-send" />
-
                   {{ $t('agent.agents.tester.send') }}
-
+                </v-btn>
+                <v-btn
+                  v-else
+                  color="error"
+                  @click="stopGeneration"
+                >
+                  <v-icon start icon="mdi-stop" />
+                  停止
                 </v-btn>
 
               </div>
@@ -277,6 +278,56 @@
                   <span class="text-caption text-grey">{{ $t('agent.agents.tester.goal') }}:</span>
 
                   <p class="text-body-2">{{ agent.goal }}</p>
+
+                </div>
+
+              </v-card-text>
+
+            </v-card>
+
+
+
+            <!-- LLM配置 -->
+
+            <v-card variant="outlined" class="mb-4">
+
+              <v-card-title class="text-subtitle-2 pb-0">
+
+                {{ $t('agent.agents.tester.llmConfig') }}
+
+              </v-card-title>
+
+              <v-card-text>
+
+                <div class="mb-2">
+
+                  <span class="text-caption text-grey">{{ $t('agent.agents.tester.provider') }}:</span>
+
+                  <p class="text-body-2">{{ agent.provider_id || $t('agent.agents.tester.notConfigured') }}</p>
+
+                </div>
+
+                <div class="mb-2">
+
+                  <span class="text-caption text-grey">{{ $t('agent.agents.tester.model') }}:</span>
+
+                  <p class="text-body-2">{{ agent.model_name || $t('agent.agents.tester.notConfigured') }}</p>
+
+                </div>
+
+                <div class="mb-2">
+
+                  <span class="text-caption text-grey">{{ $t('agent.agents.tester.temperature') }}:</span>
+
+                  <p class="text-body-2">{{ agent.llm_config?.temperature ?? $t('agent.agents.tester.default') }}</p>
+
+                </div>
+
+                <div>
+
+                  <span class="text-caption text-grey">{{ $t('agent.agents.tester.maxTokens') }}:</span>
+
+                  <p class="text-body-2">{{ agent.llm_config?.max_tokens ?? $t('agent.agents.tester.default') }}</p>
 
                 </div>
 
@@ -362,17 +413,13 @@
 
 
 
-                <div v-if="agent.knowledgeBases && agent.knowledgeBases.length > 0">
+                <div v-if="agent.knowledge_id">
 
-                  <span class="text-caption text-grey">{{ $t('agent.agents.tester.knowledgeBases') }}:</span>
+                  <span class="text-caption text-grey">{{ $t('agent.agents.tester.knowledgeBase') }}:</span>
 
                   <div class="mt-1">
 
                     <v-chip
-
-                      v-for="kb in agent.knowledgeBases"
-
-                      :key="kb"
 
                       size="x-small"
 
@@ -384,7 +431,7 @@
 
                     >
 
-                      {{ kb }}
+                      {{ agent.knowledge_id }}
 
                     </v-chip>
 
@@ -394,7 +441,7 @@
 
 
 
-                <div v-if="!agent.tools?.length && !agent.skills?.length && !agent.knowledgeBases?.length" class="text-grey">
+                <div v-if="!agent.tools?.length && !agent.skills?.length && !agent.knowledge_id" class="text-grey">
 
                   {{ $t('agent.agents.tester.noAbilities') }}
 
@@ -419,39 +466,30 @@
               <v-card-text>
 
                 <div class="mb-2">
-
                   <v-icon
-
-                    :icon="agent.planning?.enabled ? 'mdi-check-circle' : 'mdi-close-circle'"
-
-                    :color="agent.planning?.enabled ? 'success' : 'grey'"
-
+                    :icon="agent.planning ? 'mdi-check-circle' : 'mdi-close-circle'"
+                    :color="agent.planning ? 'success' : 'grey'"
                     size="small"
-
                     class="mr-1"
-
                   />
-
                   <span class="text-body-2">{{ $t('agent.agents.tester.planning') }}</span>
-
                 </div>
-
-                <div>
-
+                <div v-if="agent.planning" class="d-flex align-center ga-1 mb-2 ml-5">
+                  <v-icon size="small" color="success">mdi-clipboard-check</v-icon>
+                  <span class="text-body-2">规划模式：{{ agent.planning_effort || 'medium' }}</span>
+                </div>
+                <div class="mb-2">
                   <v-icon
-
-                    :icon="agent.memory?.enabled ? 'mdi-check-circle' : 'mdi-close-circle'"
-
-                    :color="agent.memory?.enabled ? 'success' : 'grey'"
-
+                    :icon="agent.memory_config ? 'mdi-check-circle' : 'mdi-close-circle'"
+                    :color="agent.memory_config ? 'success' : 'grey'"
                     size="small"
-
                     class="mr-1"
-
                   />
-
                   <span class="text-body-2">{{ $t('agent.agents.tester.memory') }}</span>
-
+                </div>
+                <div v-if="agent.memory_config?.enabled" class="d-flex align-center ga-1 ml-5">
+                  <v-icon size="small" color="info">mdi-brain</v-icon>
+                  <span class="text-body-2">记忆：{{ agent.memory_config.type === 'long_term' ? '长期' : '短期' }}</span>
                 </div>
 
               </v-card-text>
@@ -540,6 +578,8 @@ const messages = ref<any[]>([]);
 
 const messagesContainer = ref<HTMLElement | null>(null);
 
+let abortController: AbortController | null = null;
+
 
 
 // 监听对话框打开
@@ -560,102 +600,177 @@ watch(() => props.modelValue, (newVal) => {
 
 
 
-// 发送消
-
+// 发送消息（流式输出）
 async function sendMessage() {
-
   if (!inputMessage.value.trim() || sending.value) return;
 
-
-
   const userMessage = inputMessage.value.trim();
-
   inputMessage.value = '';
 
-
-
-  // 添加用户消息
-
   messages.value.push({
-
     role: 'user',
-
     content: userMessage,
-
   });
 
-
-
-  // 滚动到底
-
   await nextTick();
-
   scrollToBottom();
-
-
 
   sending.value = true;
 
-  try {
+  const assistantMessage: any = {
+    role: 'assistant',
+    content: '',
+    thinking: '',
+    thinkingDone: false,
+    tools: [] as string[],
+    planning_steps: null as string | null,
+    memory_used: 0,
+  };
+  messages.value.push(assistantMessage);
 
-    const response = await axios.post('/api/plug/agent/agents/test', {
-      id: props.agent.id,
-      message: userMessage,
-      history: messages.value.slice(0, -1), // 不包含刚添加的用户消息
+  abortController = new AbortController();
+
+  try {
+    const response = await fetch('/api/plug/agent/agents/test-stream', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
+      },
+      body: JSON.stringify({
+        id: props.agent.id,
+        message: userMessage,
+      }),
+      signal: abortController.signal,
     });
 
+    if (!response.ok || !response.body) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
 
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
 
-    if (response.data.status === 'ok') {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-      const data = response.data.data;
+      buffer += decoder.decode(value, { stream: true });
 
-      messages.value.push({
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
 
-        role: 'assistant',
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const jsonStr = line.slice(6);
+          if (jsonStr.trim()) {
+            try {
+              const event = JSON.parse(jsonStr);
+              handleStreamEvent(event, assistantMessage);
+            } catch (e) {
+              console.error('Failed to parse SSE event:', jsonStr, e);
+            }
+          }
+        }
+      }
 
-        content: data.response || data.content || '',
+      await nextTick();
+      scrollToBottom();
+    }
 
-        thinking: data.thinking || null,
-
-        tools: data.tools_used || [],
-
-      });
-
-    } else {
-
-      messages.value.push({
-
-        role: 'assistant',
-
-        content: response.data.message || t('agent.agents.tester.error'),
-
-      });
-
+    if (buffer.trim()) {
+      for (const line of buffer.split('\n')) {
+        if (line.startsWith('data: ')) {
+          const jsonStr = line.slice(6);
+          if (jsonStr.trim()) {
+            try {
+              const event = JSON.parse(jsonStr);
+              handleStreamEvent(event, assistantMessage);
+            } catch (e) {
+              console.error('Failed to parse SSE event:', jsonStr, e);
+            }
+          }
+        }
+      }
     }
 
   } catch (error: any) {
-
-    console.error('Failed to send message:', error);
-
-    messages.value.push({
-
-      role: 'assistant',
-
-      content: error.response?.data?.message || error.message || t('agent.agents.tester.error'),
-
-    });
-
+    if (error.name === 'AbortError') {
+      if (!assistantMessage.content) {
+        assistantMessage.content = '（已停止）';
+      }
+    } else {
+      console.error('Failed to send message:', error);
+      assistantMessage.content = error.message || t('agent.agents.tester.error');
+    }
   } finally {
-
     sending.value = false;
-
+    abortController = null;
     await nextTick();
-
     scrollToBottom();
-
   }
+}
 
+function stopGeneration() {
+  if (abortController) {
+    abortController.abort();
+  }
+}
+
+
+
+// 处理流式事件
+function handleStreamEvent(event: any, assistantMessage: any) {
+  switch (event.type) {
+    case 'chunk':
+      assistantMessage.content += event.data;
+      break;
+
+    case 'thinking':
+      assistantMessage.thinking += event.data;
+      assistantMessage.thinkingDone = false;
+      break;
+
+    case 'planning':
+      assistantMessage.planning_steps = event.data;
+      break;
+
+    case 'tool_start':
+      if (typeof event.data === 'string') {
+        assistantMessage.tools = [...assistantMessage.tools, event.data];
+      } else if (Array.isArray(event.data)) {
+        assistantMessage.tools = [...assistantMessage.tools, ...event.data];
+      }
+      break;
+
+    case 'tool_result':
+      break;
+
+    case 'done':
+      if (event.data) {
+        if (event.data.response && !assistantMessage.content) {
+          assistantMessage.content = event.data.response;
+        }
+        if (event.data.tools_used && event.data.tools_used.length > 0) {
+          assistantMessage.tools = event.data.tools_used;
+        }
+        if (event.data.planning_steps) {
+          assistantMessage.planning_steps = event.data.planning_steps;
+        }
+      }
+      if (assistantMessage.thinking) {
+        assistantMessage.thinkingDone = true;
+      }
+      break;
+
+    case 'error':
+      assistantMessage.content = event.data || t('agent.agents.tester.error');
+      break;
+
+    default:
+      console.warn('Unknown SSE event type:', event.type);
+  }
 }
 
 
@@ -710,25 +825,54 @@ function clearMessages() {
 
 
 
+.thinking-section :deep(.v-expansion-panel) {
+  background: rgba(255, 152, 0, 0.04);
+  border: 1px solid rgba(255, 152, 0, 0.12);
+  border-radius: 8px !important;
+}
+
+.thinking-section :deep(.v-expansion-panel-title) {
+  min-height: 32px;
+}
+
+.thinking-content {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
 .thinking-text {
-
   white-space: pre-wrap;
-
   word-break: break-word;
-
   margin: 0;
-
   font-family: monospace;
-
   font-size: 12px;
-
   color: #666;
-
   background: rgba(0, 0, 0, 0.05);
-
   padding: 8px;
-
   border-radius: 4px;
+}
+
+.planning-steps :deep(.v-expansion-panel) {
+
+  background: rgba(var(--v-theme-primary), 0.04);
+
+  border: 1px solid rgba(var(--v-theme-primary), 0.12);
+
+  border-radius: 8px !important;
+
+}
+
+.planning-steps :deep(.v-expansion-panel-title) {
+
+  min-height: 32px;
+
+}
+
+.planning-content {
+
+  max-height: 300px;
+
+  overflow-y: auto;
 
 }
 

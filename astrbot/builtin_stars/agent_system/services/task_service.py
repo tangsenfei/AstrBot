@@ -24,11 +24,67 @@ class TaskService:
     def __init__(self, db: "Database"):
         self.db = db
 
+    def create_task(
+        self,
+        name: str,
+        description: str = "",
+        task_type: str = "crew",
+        crew_id: str | None = None,
+        flow_id: str | None = None,
+        meeting_id: str | None = None,
+        input_data: dict[str, Any] | None = None,
+    ) -> AgentTask:
+        """创建任务
+
+        Args:
+            name: 任务名称
+            description: 任务描述
+            task_type: 任务类型（crew/flow/meeting）
+            crew_id: Crew ID
+            flow_id: Flow ID
+            meeting_id: 会议 ID
+            input_data: 输入数据
+
+        Returns:
+            创建的 AgentTask 对象
+        """
+        task_id = f"task_{uuid.uuid4().hex[:8]}"
+        now = datetime.now()
+
+        task_data = {
+            "id": task_id,
+            "name": name,
+            "description": description,
+            "task_type": task_type,
+            "crew_id": crew_id,
+            "flow_id": flow_id,
+            "meeting_id": meeting_id,
+            "status": TaskStatus.PENDING.value,
+            "progress": 0,
+            "input": input_data or {},
+            "output": {},
+            "result": None,
+            "error": None,
+            "total_tokens": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "started_at": None,
+            "completed_at": None,
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+        }
+
+        self.db.insert("agent_tasks", task_data)
+        logger.info(f"Task created: {task_id} (type={task_type})")
+        return self._row_to_agent_task(task_data)
+
     def get_tasks(
         self,
         status: str | None = None,
         crew_id: str | None = None,
         flow_id: str | None = None,
+        meeting_id: str | None = None,
+        task_type: str | None = None,
         start_time: str | None = None,
         end_time: str | None = None,
         page: int = 1,
@@ -40,6 +96,8 @@ class TaskService:
             status: 任务状态筛选
             crew_id: Crew ID 筛选
             flow_id: Flow ID 筛选
+            meeting_id: 会议 ID 筛选
+            task_type: 任务类型筛选
             start_time: 开始时间筛选（ISO 格式）
             end_time: 结束时间筛选（ISO 格式）
             page: 页码（从 1 开始）
@@ -67,6 +125,14 @@ class TaskService:
         if flow_id:
             conditions.append("flow_id = ?")
             params.append(flow_id)
+
+        if meeting_id:
+            conditions.append("meeting_id = ?")
+            params.append(meeting_id)
+
+        if task_type:
+            conditions.append("task_type = ?")
+            params.append(task_type)
 
         if start_time:
             conditions.append("created_at >= ?")
@@ -288,6 +354,8 @@ class TaskService:
             "id": new_task_id,
             "crew_id": task.crew_id,
             "flow_id": task.flow_id,
+            "meeting_id": task.meeting_id,
+            "task_type": task.task_type,
             "name": task.name,
             "description": task.description,
             "status": TaskStatus.PENDING.value,
@@ -445,6 +513,26 @@ class TaskService:
         )
         avg_seconds = cursor.fetchone()["avg_seconds"] or 0
 
+        # 按任务类型分组统计
+        type_sql = f"""
+            SELECT task_type, COUNT(*) as count
+            FROM agent_tasks
+            WHERE {time_clause}
+            GROUP BY task_type
+        """
+        cursor = self.db.execute(type_sql, tuple(time_params))
+        task_type_counts = {row["task_type"]: row["count"] for row in cursor.fetchall()}
+
+        # 会议任务数量
+        meeting_sql = f"""
+            SELECT COUNT(*) as count
+            FROM agent_tasks
+            WHERE {time_clause}
+            AND meeting_id IS NOT NULL
+        """
+        cursor = self.db.execute(meeting_sql, tuple(time_params))
+        meeting_tasks_count = cursor.fetchone()["count"]
+
         return {
             "total_tasks": total_tasks,
             "status_counts": {
@@ -456,6 +544,8 @@ class TaskService:
                 "failed": status_counts.get(TaskStatus.FAILED.value, 0),
                 "cancelled": status_counts.get(TaskStatus.CANCELLED.value, 0),
             },
+            "task_type_counts": task_type_counts,
+            "meeting_tasks_count": meeting_tasks_count,
             "today": {
                 "tasks": today_tasks,
                 "tokens": {
@@ -475,6 +565,8 @@ class TaskService:
             id=row["id"],
             crew_id=row.get("crew_id"),
             flow_id=row.get("flow_id"),
+            meeting_id=row.get("meeting_id"),
+            task_type=row.get("task_type", "crew"),
             name=row["name"],
             description=row.get("description", ""),
             status=TaskStatus(row.get("status", "pending")),

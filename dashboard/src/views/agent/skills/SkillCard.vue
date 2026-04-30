@@ -35,50 +35,38 @@
 
 
           <div class="d-flex align-center mt-1">
-
-
             <v-chip
-
-
               :color="categoryColor"
-
-
               size="x-small"
-
-
               class="mr-2"
-
-
             >
-
-
               {{ categoryLabel }}
-
-
             </v-chip>
-
-
             <v-chip
-
-
-              v-if="skill.version"
-
-
+              v-if="isBuiltin"
+              color="secondary"
               size="x-small"
-
-
-              variant="outlined"
-
-
+              variant="flat"
+              class="mr-2"
             >
-
-
-              v{{ skill.version }}
-
-
+              {{ $t('agent.skills.card.builtinTag') }}
             </v-chip>
-
-
+            <v-chip
+              v-if="builtinTypeLabel"
+              size="x-small"
+              variant="tonal"
+              color="secondary"
+              class="mr-2"
+            >
+              {{ builtinTypeLabel }}
+            </v-chip>
+            <v-chip
+              v-if="skill.version"
+              size="x-small"
+              variant="outlined"
+            >
+              v{{ skill.version }}
+            </v-chip>
           </div>
 
 
@@ -269,128 +257,48 @@
 
 
     <!-- 操作按钮 -->
-
-
     <v-card-actions class="pa-2">
-
-
       <v-btn
-
-
         icon
-
-
         size="small"
-
-
         variant="text"
-
-
         color="info"
-
-
         @click="$emit('test', skill)"
-
-
         :title="$t('agent.skills.card.test')"
-
-
       >
-
-
         <v-icon icon="mdi-bug-play" />
-
-
       </v-btn>
-
-
       <v-btn
-
-
+        v-if="!isBuiltin"
         icon
-
-
         size="small"
-
-
         variant="text"
-
-
         color="primary"
-
-
         @click="$emit('edit', skill)"
-
-
         :title="$t('agent.skills.card.edit')"
-
-
       >
-
-
         <v-icon icon="mdi-pencil" />
-
-
       </v-btn>
-
-
       <v-btn
-
-
+        v-if="!isBuiltin"
         icon
-
-
         size="small"
-
-
         variant="text"
-
-
         color="error"
-
-
         @click="$emit('delete', skill)"
-
-
         :title="$t('agent.skills.card.delete')"
-
-
       >
-
-
         <v-icon icon="mdi-delete" />
-
-
       </v-btn>
-
-
       <v-spacer />
-
-
       <v-btn
-
-
         icon
-
-
         size="small"
-
-
         variant="text"
-
-
         @click="showDetails = !showDetails"
-
-
       >
-
-
         <v-icon :icon="showDetails ? 'mdi-chevron-up' : 'mdi-chevron-down'" />
-
-
       </v-btn>
-
-
     </v-card-actions>
 
 
@@ -635,50 +543,36 @@ const showDetails = ref(false);
 
 
 // 计算属性
+const isBuiltin = computed(() => {
+  return props.skill.source === 'builtin';
+});
 
+const builtinTypeLabel = computed(() => {
+  if (!isBuiltin.value) return '';
+  const builtinType = props.skill.metadata?.builtin_type;
+  if (builtinType === 'flow_generator') {
+    return t('agent.skills.card.builtinTypeFlowGenerator');
+  }
+  if (builtinType === 'expert_agent') {
+    return t('agent.skills.card.builtinTypeExpertAgent');
+  }
+  return '';
+});
 
 const categoryColor = computed(() => {
-
-
-  switch (props.skill.category) {
-
-
-    case 'general':
-
-
+  switch (props.skill.source) {
+    case 'builtin':
+      return 'secondary';
+    case 'astrbot':
       return 'primary';
-
-
-    case 'programming':
-
-
+    case 'claudcode':
       return 'success';
-
-
-    case 'analysis':
-
-
+    case 'crewai':
       return 'warning';
-
-
-    case 'creative':
-
-
-      return 'purple';
-
-
-    case 'other':
-
-
+    case 'custom':
     default:
-
-
       return 'grey';
-
-
   }
-
-
 });
 
 
@@ -686,11 +580,7 @@ const categoryColor = computed(() => {
 
 
 const categoryLabel = computed(() => {
-
-
-  return t(`agent.skills.categories.${props.skill.category}`) || props.skill.category;
-
-
+  return t(`agent.skills.sources.${props.skill.source}`) || props.skill.source;
 });
 
 

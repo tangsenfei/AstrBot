@@ -5,11 +5,18 @@
       "subtitle": "管理 Agent 技能，配置渐进式披露和工作流",
       "tabs": {
         "all": "全部",
-        "general": "通用",
-        "programming": "编程",
-        "analysis": "分析",
-        "creative": "创作",
-        "other": "其他"
+        "builtin": "内置",
+        "astrbot": "AstrBot",
+        "claudcode": "ClaudeCode",
+        "crewai": "CrewAI",
+        "custom": "自定义"
+      },
+      "sources": {
+        "builtin": "内置",
+        "astrbot": "AstrBot",
+        "claudcode": "ClaudeCode",
+        "crewai": "CrewAI",
+        "custom": "自定义"
       },
       "categories": {
         "general": "通用",
@@ -43,7 +50,10 @@
         "edit": "编辑",
         "delete": "删除",
         "version": "版本",
-        "workflow": "工作流"
+        "workflow": "工作流",
+        "builtinTag": "内置",
+        "builtinTypeFlowGenerator": "流程生成",
+        "builtinTypeExpertAgent": "专家智能体"
       },
       "editor": {
         "addTitle": "添加技能",

@@ -7,9 +7,9 @@ from .models import (
     TaskStatus,
     TodoStatus,
     TodoItem,
-    DeerFlowTask,
+    TaskItem,
     LLMProviderConfig,
-    DeerFlowLLMConfig,
+    TaskManagerConfig,
 )
 
 __all__ = [
@@ -19,7 +19,7 @@ __all__ = [
     "TaskStatus",
     "TodoStatus",
     "TodoItem",
-    "DeerFlowTask",
+    "TaskItem",
     "LLMProviderConfig",
-    "DeerFlowLLMConfig",
+    "TaskManagerConfig",
 ]

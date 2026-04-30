@@ -1,0 +1,92 @@
+{
+  "title": "Knowledge Base",
+  "subtitle": "Manage AI assistant knowledge bases with multiple knowledge source support",
+  "buttons": {
+    "add": "Add Knowledge Base",
+    "refresh": "Refresh"
+  },
+  "search": {
+    "placeholder": "Search knowledge bases..."
+  },
+  "stats": {
+    "total": "{count} knowledge bases"
+  },
+  "empty": "No knowledge bases yet, click the button above to create",
+  "status": {
+    "active": "Active",
+    "empty": "Empty"
+  },
+  "sources": {
+    "text": "Text Knowledge",
+    "file": "File Knowledge",
+    "url": "URL Knowledge",
+    "database": "Database Knowledge"
+  },
+  "card": {
+    "noDescription": "No description",
+    "sources": "{count} knowledge sources",
+    "noModel": "No embedding model configured",
+    "addSource": "Add Source",
+    "test": "Retrieval Test",
+    "edit": "Edit",
+    "delete": "Delete"
+  },
+  "editor": {
+    "addTitle": "Add Knowledge Base",
+    "editTitle": "Edit Knowledge Base",
+    "basicInfo": "Basic Information",
+    "name": "Knowledge Base Name",
+    "nameHint": "Set an easily identifiable name for the knowledge base",
+    "description": "Description",
+    "descriptionHint": "Describe the purpose and content of the knowledge base",
+    "embeddingConfig": "Embedding Model Configuration",
+    "provider": "Embedding Model Provider",
+    "model": "Embedding Model",
+    "collectionName": "Vector Collection Name",
+    "collectionNameHint": "Collection name for storing vector data, can be auto-generated",
+    "knowledgeSources": "Knowledge Source Management",
+    "textContent": "Text Content",
+    "textContentPlaceholder": "Enter text content to add...",
+    "addTextSource": "Add Text",
+    "selectFiles": "Select Files",
+    "fileHint": "Supports PDF, Markdown, TXT, Word formats",
+    "uploadFiles": "Upload Files",
+    "url": "URL Address",
+    "urlPlaceholder": "https://example.com/article",
+    "selector": "Content Selector",
+    "selectorPlaceholder": "#content or .article-body",
+    "selectorHint": "Optional, for extracting content from specific page areas",
+    "fetchUrl": "Fetch Content",
+    "dbType": "Database Type",
+    "connectionString": "Connection String",
+    "connectionStringPlaceholder": "postgresql://user:pass@host:port/db",
+    "query": "Query Statement",
+    "queryPlaceholder": "SELECT content FROM documents",
+    "importFromDb": "Import from Database",
+    "addedSources": "Added Knowledge Sources",
+    "validation": {
+      "required": "This field is required"
+    }
+  },
+  "retrieval": {
+    "title": "Retrieval Test",
+    "query": "Query Content",
+    "queryPlaceholder": "Enter content to search...",
+    "topK": "Return Count",
+    "search": "Search",
+    "results": "Search Results",
+    "score": "Similarity",
+    "noResults": "No relevant content found"
+  },
+  "delete": {
+    "title": "Delete Knowledge Base",
+    "confirm": "Are you sure you want to delete knowledge base \"{name}\"? This action cannot be undone."
+  },
+  "messages": {
+    "deleteError": "Delete failed",
+    "retrievalError": "Retrieval failed",
+    "uploadError": "File upload failed",
+    "fetchError": "URL fetch failed",
+    "dbImportError": "Database import failed"
+  }
+}

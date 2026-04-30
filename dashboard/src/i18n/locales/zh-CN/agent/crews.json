@@ -1,0 +1,123 @@
+{
+  "title": "团队管理",
+  "subtitle": "创建和管理智能体团队，配置协作流程",
+  "buttons": {
+    "add": "添加团队",
+    "refresh": "刷新",
+    "more": "更多",
+    "import": "导入",
+    "export": "导出"
+  },
+  "search": {
+    "placeholder": "搜索团队..."
+  },
+  "tabs": {
+    "all": "全部",
+    "sequential": "顺序执行",
+    "hierarchical": "层级管理"
+  },
+  "empty": "暂无团队，请点击上方按钮创建",
+  "status": {
+    "enabled": "已启用",
+    "disabled": "已禁用"
+  },
+  "executor": {
+    "title": "执行团队",
+    "hint": "输入任务内容，团队 \"{name}\" 将开始执行",
+    "input": "任务输入",
+    "execute": "开始执行"
+  },
+  "import": {
+    "title": "导入团队",
+    "selectFile": "选择文件",
+    "hint": "支持导入 JSON 格式的团队定义文件",
+    "button": "导入"
+  },
+  "card": {
+    "noDescription": "暂无描述",
+    "agents": "{count} 个智能体",
+    "tasks": "{count} 个任务",
+    "process": "执行模式",
+    "sequential": "顺序执行",
+    "hierarchical": "层级管理",
+    "edit": "编辑",
+    "copy": "复制",
+    "execute": "执行",
+    "delete": "删除",
+    "memory": "启用记忆",
+    "cache": "启用缓存"
+  },
+  "process": {
+    "sequential": "顺序执行",
+    "hierarchical": "层级管理"
+  },
+  "editor": {
+    "addTitle": "添加团队",
+    "editTitle": "编辑团队",
+    "basicInfo": "基本信息",
+    "basic": {
+      "name": "团队名称",
+      "nameHint": "为团队设置一个易于识别的名称",
+      "description": "描述",
+      "descriptionHint": "描述团队的用途和目标"
+    },
+    "process": {
+      "title": "执行模式",
+      "sequential": "顺序执行",
+      "sequentialHint": "任务按顺序依次执行",
+      "hierarchical": "层级管理",
+      "hierarchicalHint": "由管理者智能体分配任务",
+      "managerLLM": "管理者 LLM",
+      "managerLLMHint": "选择管理者智能体使用的语言模型"
+    },
+    "agents": {
+      "title": "智能体选择",
+      "hint": "选择团队中的智能体成员",
+      "add": "添加智能体",
+      "selectAgent": "选择智能体",
+      "noAgents": "暂无智能体，请先添加智能体"
+    },
+    "tasks": {
+      "title": "任务配置",
+      "hint": "配置团队要执行的任务",
+      "add": "添加任务",
+      "untitled": "未命名任务",
+      "taskName": "任务名称",
+      "taskDescription": "任务描述",
+      "expectedOutput": "预期输出",
+      "assignAgent": "分配智能体",
+      "selectTools": "选择工具",
+      "dependencies": "任务依赖",
+      "dependenciesHint": "选择此任务依赖的其他任务",
+      "noTasks": "暂无任务，请点击上方按钮添加"
+    },
+    "advanced": {
+      "title": "高级配置",
+      "enableMemory": "启用记忆",
+      "maxMessages": "最大消息数",
+      "enableCache": "启用缓存",
+      "maxRPM": "最大 RPM",
+      "maxRPMHint": "每分钟最大请求数",
+      "shareOutput": "共享输出",
+      "shareOutputHint": "允许智能体之间共享任务输出"
+    },
+    "validation": {
+      "required": "此项为必填项"
+    }
+  },
+  "delete": {
+    "title": "删除团队",
+    "confirm": "确定要删除团队 \"{name}\" 吗？ "
+  },
+  "messages": {
+    "loadFailed": "加载失败",
+    "saveSuccess": "保存成功",
+    "saveFailed": "保存失败",
+    "deleteSuccess": "删除成功",
+    "deleteFailed": "删除失败",
+    "deleteError": "删除失败",
+    "executeError": "执行失败",
+    "copyError": "复制失败",
+    "importError": "导入失败"
+  }
+}

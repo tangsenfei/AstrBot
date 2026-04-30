@@ -14,16 +14,11 @@ export interface menu {
   subCaption?: string;
 }
 
-import { getExtensionSidebarItems, getSidebarInsert, getSidebarInserts } from '../../../extensions';
-
-// 注意：这个文件现在包含i18n键值而不是直接的文本
-// 在组件中使用时需要通过t()函数进行翻译
-// 所有键名都使用 core.navigation.* 格式
-const baseSidebarItem: menu[] = [
+const sidebarItems: menu[] = [
   {
-    title: 'core.navigation.welcome',
-    icon: 'mdi-hand-wave-outline',
-    to: '/welcome',
+    title: 'core.navigation.dashboard',
+    icon: 'mdi-view-dashboard',
+    to: '/dashboard/default',
   },
   {
     title: 'core.navigation.platforms',
@@ -36,21 +31,70 @@ const baseSidebarItem: menu[] = [
     to: '/providers',
   },
   {
-    title: 'core.navigation.config',
-    icon: 'mdi-cog',
-    to: '/config#normal',
+    title: 'nicebot.navigation.tool_provider',
+    icon: 'mdi-toolbox',
+    to: '/tool-provider'
+  },
+  {
+    title: 'agent.navigation.title',
+    icon: 'mdi-robot-outline',
     children: [
       {
-        title: 'core.navigation.configTabs.normal',
-        icon: 'mdi-cog',
-        to: '/config#normal'
+        title: 'agent.navigation.agent_management',
+        icon: 'mdi-robot',
+        to: '/agents'
       },
       {
-        title: 'core.navigation.configTabs.system',
-        icon: 'mdi-cog-outline',
-        to: '/config#system'
+        title: 'agent.navigation.roundtables',
+        icon: 'mdi-table-chair',
+        to: '/roundtables'
+      },
+      {
+        title: 'agent.navigation.tools',
+        icon: 'mdi-tools',
+        to: '/agent/tools'
+      },
+      {
+        title: 'agent.navigation.skills',
+        icon: 'mdi-lightning-bolt',
+        to: '/agent/skills'
+      },
+      {
+        title: 'agent.navigation.knowledge',
+        icon: 'mdi-database',
+        to: '/knowledge'
+      },
+      {
+        title: 'agent.navigation.crews',
+        icon: 'mdi-account-group',
+        to: '/crews'
+      },
+      {
+        title: 'agent.navigation.flows',
+        icon: 'mdi-graph',
+        to: '/flows'
+      },
+      {
+        title: 'agent.navigation.tasks',
+        icon: 'mdi-clipboard-list-outline',
+        to: '/agent/tasks'
       }
     ]
+  },
+  {
+    title: 'nicebot.navigation.task_management',
+    icon: 'mdi-clipboard-list-outline',
+    to: '/task-management'
+  },
+  {
+    title: 'nicebot.navigation.memory_management',
+    icon: 'mdi-brain',
+    to: '/memory-management'
+  },
+  {
+    title: 'nicebot.navigation.evolution_center',
+    icon: 'mdi-rocket-launch',
+    to: '/evolution-center'
   },
   {
     title: 'core.navigation.extension',
@@ -90,11 +134,6 @@ const baseSidebarItem: menu[] = [
     to: '/knowledge-base',
   },
   {
-    title: 'core.navigation.persona',
-    icon: 'mdi-heart',
-    to: '/persona'
-  },
-  {
     title: 'core.navigation.groups.more',
     icon: 'mdi-dots-horizontal',
     children: [
@@ -119,9 +158,31 @@ const baseSidebarItem: menu[] = [
         to: '/subagent'
       },
       {
-        title: 'core.navigation.dashboard',
-        icon: 'mdi-view-dashboard',
-        to: '/dashboard/default'
+        title: 'core.navigation.welcome',
+        icon: 'mdi-hand-wave-outline',
+        to: '/welcome'
+      },
+      {
+        title: 'core.navigation.config',
+        icon: 'mdi-cog',
+        to: '/config#normal',
+        children: [
+          {
+            title: 'core.navigation.configTabs.normal',
+            icon: 'mdi-cog',
+            to: '/config#normal'
+          },
+          {
+            title: 'core.navigation.configTabs.system',
+            icon: 'mdi-cog-outline',
+            to: '/config#system'
+          }
+        ]
+      },
+      {
+        title: 'core.navigation.persona',
+        icon: 'mdi-heart',
+        to: '/persona'
       },
       {
         title: 'core.navigation.console',
@@ -135,78 +196,6 @@ const baseSidebarItem: menu[] = [
       },
     ]
   }
-  // {
-  //   title: 'Project ATRI',
-  //   icon: 'mdi-grain',
-  //   to: '/project-atri'
-  // },
 ];
 
-// 合并扩展侧边栏项（支持多个插入点）
-function mergeExtensionSidebarItems(baseItems: menu[], extensionItems: menu[], inserts?: { after: string; items: string[] }[]): menu[] {
-  if (!extensionItems || extensionItems.length === 0) {
-    return baseItems;
-  }
-
-  // 如果没有插入配置，直接追加到末尾
-  if (!inserts || inserts.length === 0) {
-    return [...baseItems, ...extensionItems];
-  }
-
-  const result: menu[] = [];
-  const insertedItems = new Set<string>();
-
-  // 创建插入点映射
-  const insertMap = new Map<string, string[]>();
-  for (const insert of inserts) {
-    insertMap.set(insert.after, insert.items);
-  }
-
-  for (const item of baseItems) {
-    result.push(item);
-    
-    // 检查是否有插入点匹配当前项
-    const itemsToInsert = insertMap.get(item.title || '');
-    if (itemsToInsert) {
-      for (const extItem of extensionItems) {
-        if (itemsToInsert.includes(extItem.title || '') && !insertedItems.has(extItem.title || '')) {
-          result.push(extItem);
-          insertedItems.add(extItem.title || '');
-        }
-      }
-    }
-  }
-
-  // 将未插入的扩展项追加到末尾
-  for (const extItem of extensionItems) {
-    if (!insertedItems.has(extItem.title || '')) {
-      result.push(extItem);
-    }
-  }
-
-  return result;
-}
-
-export function getSidebarItems(): menu[] {
-  // 合并单个 sidebarInsert 和多个 sidebarInserts
-  const singleInsert = getSidebarInsert();
-  const multipleInserts = getSidebarInserts();
-  
-  const allInserts: { after: string; items: string[] }[] = [];
-  
-  if (singleInsert) {
-    allInserts.push(singleInsert);
-  }
-  
-  if (multipleInserts && multipleInserts.length > 0) {
-    allInserts.push(...multipleInserts);
-  }
-  
-  return mergeExtensionSidebarItems(
-    baseSidebarItem,
-    getExtensionSidebarItems(),
-    allInserts.length > 0 ? allInserts : undefined
-  );
-}
-
-export default baseSidebarItem;
+export default sidebarItems;

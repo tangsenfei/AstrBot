@@ -1,0 +1,108 @@
+{
+  "title": "工具管理",
+  "subtitle": "管理和配置智能体可用的工具",
+  "buttons": {
+    "add": "添加工具",
+    "refresh": "刷新",
+    "more": "更多",
+    "import": "导入",
+    "export": "导出"
+  },
+  "search": {
+    "placeholder": "搜索工具..."
+  },
+  "tabs": {
+    "all": "全部",
+    "builtin": "内置",
+    "mcp": "MCP",
+    "custom": "自定义",
+    "apiWrapper": "API 包装器"
+  },
+  "empty": "暂无工具，请点击上方按钮添加",
+  "sources": {
+    "builtin": "内置",
+    "mcp": "MCP",
+    "custom": "自定义",
+    "apiWrapper": "API 包装器"
+  },
+  "card": {
+    "noDescription": "暂无描述",
+    "params": "{count} 个参数",
+    "test": "测试",
+    "edit": "编辑",
+    "delete": "删除",
+    "parameters": "参数",
+    "metadata": "元数据"
+  },
+  "editor": {
+    "addTitle": "添加工具",
+    "editTitle": "编辑工具",
+    "basicInfo": "基本信息",
+    "name": "工具名称",
+    "nameHint": "工具的唯一标识，只能包含小写字母、数字和下划线",
+    "description": "描述",
+    "descriptionHint": "工具的用途描述",
+    "source": "来源",
+    "returnType": "返回类型",
+    "returnTypeHint": "工具返回的数据类型",
+    "parameters": "参数定义",
+    "parametersHint": "定义工具的输入参数",
+    "parametersJson": "参数 JSON",
+    "formatJson": "格式化 JSON",
+    "metadata": "元数据",
+    "metadataJson": "元数据 JSON",
+    "tags": "标签",
+    "tagsLabel": "标签（用逗号分隔）",
+    "tagsHint": "为工具添加标签以便分类",
+    "validation": {
+      "required": "此项为必填",
+      "nameFormat": "名称只能以小写字母开头，包含小写字母、数字和下划线",
+      "invalidJson": "无效的 JSON 格式"
+    }
+  },
+  "tester": {
+    "title": "Agent Chat",
+    "emptyMessage": "Send a message to start chatting",
+    "thinking": "Thinking",
+    "toolsUsed": "Tools Used",
+    "inputPlaceholder": "Type a message... (Ctrl+Enter to send)",
+    "hint": "Press Ctrl+Enter to send",
+    "send": "Send",
+    "currentConfig": "Current Config",
+    "basicInfo": "Basic Info",
+    "role": "Role",
+    "goal": "Goal",
+    "abilities": "Abilities",
+    "tools": "Tools",
+    "skills": "Skills",
+    "knowledgeBases": "Knowledge Bases",
+    "knowledgeBase": "Knowledge Base",
+    "noAbilities": "No abilities configured",
+    "advanced": "Advanced",
+    "planning": "Planning",
+    "memory": "Memory",
+    "clearHistory": "Clear History",
+    "error": "Chat error",
+    "llmConfig": "LLM Config",
+    "provider": "Provider",
+    "model": "Model",
+    "temperature": "Temperature",
+    "maxTokens": "Max Tokens",
+    "notConfigured": "Not Configured",
+    "default": "Default"
+  },
+  "import": {
+    "title": "导入工具",
+    "selectFile": "选择文件",
+    "hint": "支持导入 JSON 格式的工具定义文件",
+    "button": "导入"
+  },
+  "delete": {
+    "title": "删除工具",
+    "confirm": "确定要删除工具 \"{name}\" 吗？ "
+  },
+  "messages": {
+    "deleteError": "删除失败",
+    "importError": "导入失败"
+  }
+}

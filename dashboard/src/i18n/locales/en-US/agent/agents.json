@@ -1,0 +1,123 @@
+{
+  "title": "Agent Management",
+  "subtitle": "Create and manage AI agents, configure roles, abilities and models",
+  "buttons": {
+    "add": "Add Agent",
+    "refresh": "Refresh",
+    "more": "More",
+    "templates": "Create from Template",
+    "import": "Import",
+    "export": "Export"
+  },
+  "templates": {
+    "title": "Select Template",
+    "assistant": {
+      "name": "General Assistant",
+      "description": "A general AI assistant that can answer various questions",
+      "role": "Assistant",
+      "goal": "Help users complete various tasks and answer their questions",
+      "backstory": "I am an intelligent assistant, skilled at understanding and answering various questions."
+    },
+    "researcher": {
+      "name": "Researcher",
+      "description": "A researcher agent skilled in research and analysis",
+      "role": "Researcher",
+      "goal": "Conduct in-depth research on various topics and provide detailed analysis reports",
+      "backstory": "I am a professional researcher, skilled at collecting and analyzing information."
+    },
+    "coder": {
+      "name": "Programmer",
+      "description": "A programmer agent skilled in coding and code review",
+      "role": "Programmer",
+      "goal": "Write high-quality code and solve technical problems",
+      "backstory": "I am an experienced programmer, proficient in multiple programming languages."
+    }
+  },
+  "search": {
+    "placeholder": "Search agents..."
+  },
+  "tabs": {
+    "all": "All",
+    "builtin": "Built-in",
+    "expert": "Expert Team",
+    "custom": "Custom"
+  },
+  "empty": "No agents yet, click the button above to create",
+  "status": {
+    "enabled": "Enabled",
+    "disabled": "Disabled"
+  },
+  "card": {
+    "noRole": "No role description",
+    "tools": "{count} tools",
+    "skills": "{count} skills",
+    "knowledgeBases": "{count} knowledge bases",
+    "knowledgeBase": "Knowledge Base",
+    "planning": "Planning",
+    "memory": "Memory",
+    "test": "Test",
+    "chat": "Chat",
+    "edit": "Edit",
+    "copy": "Copy",
+    "delete": "Delete",
+    "reset": "Reset to initial state",
+    "createFromExpert": "Create custom agent from expert"
+  },
+  "type": {
+    "builtin": "Built-in",
+    "expert": "Expert"
+  },
+  "delete": {
+    "title": "Delete Agent",
+    "confirm": "Are you sure you want to delete agent \"{name}\"? "
+  },
+  "import": {
+    "title": "Import Agents",
+    "selectFile": "Select File",
+    "hint": "Support importing JSON format agent definition files",
+    "button": "Import"
+  },
+  "reset": {
+    "title": "Reset Agent",
+    "confirm": "Are you sure you want to reset {name} to its initial state?",
+    "warning": "After reset, the agent's role, goal, backstory and tool configuration will be restored to system defaults. Your custom modifications will be lost.",
+    "confirmButton": "Confirm Reset",
+    "failed": "Reset failed"
+  },
+  "expert": {
+    "templateLibrary": "Expert Template Library",
+    "batchLlm": "Batch Set LLM",
+    "batchLlmTitle": "Batch Set Expert Team LLM",
+    "batchLlmHint": "This will set the LLM provider and model for all created expert agents.",
+    "batchLlmApply": "Apply",
+    "batchLlmFailed": "Batch set LLM failed",
+    "preview": "View Details",
+    "createFromTemplate": "Create from Template",
+    "createTitle": "Create Agent from Expert Template",
+    "createButton": "Create",
+    "createFailed": "Failed to create expert agent",
+    "role": "Role",
+    "goal": "Goal",
+    "capabilities": "Core Capabilities",
+    "principles": "Behavior Principles",
+    "llmConfig": "LLM Configuration",
+    "provider": "LLM Provider",
+    "model": "Model",
+    "selectProvider": "Select Provider",
+    "selectModel": "Select Model",
+    "noTemplates": "No expert templates available",
+    "noExperts": "No expert agents yet. They will be auto-initialized on system startup.",
+    "createdExperts": "Created Expert Agents"
+  },
+  "messages": {
+    "loadFailed": "Load failed",
+    "saveSuccess": "Saved successfully",
+    "saveFailed": "Save failed",
+    "deleteSuccess": "Deleted successfully",
+    "deleteFailed": "Delete failed",
+    "copySuccess": "Copied successfully",
+    "copyFailed": "Copy failed",
+    "copyError": "Copy failed",
+    "importError": "Import failed"
+  }
+}

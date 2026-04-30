@@ -19,6 +19,14 @@ class ToolSource(Enum):
     API_WRAPPER = "api_wrapper"
 
 
+class SkillSource(Enum):
+    """技能来源"""
+    ASTRBOT = "astrbot"
+    CLAUDECODE = "claudcode"
+    CREWAI = "crewai"
+    CUSTOM = "custom"
+
+
 class DisclosureLevel(Enum):
     """技能披露级别"""
     METADATA = "metadata"
@@ -67,6 +75,14 @@ class TaskStatus(Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+
+
+class RoundtableStatus(Enum):
+    """圆桌会议状态"""
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 
 # ==================== 工具相关模型 ====================
@@ -126,7 +142,8 @@ class Skill:
     id: str
     name: str
     description: str
-    category: str
+    source: str = "custom"
+    category: str = ""
     tools: list[str] = field(default_factory=list)  # Tool ID 列表
     workflow: dict[str, Any] = field(default_factory=dict)  # JSON 工作流定义
     disclosure_level: DisclosureLevel = DisclosureLevel.METADATA
@@ -141,6 +158,7 @@ class Skill:
             "id": self.id,
             "name": self.name,
             "description": self.description,
+            "source": self.source,
             "category": self.category,
             "tools": self.tools,
             "workflow": self.workflow,
@@ -158,6 +176,7 @@ class Skill:
             id=data["id"],
             name=data["name"],
             description=data.get("description", ""),
+            source=data.get("source", data.get("category", "custom")),
             category=data.get("category", ""),
             tools=data.get("tools", []),
             workflow=data.get("workflow", {}),
@@ -212,6 +231,13 @@ class Knowledge:
 
 # ==================== 智能体相关模型 ====================
 
+class AgentType(Enum):
+    """智能体类型"""
+    BUILTIN = "builtin"
+    EXPERT = "expert"
+    CUSTOM = "custom"
+
+
 @dataclass
 class Agent:
     """智能体定义"""
@@ -220,8 +246,8 @@ class Agent:
     role: str
     goal: str
     backstory: str
-    tools: list[str] = field(default_factory=list)  # Tool ID 列表
-    skills: list[str] = field(default_factory=list)  # Skill ID 列表
+    tools: list[str] = field(default_factory=list)
+    skills: list[str] = field(default_factory=list)
     knowledge_id: str | None = None
     provider_id: str | None = None
     model_name: str | None = None
@@ -234,9 +260,22 @@ class Agent:
     verbose: bool = False
     allow_delegation: bool = False
     enabled: bool = True
+    agent_type: AgentType = AgentType.CUSTOM
     metadata: dict[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
+
+    @property
+    def is_builtin(self) -> bool:
+        return self.agent_type in (AgentType.BUILTIN, AgentType.EXPERT)
+
+    @property
+    def is_expert(self) -> bool:
+        return self.agent_type == AgentType.EXPERT
+
+    @property
+    def is_deletable(self) -> bool:
+        return self.agent_type == AgentType.CUSTOM
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -259,6 +298,9 @@ class Agent:
             "verbose": self.verbose,
             "allow_delegation": self.allow_delegation,
             "enabled": self.enabled,
+            "is_builtin": self.is_builtin,
+            "is_expert": self.is_expert,
+            "agent_type": self.agent_type.value,
             "metadata": self.metadata,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
@@ -266,6 +308,9 @@ class Agent:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Agent":
+        agent_type_val = data.get("agent_type", "custom")
+        if agent_type_val == "custom" and data.get("is_builtin", False):
+            agent_type_val = "builtin"
         return cls(
             id=data["id"],
             name=data["name"],
@@ -286,6 +331,7 @@ class Agent:
             verbose=data.get("verbose", False),
             allow_delegation=data.get("allow_delegation", False),
             enabled=data.get("enabled", True),
+            agent_type=AgentType(agent_type_val),
             metadata=data.get("metadata", {}),
             created_at=datetime.fromisoformat(data["created_at"]) if "created_at" in data else datetime.now(),
             updated_at=datetime.fromisoformat(data["updated_at"]) if "updated_at" in data else datetime.now(),
@@ -505,6 +551,8 @@ class AgentTask:
     description: str
     crew_id: str | None = None
     flow_id: str | None = None
+    meeting_id: str | None = None
+    task_type: str = "crew"  # crew/flow/meeting
     status: TaskStatus = TaskStatus.PENDING
     progress: int = 0
     input: dict[str, Any] = field(default_factory=dict)
@@ -524,6 +572,8 @@ class AgentTask:
             "id": self.id,
             "crew_id": self.crew_id,
             "flow_id": self.flow_id,
+            "meeting_id": self.meeting_id,
+            "task_type": self.task_type,
             "name": self.name,
             "description": self.description,
             "status": self.status.value,
@@ -547,6 +597,8 @@ class AgentTask:
             id=data["id"],
             crew_id=data.get("crew_id"),
             flow_id=data.get("flow_id"),
+            meeting_id=data.get("meeting_id"),
+            task_type=data.get("task_type", "crew"),
             name=data["name"],
             description=data.get("description", ""),
             status=TaskStatus(data.get("status", "pending")),
@@ -697,4 +749,92 @@ class TokenStats:
             output_tokens=data.get("output_tokens", 0),
             total_tokens=data.get("total_tokens", 0),
             created_at=datetime.fromisoformat(data["created_at"]) if "created_at" in data else datetime.now(),
+        )
+
+
+# ==================== 圆桌会议相关模型 ====================
+
+@dataclass
+class Roundtable:
+    """圆桌会议定义"""
+    id: str
+    name: str
+    topic: str
+    deliverable: str = ""
+    mode: str = "free"  # hosted 或 free（兼容旧数据）
+    meeting_type: str = "standard"  # standard/brainstorm/parliament/convergence/six_hat/fishbone/swot/okr/retrospective/interview
+    host_agent_id: str | None = None
+    participants: list[str] = field(default_factory=list)  # Agent ID 列表
+    rounds: int = 3
+    config: dict[str, Any] = field(default_factory=dict)
+    status: RoundtableStatus = RoundtableStatus.PENDING
+    result: dict[str, Any] = field(default_factory=dict)
+    discussion_records: list[dict[str, Any]] = field(default_factory=list)  # 实时讨论记录
+    current_round: int = 0  # 当前执行轮次
+    current_speaker: str = ""  # 当前发言者
+    stage: str = "pending"  # 当前阶段: pending/preparing/running/completed/failed
+    streaming_content: str = ""  # 当前流式输出的内容
+    materials: dict[str, Any] = field(default_factory=dict)  # 会议材料 {type: url/file/manual, content: ...}
+    export_format: str = "markdown"  # markdown / word
+    preparation_records: list[dict[str, Any]] = field(default_factory=list)  # 准备阶段记录
+    created_at: datetime = field(default_factory=datetime.now)
+    updated_at: datetime = field(default_factory=datetime.now)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "topic": self.topic,
+            "deliverable": self.deliverable,
+            "mode": self.mode,
+            "meeting_type": self.meeting_type,
+            "host_agent_id": self.host_agent_id,
+            "participants": self.participants,
+            "rounds": self.rounds,
+            "config": self.config,
+            "status": self.status.value,
+            "result": self.result,
+            "discussion_records": self.discussion_records,
+            "current_round": self.current_round,
+            "current_speaker": self.current_speaker,
+            "stage": self.stage,
+            "streaming_content": self.streaming_content,
+            "materials": self.materials,
+            "export_format": self.export_format,
+            "preparation_records": self.preparation_records,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Roundtable":
+        # 兼容旧数据：mode 映射到 meeting_type
+        mode = data.get("mode", "free")
+        meeting_type = data.get("meeting_type", "")
+        if not meeting_type:
+            # 旧数据迁移：hosted -> standard, free -> standard
+            meeting_type = "standard"
+        return cls(
+            id=data["id"],
+            name=data["name"],
+            topic=data.get("topic", ""),
+            deliverable=data.get("deliverable", ""),
+            mode=mode,
+            meeting_type=meeting_type,
+            host_agent_id=data.get("host_agent_id"),
+            participants=data.get("participants", []),
+            rounds=data.get("rounds", 3),
+            config=data.get("config", {}),
+            status=RoundtableStatus(data.get("status", "pending")),
+            result=data.get("result", {}),
+            discussion_records=data.get("discussion_records", []),
+            current_round=data.get("current_round", 0),
+            current_speaker=data.get("current_speaker", ""),
+            stage=data.get("stage", "pending"),
+            streaming_content=data.get("streaming_content", ""),
+            materials=data.get("materials", {}),
+            export_format=data.get("export_format", "markdown"),
+            preparation_records=data.get("preparation_records", []),
+            created_at=datetime.fromisoformat(data["created_at"]) if "created_at" in data else datetime.now(),
+            updated_at=datetime.fromisoformat(data["updated_at"]) if "updated_at" in data else datetime.now(),
         )

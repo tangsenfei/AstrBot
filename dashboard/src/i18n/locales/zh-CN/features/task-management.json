@@ -1,0 +1,73 @@
+{
+  "tabs": {
+    "simple": "简单任务",
+    "deep": "深度任务"
+  },
+  "simple": {
+    "title": "未来任务",
+    "beta": "Beta",
+    "subtitle": "查看给 AstrBot 布置的未来任务。AstrBot 将会被自动唤醒、执行任务，然后将结果告知任务布置方。需要先在配置文件中启用'主动型能力'。",
+    "proactive": {
+      "supported": "支持主动消息的平台: {platforms} 。",
+      "unsupported": "当前没有支持主动消息的平台。"
+    },
+    "actions": {
+      "create": "创建任务",
+      "refresh": "刷新",
+      "delete": "删除",
+      "cancel": "取消",
+      "submit": "提交"
+    },
+    "table": {
+      "title": "任务列表",
+      "empty": "暂无任务",
+      "notAvailable": "无",
+      "timezoneLocal": "本地时区",
+      "headers": {
+        "name": "任务名称",
+        "type": "类型",
+        "cron": "执行时间",
+        "session": "会话",
+        "nextRun": "下次执行",
+        "lastRun": "上次执行",
+        "note": "备注",
+        "actions": "操作"
+      },
+      "type": {
+        "once": "一次性",
+        "activeAgent": "主动 Agent",
+        "workflow": "工作流",
+        "unknown": "未知 ( {type} )"
+      }
+    },
+    "form": {
+      "title": "创建新任务",
+      "chatHint": "任务将在指定时间自动执行，结果会发送到指定会话。",
+      "runOnce": "一次性任务",
+      "name": "任务名称",
+      "note": "任务内容",
+      "cron": "Cron 表达式",
+      "cronPlaceholder": "例如: 0 9 * * * (每天 9:00)",
+      "runAt": "执行时间",
+      "session": "会话 ID",
+      "timezone": "时区 (可选)",
+      "enabled": "启用"
+    },
+    "messages": {
+      "loadFailed": "加载任务失败",
+      "updateFailed": "更新任务失败",
+      "deleteSuccess": "删除成功",
+      "deleteFailed": "删除失败",
+      "createSuccess": "创建成功",
+      "createFailed": "创建失败",
+      "sessionRequired": "请填写会话 ID",
+      "noteRequired": "请填写任务内容",
+      "cronRequired": "请填写 Cron 表达式",
+      "runAtRequired": "请选择执行时间"
+    }
+  },
+  "deep": {
+    "comingSoon": "功能开发中",
+    "description": "深度任务功能即将上线，敬请期待..."
+  }
+}

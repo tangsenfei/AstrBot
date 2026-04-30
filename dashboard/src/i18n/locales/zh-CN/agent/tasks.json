@@ -1,0 +1,139 @@
+{
+  "title": "任务管理",
+  "subtitle": "查看和管理智能体执行的任务",
+  "buttons": {
+    "add": "新建任务",
+    "refresh": "刷新"
+  },
+  "stats": {
+    "total": "总任务数",
+    "running": "运行中",
+    "completed": "已完成",
+    "todayTokens": "今日 Token",
+    "meetingTasks": "会议任务"
+  },
+  "tabs": {
+    "all": "全部",
+    "crew": "团队",
+    "flow": "流程",
+    "meeting": "会议",
+    "pending": "待执行",
+    "running": "运行中",
+    "paused": "已暂停",
+    "waiting_feedback": "等待反馈",
+    "completed": "已完成",
+    "failed": "失败",
+    "cancelled": "已取消",
+    "execution": "执行日志",
+    "planning": "执行计划",
+    "tokens": "Token 统计",
+    "output": "输出结果"
+  },
+  "filter": {
+    "crew": "筛选团队",
+    "timeRange": "时间范围",
+    "timeRanges": {
+      "all": "全部",
+      "today": "今天",
+      "week": "本周",
+      "month": "本月"
+    }
+  },
+  "actions": {
+    "view": "查看详情",
+    "pause": "暂停",
+    "resume": "恢复",
+    "cancel": "取消",
+    "retry": "重试",
+    "delete": "删除",
+    "back": "返回列表"
+  },
+  "tokens": {
+    "totalTokens": "总 Token 数",
+    "promptTokens": "Prompt Token",
+    "completionTokens": "Completion Token",
+    "byAgent": "按智能体统计",
+    "byTime": "按时间统计",
+    "noData": "暂无数据"
+  },
+  "table": {
+    "name": "任务名称",
+    "type": "类型",
+    "status": "状态",
+    "progress": "进度",
+    "tokenUsage": "Token 使用",
+    "createdAt": "创建时间",
+    "actions": "操作"
+  },
+  "types": {
+    "chat": "对话任务",
+    "skill": "技能任务",
+    "flow": "流程任务",
+    "crew": "团队任务"
+  },
+  "status": {
+    "pending": "待执行",
+    "running": "运行中",
+    "paused": "已暂停",
+    "waiting_feedback": "等待反馈",
+    "completed": "已完成",
+    "failed": "失败",
+    "cancelled": "已取消"
+  },
+  "empty": "暂无任务",
+  "notFound": "任务不存在或已被删除",
+  "delete": {
+    "title": "删除任务",
+    "confirm": "确定要删除任务 \"{name}\" 吗？此操作不可恢复。"
+  },
+  "detail": {
+    "subtitle": "任务详情 - ID: {id}",
+    "basicInfo": "基本信息",
+    "type": "任务类型",
+    "crew": "所属团队",
+    "createdAt": "创建时间",
+    "updatedAt": "更新时间",
+    "input": "任务输入",
+    "progress": "执行进度",
+    "totalSteps": "总步骤",
+    "completedSteps": "已完成步骤",
+    "tokenUsage": "Token 使用情况",
+    "totalTokens": "总 Token",
+    "promptTokens": "Prompt Token",
+    "completionTokens": "Completion Token"
+  },
+  "planning": {
+    "title": "执行计划",
+    "step": "步骤 {index}",
+    "empty": "暂无执行计划"
+  },
+  "output": {
+    "copy": "复制结果",
+    "empty": "暂无输出结果"
+  },
+  "feedback": {
+    "title": "提供反馈",
+    "label": "您的反馈",
+    "placeholder": "请输入您对任务执行的反馈...",
+    "submit": "提交反馈"
+  },
+  "control": {
+    "title": "任务控制",
+    "pause": "暂停任务",
+    "resume": "恢复任务",
+    "cancel": "取消任务",
+    "retry": "重试任务",
+    "provideFeedback": "提供反馈",
+    "pendingHint": "任务正在等待执行",
+    "completedHint": "任务已完成",
+    "unknownStatus": "未知状态"
+  },
+  "messages": {
+    "pauseError": "暂停任务失败",
+    "resumeError": "恢复任务失败",
+    "cancelError": "取消任务失败",
+    "retryError": "重试任务失败",
+    "deleteError": "删除任务失败",
+    "feedbackError": "提交反馈失败"
+  }
+}

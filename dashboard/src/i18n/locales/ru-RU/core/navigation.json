@@ -1,8 +1,8 @@
-﻿{
+{
     "welcome": "Добро пожаловать",
-    "dashboard": "Статистика",
-    "platforms": "Боты",
-    "providers": "Провайдеры моделей",
+    "dashboard": "Обзор",
+    "platforms": "Каналы",
+    "providers": "Модели",
     "commands": "Команды",
     "persona": "Персонажи",
     "subagent": "Субагенты",

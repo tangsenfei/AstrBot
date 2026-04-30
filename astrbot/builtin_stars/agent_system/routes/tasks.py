@@ -25,6 +25,13 @@ def register_task_routes(plugin: "AgentSystemPlugin") -> None:
     )
 
     plugin.context.register_web_api(
+        "/agent/tasks/add",
+        _create_task,
+        ["POST"],
+        "创建任务"
+    )
+
+    plugin.context.register_web_api(
         "/agent/tasks/stats",
         _get_task_stats,
         ["GET"],
@@ -119,6 +126,8 @@ async def _list_tasks():
         status = request.args.get("status")
         crew_id = request.args.get("crew_id")
         flow_id = request.args.get("flow_id")
+        meeting_id = request.args.get("meeting_id")
+        task_type = request.args.get("task_type")
         start_time = request.args.get("start_time")
         end_time = request.args.get("end_time")
         page = request.args.get("page", "1")
@@ -138,6 +147,8 @@ async def _list_tasks():
             status=status,
             crew_id=crew_id,
             flow_id=flow_id,
+            meeting_id=meeting_id,
+            task_type=task_type,
             start_time=start_time,
             end_time=end_time,
             page=page,
@@ -147,6 +158,33 @@ async def _list_tasks():
         return Response().ok(result).__dict__
     except Exception as e:
         logger.error(f"Failed to list tasks: {e}")
+        return Response().error(str(e)).__dict__
+
+
+async def _create_task():
+    try:
+        service = _get_task_service()
+        data = await request.get_json()
+        if not data:
+            return Response().error("请求体不能为空").__dict__
+
+        name = data.get("name")
+        if not name:
+            return Response().error("任务名称不能为空").__dict__
+
+        task = service.create_task(
+            name=name,
+            description=data.get("description", ""),
+            task_type=data.get("task_type", "crew"),
+            crew_id=data.get("crew_id"),
+            flow_id=data.get("flow_id"),
+            meeting_id=data.get("meeting_id"),
+            input_data=data.get("input"),
+        )
+
+        return Response().ok(task.to_dict(), "任务创建成功").__dict__
+    except Exception as e:
+        logger.error(f"Failed to create task: {e}")
         return Response().error(str(e)).__dict__
 
 

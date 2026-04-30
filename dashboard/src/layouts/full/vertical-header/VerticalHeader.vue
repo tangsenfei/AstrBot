@@ -19,6 +19,9 @@ import { useLanguageSwitcher } from '@/i18n/composables';
 import type { Locale } from '@/i18n/types';
 import AboutPage from '@/views/AboutPage.vue';
 import { getDesktopRuntimeInfo } from '@/utils/desktopRuntime';
+const brandName = computed(() => {
+  return { first: 'Nice', second: 'Bot' };
+});
 
 enableKatex();
 enableMermaid();
@@ -551,7 +554,7 @@ onMounted(async () => {
 </v-btn>
 
     <div class="logo-container" :class="{ 'mobile-logo': $vuetify.display.xs, 'chat-mode-logo': isChatPath }" @click="handleLogoClick">
-      <span class="logo-text Outfit">Astr<span class="logo-text bot-text-wrapper">Bot
+      <span class="logo-text Outfit">{{ brandName.first }}<span class="logo-text bot-text-wrapper">{{ brandName.second }}
         <img v-if="isChristmas" src="@/assets/images/xmas-hat.png" alt="Christmas hat" class="xmas-hat" />
       </span></span>
       <span class="logo-text logo-text-light Outfit" style="color: grey;" v-if="isChatPath">ChatUI</span>

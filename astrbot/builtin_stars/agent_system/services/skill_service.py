@@ -453,6 +453,87 @@ class SkillService:
 
         return categories
 
+    # ==================== 内置技能 ====================
+
+    def get_builtin_skills(self) -> list[Skill]:
+        """获取内置技能列表
+
+        内置技能包括：
+        1. 流程生成技能（来自 FlowGeneratorSkill）
+        2. 专家智能体的技能（从 agents 表中 agent_type='expert' 的智能体提取 skills 字段）
+
+        Returns:
+            内置技能列表
+        """
+        builtin_skills = []
+
+        # 1. 流程生成技能
+        try:
+            from .flow_generator_skill import FlowGeneratorSkill
+
+            flow_gen = FlowGeneratorSkill()
+            flow_skill_data = flow_gen.to_skill_dict()
+            flow_skill_data["source"] = "builtin"
+            flow_skill_data["metadata"] = {
+                "builtin_type": "flow_generator",
+                "builtin_label": "流程生成",
+            }
+            flow_skill = Skill.from_dict(flow_skill_data)
+            builtin_skills.append(flow_skill)
+        except Exception as e:
+            logger.error(f"Failed to get flow generator skill: {e}")
+
+        # 2. 专家智能体的技能
+        try:
+            expert_agents = self.db.select_all(
+                "agents",
+                where="agent_type = ? AND enabled = 1",
+                where_params=("expert",),
+            )
+
+            for agent_row in expert_agents:
+                agent_name = agent_row.get("name", "")
+                skills_json = agent_row.get("skills", "[]")
+                try:
+                    skill_ids = json.loads(skills_json) if isinstance(skills_json, str) else skills_json
+                except (json.JSONDecodeError, TypeError):
+                    skill_ids = []
+
+                if not skill_ids:
+                    continue
+
+                # 为每个专家智能体创建一个聚合技能
+                expert_skill = Skill(
+                    id=f"builtin_expert_{agent_row['id']}",
+                    name=f"{agent_name} - 专家技能",
+                    description=f"来自专家智能体「{agent_name}」的技能集合，包含 {len(skill_ids)} 个技能",
+                    source="builtin",
+                    category="expert",
+                    tools=[],
+                    workflow={
+                        "type": "expert_agent",
+                        "agent_id": agent_row["id"],
+                        "skill_ids": skill_ids,
+                    },
+                    disclosure_level=DisclosureLevel.INSTRUCTIONS,
+                    version="1.0.0",
+                    enabled=True,
+                    metadata={
+                        "builtin_type": "expert_agent",
+                        "builtin_label": "专家智能体",
+                        "agent_id": agent_row["id"],
+                        "agent_name": agent_name,
+                        "agent_role": agent_row.get("role", ""),
+                        "skill_ids": skill_ids,
+                    },
+                )
+                builtin_skills.append(expert_skill)
+        except Exception as e:
+            logger.error(f"Failed to get expert agent skills: {e}")
+
+        logger.debug(f"Found {len(builtin_skills)} builtin skills")
+        return builtin_skills
+
     # ==================== 私有方法 ====================
 
     def _row_to_skill(self, row: dict[str, Any]) -> Skill:
@@ -516,10 +597,92 @@ class SkillService:
             logger.error(f"Failed to load skill file: {skill_id} - {e}")
         return None
 
-    # ==================== AstrBot Skill 集成 ====================
+    # ==================== 多来源技能集成 ====================
 
+    def get_all_skills_merged(self, source: str | None = None, category: str | None = None) -> list[Skill]:
+        """获取所有技能（合并 AstrBot、ClaudeCode、CrewAI 三种来源）
+
+        Args:
+            source: 按来源筛选 (astrbot, claudcode, crewai, custom)
+            category: 技能分类筛选
+
+        Returns:
+            合并后的技能列表
+        """
+        db_skills = self.get_skills(category)
+
+        # 确保数据库技能有 source 字段
+        for skill in db_skills:
+            if not skill.source or skill.source == "":
+                skill.source = "custom"
+
+        merged_skills = list(db_skills)
+        db_skill_ids = {skill.id for skill in db_skills}
+
+        # 合并 AstrBot 技能
+        if source is None or source == "astrbot":
+            try:
+                from astrbot.core.skills.skill_manager import SkillManager
+                from .astrbot_skill_adapter import AstrBotSkillAdapter
+
+                skill_manager = SkillManager()
+                astrbot_skill_infos = skill_manager.list_skills(active_only=True)
+                astrbot_skills = AstrBotSkillAdapter.batch_convert(astrbot_skill_infos)
+
+                if category:
+                    astrbot_skills = [s for s in astrbot_skills if s.category == category]
+
+                for skill in astrbot_skills:
+                    if skill.id not in db_skill_ids:
+                        merged_skills.append(skill)
+                        db_skill_ids.add(skill.id)
+            except Exception as e:
+                logger.error(f"Failed to merge AstrBot skills: {e}")
+
+        # 合并 ClaudeCode 技能
+        if source is None or source == "claudcode":
+            try:
+                from .claudecode_skill_adapter import ClaudeCodeSkillAdapter
+
+                claudcode_skills = ClaudeCodeSkillAdapter.discover_skills()
+
+                if category:
+                    claudcode_skills = [s for s in claudcode_skills if s.category == category]
+
+                for skill in claudcode_skills:
+                    if skill.id not in db_skill_ids:
+                        merged_skills.append(skill)
+                        db_skill_ids.add(skill.id)
+            except Exception as e:
+                logger.error(f"Failed to merge ClaudeCode skills: {e}")
+
+        # 合并 CrewAI 技能
+        if source is None or source == "crewai":
+            try:
+                from .crewai_skill_adapter import CrewAISkillAdapter
+
+                crewai_skills = CrewAISkillAdapter.discover_skills()
+
+                if category:
+                    crewai_skills = [s for s in crewai_skills if s.category == category]
+
+                for skill in crewai_skills:
+                    if skill.id not in db_skill_ids:
+                        merged_skills.append(skill)
+                        db_skill_ids.add(skill.id)
+            except Exception as e:
+                logger.error(f"Failed to merge CrewAI skills: {e}")
+
+        # 按来源筛选
+        if source:
+            merged_skills = [s for s in merged_skills if s.source == source]
+
+        logger.debug(f"Merged skills total: {len(merged_skills)}")
+        return merged_skills
+
+    # 保留旧方法兼容
     def get_all_skills_with_astrbot(self, category: str | None = None) -> list[Skill]:
-        """获取所有技能（包含 AstrBot 技能，运行时合并）
+        """获取所有技能（包含 AstrBot 技能，运行时合并）- 兼容旧接口
 
         Args:
             category: 技能分类筛选
@@ -527,37 +690,7 @@ class SkillService:
         Returns:
             合并后的技能列表
         """
-        from astrbot.core.skills.skill_manager import SkillManager
-        from .astrbot_skill_adapter import AstrBotSkillAdapter
-
-        db_skills = self.get_skills(category)
-
-        try:
-            skill_manager = SkillManager()
-            astrbot_skill_infos = skill_manager.list_skills(active_only=True)
-
-            astrbot_skills = AstrBotSkillAdapter.batch_convert(astrbot_skill_infos)
-
-            if category:
-                astrbot_skills = [s for s in astrbot_skills if s.category == category]
-
-            db_skill_ids = {skill.id for skill in db_skills}
-            merged_skills = list(db_skills)
-
-            for astrbot_skill in astrbot_skills:
-                if astrbot_skill.id not in db_skill_ids:
-                    merged_skills.append(astrbot_skill)
-
-            logger.debug(
-                f"Merged skills: {len(db_skills)} from DB + "
-                f"{len(astrbot_skills)} from AstrBot = {len(merged_skills)} total"
-            )
-
-            return merged_skills
-
-        except Exception as e:
-            logger.error(f"Failed to merge AstrBot skills: {e}")
-            return db_skills
+        return self.get_all_skills_merged(category=category)
 
     def get_astrbot_skills(self, active_only: bool = True) -> list[dict[str, Any]]:
         """获取 AstrBot 的技能列表

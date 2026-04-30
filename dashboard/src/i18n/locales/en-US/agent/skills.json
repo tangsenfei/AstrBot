@@ -1,0 +1,78 @@
+{
+  "title": "Skills",
+  "subtitle": "Create and manage agent skills, configure workflows",
+  "buttons": {
+    "add": "Add Skill",
+    "refresh": "Refresh",
+    "more": "More",
+    "import": "Import",
+    "export": "Export",
+    "market": "Skill Market"
+  },
+  "search": {
+    "placeholder": "Search skills..."
+  },
+  "tabs": {
+    "all": "All",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "general": "General",
+    "programming": "Programming",
+    "analysis": "Analysis",
+    "creative": "Creative",
+    "other": "Other"
+  },
+  "empty": "No skills yet, click the button above to create",
+  "status": {
+    "enabled": "Enabled",
+    "disabled": "Disabled"
+  },
+  "card": {
+    "noDescription": "No description",
+    "steps": "{count} steps",
+    "edit": "Edit",
+    "delete": "Delete",
+    "test": "Test"
+  },
+  "editor": {
+    "addTitle": "Add Skill",
+    "editTitle": "Edit Skill",
+    "basic": {
+      "name": "Skill Name",
+      "nameHint": "Set an easily identifiable name for the skill",
+      "description": "Description",
+      "descriptionHint": "Describe the purpose and function of the skill"
+    },
+    "workflow": {
+      "title": "Workflow Configuration",
+      "addStep": "Add Step",
+      "stepType": "Step Type",
+      "stepName": "Step Name",
+      "stepDescription": "Step Description",
+      "stepConfig": "Step Configuration"
+    },
+    "validation": {
+      "required": "This field is required",
+      "stepRequired": "At least one step is required"
+    }
+  },
+  "import": {
+    "title": "Import Skills",
+    "selectFile": "Select File",
+    "hint": "Support importing JSON format skill definition files",
+    "button": "Import"
+  },
+  "delete": {
+    "title": "Delete Skill",
+    "confirm": "Are you sure you want to delete skill \"{name}\"? "
+  },
+  "messages": {
+    "loadFailed": "Load failed",
+    "saveSuccess": "Saved successfully",
+    "saveFailed": "Save failed",
+    "deleteSuccess": "Deleted successfully",
+    "deleteFailed": "Delete failed",
+    "deleteError": "Delete failed",
+    "importError": "Import failed"
+  }
+}

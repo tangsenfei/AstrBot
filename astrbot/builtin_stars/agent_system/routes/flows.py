@@ -99,11 +99,26 @@ def register_flow_routes(plugin: "AgentSystemPlugin") -> None:
         "导出 Flow"
     )
 
+    plugin.context.register_web_api(
+        "/agent/flows/templates",
+        _get_flow_templates,
+        ["GET"],
+        "获取流程模板列表"
+    )
+
+    plugin.context.register_web_api(
+        "/agent/flows/generate",
+        _generate_flow,
+        ["POST"],
+        "根据描述生成流程"
+    )
+
     logger.info("Flow management API routes registered")
 
 
 def _get_flow_service():
     from ..services.flow_service import FlowService
+    from ..services.crew_service import CrewService
     from ..database import get_database
 
     db = get_database()
@@ -111,7 +126,8 @@ def _get_flow_service():
     if _plugin_instance and _plugin_instance.context:
         context = _plugin_instance.context
 
-    return FlowService(db, context)
+    crew_service = CrewService(db, context)
+    return FlowService(db, context, crew_service)
 
 
 async def _list_flows():
@@ -309,4 +325,39 @@ async def _export_flows():
         return Response().ok(exported).__dict__
     except Exception as e:
         logger.error(f"Failed to export flows: {e}")
+        return Response().error(str(e)).__dict__
+
+
+def _get_flow_generator():
+    from ..services.flow_generator_skill import FlowGeneratorSkill
+    return FlowGeneratorSkill()
+
+
+async def _get_flow_templates():
+    try:
+        generator = _get_flow_generator()
+        templates = generator.get_flow_templates()
+        return Response().ok(templates).__dict__
+    except Exception as e:
+        logger.error(f"Failed to get flow templates: {e}")
+        return Response().error(str(e)).__dict__
+
+
+async def _generate_flow():
+    try:
+        data = await request.get_json()
+        if not data:
+            return Response().error("请求体不能为空").__dict__
+
+        description = data.get("description", "")
+        if not description:
+            return Response().error("描述不能为空").__dict__
+
+        generator = _get_flow_generator()
+        flow_def = generator.generate_flow(description)
+        return Response().ok(flow_def, "流程生成成功").__dict__
+    except ValueError as e:
+        return Response().error(str(e)).__dict__
+    except Exception as e:
+        logger.error(f"Failed to generate flow: {e}")
         return Response().error(str(e)).__dict__

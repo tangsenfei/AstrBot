@@ -1,0 +1,26 @@
+{
+  "title": "Expert Team",
+  "description": "Professional AI agent templates by domain",
+  "search": "Search experts...",
+  "noResults": "No matching experts found",
+  "createAgent": "Create from Template",
+  "preview": "View Details",
+  "role": "Role",
+  "goal": "Goal",
+  "category": {
+    "all": "All",
+    "engineering": "Engineering",
+    "product": "Product",
+    "design": "Design",
+    "marketing": "Marketing",
+    "security": "Security",
+    "finance": "Finance",
+    "game": "Game Dev",
+    "sales": "Sales",
+    "testing": "Testing",
+    "support": "Support",
+    "project": "Project",
+    "academic": "Academic",
+    "specialized": "Specialized"
+  }
+}

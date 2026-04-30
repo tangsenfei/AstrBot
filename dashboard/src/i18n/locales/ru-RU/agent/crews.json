@@ -1,0 +1,123 @@
+{
+  "title": "Crews",
+  "subtitle": "Create and manage agent crews, configure collaboration workflows",
+  "buttons": {
+    "add": "Add Crew",
+    "refresh": "Refresh",
+    "more": "More",
+    "import": "Import",
+    "export": "Export"
+  },
+  "search": {
+    "placeholder": "Search crews..."
+  },
+  "tabs": {
+    "all": "All",
+    "sequential": "Sequential",
+    "hierarchical": "Hierarchical"
+  },
+  "empty": "No crews yet, click the button above to create",
+  "status": {
+    "enabled": "Enabled",
+    "disabled": "Disabled"
+  },
+  "executor": {
+    "title": "Execute Crew",
+    "hint": "Enter task content, crew \"{name}\" will start execution",
+    "input": "Task Input",
+    "execute": "Start Execution"
+  },
+  "import": {
+    "title": "Import Crew",
+    "selectFile": "Select File",
+    "hint": "Support importing JSON format crew definition files",
+    "button": "Import"
+  },
+  "card": {
+    "noDescription": "No description",
+    "agents": "{count} agents",
+    "tasks": "{count} tasks",
+    "process": "Process",
+    "sequential": "Sequential",
+    "hierarchical": "Hierarchical",
+    "edit": "Edit",
+    "copy": "Copy",
+    "execute": "Execute",
+    "delete": "Delete",
+    "memory": "Enable Memory",
+    "cache": "Enable Cache"
+  },
+  "process": {
+    "sequential": "Sequential",
+    "hierarchical": "Hierarchical"
+  },
+  "editor": {
+    "addTitle": "Add Crew",
+    "editTitle": "Edit Crew",
+    "basicInfo": "Basic Information",
+    "basic": {
+      "name": "Crew Name",
+      "nameHint": "Set an easily identifiable name for the crew",
+      "description": "Description",
+      "descriptionHint": "Describe the purpose and goals of the crew"
+    },
+    "process": {
+      "title": "Process",
+      "sequential": "Sequential",
+      "sequentialHint": "Tasks are executed in order",
+      "hierarchical": "Hierarchical",
+      "hierarchicalHint": "Tasks are assigned by a manager agent",
+      "managerLLM": "Manager LLM",
+      "managerLLMHint": "Select the language model for the manager agent"
+    },
+    "agents": {
+      "title": "Agent Selection",
+      "hint": "Select agent members for the crew",
+      "add": "Add Agent",
+      "selectAgent": "Select Agent",
+      "noAgents": "No agents available, please add agents first"
+    },
+    "tasks": {
+      "title": "Task Configuration",
+      "hint": "Configure tasks for the crew to execute",
+      "add": "Add Task",
+      "untitled": "Untitled Task",
+      "taskName": "Task Name",
+      "taskDescription": "Task Description",
+      "expectedOutput": "Expected Output",
+      "assignAgent": "Assign Agent",
+      "selectTools": "Select Tools",
+      "dependencies": "Dependencies",
+      "dependenciesHint": "Select tasks this task depends on",
+      "noTasks": "No tasks yet, click the button above to add"
+    },
+    "advanced": {
+      "title": "Advanced Configuration",
+      "enableMemory": "Enable Memory",
+      "maxMessages": "Max Messages",
+      "enableCache": "Enable Cache",
+      "maxRPM": "Max RPM",
+      "maxRPMHint": "Maximum requests per minute",
+      "shareOutput": "Share Output",
+      "shareOutputHint": "Allow agents to share task output"
+    },
+    "validation": {
+      "required": "This field is required"
+    }
+  },
+  "delete": {
+    "title": "Delete Crew",
+    "confirm": "Are you sure you want to delete crew \"{name}\"? "
+  },
+  "messages": {
+    "loadFailed": "Load failed",
+    "saveSuccess": "Saved successfully",
+    "saveFailed": "Save failed",
+    "deleteSuccess": "Deleted successfully",
+    "deleteFailed": "Delete failed",
+    "deleteError": "Delete failed",
+    "executeError": "Execution failed",
+    "copyError": "Copy failed",
+    "importError": "Import failed"
+  }
+}

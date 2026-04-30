@@ -49,6 +49,7 @@ class AstrBotSkillAdapter:
             id=skill_id,
             name=skill_info.name,
             description=skill_info.description or "",
+            source="astrbot",
             category=cls._determine_category(skill_info),
             tools=skill_info.allowed_tools or [],
             workflow=cls._create_default_workflow(skill_info),

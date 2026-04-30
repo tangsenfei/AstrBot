@@ -30,6 +30,14 @@ def register_skill_routes(plugin: "AgentSystemPlugin") -> None:
         "获取技能列表"
     )
 
+    # 注册内置技能列表 API（必须在 <skill_id> 路由之前注册，避免 builtin 被当作 skill_id）
+    plugin.context.register_web_api(
+        "/agent/skills/builtin",
+        _get_builtin_skills,
+        ["GET"],
+        "获取内置技能列表"
+    )
+
     # 注册技能详情 API
     plugin.context.register_web_api(
         "/agent/skills/<skill_id>",
@@ -142,19 +150,16 @@ async def _list_skills():
     """获取技能列表
 
     Query Parameters:
+        source: 按来源筛选 (astrbot, claudcode, crewai, custom)
         category: 技能分类筛选
-        include_astrbot: 是否包含 AstrBot 技能（默认 true）
     """
     try:
         service = _get_skill_service()
 
+        source = request.args.get("source")
         category = request.args.get("category")
-        include_astrbot = request.args.get("include_astrbot", "true").lower() == "true"
-        
-        if include_astrbot:
-            skills = service.get_all_skills_with_astrbot(category)
-        else:
-            skills = service.get_skills(category)
+
+        skills = service.get_all_skills_merged(source=source, category=category)
 
         return Response().ok([s.to_dict() for s in skills]).__dict__
 
@@ -416,6 +421,22 @@ async def _get_categories():
 
     except Exception as e:
         logger.error(f"Failed to get categories: {e}")
+        return Response().error(str(e)).__dict__
+
+
+async def _get_builtin_skills():
+    """获取内置技能列表
+
+    内置技能包括流程生成技能和专家智能体的技能
+    """
+    try:
+        service = _get_skill_service()
+        skills = service.get_builtin_skills()
+
+        return Response().ok([s.to_dict() for s in skills]).__dict__
+
+    except Exception as e:
+        logger.error(f"Failed to get builtin skills: {e}")
         return Response().error(str(e)).__dict__
 
 

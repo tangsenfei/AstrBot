@@ -1,5 +1,35 @@
 {
   "agent": {
-    "skills": {}
+    "skills": {
+      "title": "Управление навыками",
+      "subtitle": "Управление навыками агента, настройка прогрессивного раскрытия и рабочих процессов",
+      "tabs": {
+        "all": "Все",
+        "builtin": "Встроенные",
+        "astrbot": "AstrBot",
+        "claudcode": "ClaudeCode",
+        "crewai": "CrewAI",
+        "custom": "Пользовательские"
+      },
+      "sources": {
+        "builtin": "Встроенные",
+        "astrbot": "AstrBot",
+        "claudcode": "ClaudeCode",
+        "crewai": "CrewAI",
+        "custom": "Пользовательские"
+      },
+      "categories": {
+        "general": "Общие",
+        "programming": "Программирование",
+        "analysis": "Анализ",
+        "creative": "Творчество",
+        "other": "Другие"
+      },
+      "disclosureLevels": {
+        "metadata": "Метаданные",
+        "instructions": "Инструкции",
+        "resources": "Ресурсы"
+      }
+    }
   }
 }
