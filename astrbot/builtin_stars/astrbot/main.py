@@ -1,3 +1,4 @@
+import json
 import traceback
 
 from astrbot.api import star
@@ -5,6 +6,11 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.message_components import Image, Plain
 from astrbot.api.provider import LLMResponse, ProviderRequest
 from astrbot.core import logger
+from astrbot.core.memory.pipeline_hooks import (
+    on_agent_reply,
+    on_tool_call,
+    on_user_message,
+)
 
 from .long_term_memory import LongTermMemory
 
@@ -116,3 +122,52 @@ class Main(star.Star):
                     await self.ltm.remove_session(event)
             except Exception as e:
                 logger.error(f"ltm: {e}")
+
+    @filter.platform_adapter_type(filter.PlatformAdapterType.ALL)
+    async def record_user_msg_for_memory(self, event: AstrMessageEvent) -> None:
+        """记录用户消息到记忆系统"""
+        if event.message_str and event.message_str.strip():
+            on_user_message(
+                agent_id=event.get_platform_name(),
+                content=event.message_str,
+                user_id=event.get_sender_id(),
+            )
+
+    @filter.on_llm_response()
+    async def record_llm_resp_for_memory(
+        self, event: AstrMessageEvent, resp: LLMResponse
+    ) -> None:
+        """记录 LLM 响应到记忆系统"""
+        if resp.completion_text:
+            on_agent_reply(
+                agent_id=event.get_platform_name(),
+                content=resp.completion_text,
+            )
+
+    @filter.on_llm_tool_respond()
+    async def record_tool_call_for_memory(
+        self, event: AstrMessageEvent, tool, tool_args, tool_result
+    ) -> None:
+        """记录工具调用到记忆系统"""
+        try:
+            tool_name = getattr(tool, "name", str(tool))
+            params_str = json.dumps(tool_args or {}, ensure_ascii=False)
+            success = not (tool_result and getattr(tool_result, "isError", False))
+
+            result_text = ""
+            if tool_result and hasattr(tool_result, "content") and tool_result.content:
+                first_item = tool_result.content[0]
+                if hasattr(first_item, "text"):
+                    result_text = first_item.text
+                else:
+                    result_text = str(first_item)
+
+            on_tool_call(
+                agent_id=event.get_platform_name(),
+                tool_name=tool_name,
+                params=params_str,
+                result=result_text,
+                success=success,
+            )
+        except Exception as e:
+            logger.warning(f"Memory: record tool call err: {e}")
