@@ -25,6 +25,7 @@ class StaticFileRoute(Route):
             "/extension-marketplace",
             "/conversation",
             "/tool-use",
+            "/memory-management",
         ]
         for i in index_:
             self.app.add_url_rule(i, view_func=self.index)

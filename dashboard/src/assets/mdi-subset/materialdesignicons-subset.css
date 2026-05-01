@@ -1,4 +1,4 @@
-/* Auto-generated MDI subset – 405 icons */
+/* Auto-generated MDI subset – 409 icons */
 /* Do not edit manually. Run: pnpm run subset-icons */
 
 @font-face {
@@ -232,6 +232,10 @@
   content: "\F073A";
 }
 
+.mdi-card-account-details::before {
+  content: "\F05D2";
+}
+
 .mdi-cellphone::before {
   content: "\F011C";
 }
@@ -358,10 +362,6 @@
 
 .mdi-clipboard-text-outline::before {
   content: "\F0A38";
-}
-
-.mdi-clock-fast::before {
-  content: "\F0152";
 }
 
 .mdi-clock-outline::before {
@@ -1296,6 +1296,10 @@
   content: "\F046B";
 }
 
+.mdi-ruler-square::before {
+  content: "\F0CC2";
+}
+
 .mdi-run::before {
   content: "\F070E";
 }
@@ -1482,6 +1486,18 @@
 
 .mdi-text-box-check::before {
   content: "\F0EA6";
+}
+
+.mdi-text-box-edit::before {
+  content: "\F1A7C";
+}
+
+.mdi-text-box-multiple::before {
+  content: "\F0AB7";
+}
+
+.mdi-text-box-multiple-outline::before {
+  content: "\F0AB8";
 }
 
 .mdi-text-box-outline::before {
