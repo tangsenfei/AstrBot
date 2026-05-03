@@ -276,8 +276,26 @@ class WorkService:
             plan_config=plan_config,
             review_config=review_config,
         )
-        await self._start_task_center_task(graph_type, graph_config)
-        return task.to_dict()
+        start_result = await self._start_task_center_task(graph_type, graph_config)
+        now = datetime.now().isoformat()
+        if start_result.get("started"):
+            self.db.update(
+                "agent_tasks",
+                {"status": TaskStatus.RUNNING.value, "started_at": now, "updated_at": now},
+                where="id = ?",
+                where_params=(task_id,),
+            )
+            self._append_log(task_id, "info", "Work 任务已进入执行队列", start_result)
+        else:
+            error = start_result.get("error") or "TaskCenter 启动失败"
+            self.db.update(
+                "agent_tasks",
+                {"status": TaskStatus.FAILED.value, "error": error, "updated_at": now},
+                where="id = ?",
+                where_params=(task_id,),
+            )
+            self._append_log(task_id, "error", "Work 任务启动失败", {"error": error})
+        return self.get_task(task_id)
 
     def get_task(self, task_id: str) -> dict[str, Any]:
         task = self.task_service.get_task(task_id)
@@ -371,10 +389,10 @@ class WorkService:
                 session_id=graph_config.get("session_id", "work"),
                 run_ctx=run_ctx,
             )
-            return {"task_id": record.task_id, "thread_id": record.thread_id}
+            return {"started": True, "task_id": record.task_id, "thread_id": record.thread_id}
         except Exception as e:
-            logger.warning(f"Work task will be recorded without live TaskCenter execution: {e}")
-            return {}
+            logger.warning(f"Work task failed to start TaskCenter execution: {e}", exc_info=True)
+            return {"started": False, "error": str(e)}
 
     def _resolve_provider(self, provider_id: str | None):
         if self.context is None:

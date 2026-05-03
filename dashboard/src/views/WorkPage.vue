@@ -487,7 +487,7 @@ function defaultTaskForm() {
     work_project_id: selectedProjectId.value,
     work_daily_dir_id: selectedDailyDirId.value,
     executor_config: { agent_id: '', crew_id: '', flow_id: '' },
-    plan_config: { enabled: true, effort: 'medium' },
+    plan_config: { enabled: false, effort: 'medium' },
     review_config: { enabled: false, max_rework: 1 },
   };
 }
