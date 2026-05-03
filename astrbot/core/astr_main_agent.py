@@ -15,7 +15,7 @@ from astrbot.core import logger
 from astrbot.core.agent.handoff import HandoffTool
 from astrbot.core.agent.mcp_client import MCPTool
 from astrbot.core.agent.message import TextPart
-from astrbot.core.agent.tool import ToolSet
+from astrbot.core.agent.tool import FunctionTool, ToolSet
 from astrbot.core.astr_agent_context import AgentContextWrapper, AstrAgentContext
 from astrbot.core.astr_agent_hooks import MAIN_AGENT_HOOKS
 from astrbot.core.astr_agent_run_util import AgentRunner
@@ -509,6 +509,60 @@ async def _ensure_persona_and_skills(
         ).strip()
         if router_prompt:
             req.system_prompt += f"\n{router_prompt}\n"
+
+    from astrbot.core.astr_main_agent_resources import MAIN_AGENT_TRIAGE_PROMPT
+    from astrbot.core.langgraph.task_tools import (
+        confirm_task,
+        create_task,
+        get_task_status,
+    )
+
+    if req.func_tool is None:
+        req.func_tool = ToolSet()
+
+    req.func_tool.add_tool(FunctionTool(
+        name="confirm_task",
+        description="向用户确认异步任务创建。当需要多步执行时调用此工具。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "task_type": {"type": "string", "description": "任务类型: plan_execute|meeting|workflow|crew"},
+                "summary": {"type": "string", "description": "一句话摘要"},
+                "detail": {"type": "string", "description": "详细描述"},
+                "estimated_steps": {"type": "integer", "description": "预计步骤数，默认3"},
+            },
+            "required": ["task_type", "summary", "detail"],
+        },
+        handler=confirm_task,
+    ))
+    req.func_tool.add_tool(FunctionTool(
+        name="create_task",
+        description="创建异步任务。用户确认后调用此工具。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "task_type": {"type": "string", "description": "任务类型"},
+                "config": {"type": "object", "description": "任务配置"},
+                "session_id": {"type": "string", "description": "会话ID"},
+            },
+            "required": ["task_type", "config", "session_id"],
+        },
+        handler=create_task,
+    ))
+    req.func_tool.add_tool(FunctionTool(
+        name="get_task_status",
+        description="查询任务状态。用户可随时查询进度。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string", "description": "任务ID"},
+            },
+            "required": ["task_id"],
+        },
+        handler=get_task_status,
+    ))
+    req.system_prompt += f"\n{MAIN_AGENT_TRIAGE_PROMPT}\n"
+
     try:
         event.trace.record(
             "sel_persona",

@@ -8,14 +8,14 @@
         "builtin": "内置",
         "astrbot": "AstrBot",
         "claudcode": "ClaudeCode",
-        "crewai": "CrewAI",
+        "crewai": "CrewAI (已弃用)",
         "custom": "自定义"
       },
       "sources": {
         "builtin": "内置",
         "astrbot": "AstrBot",
         "claudcode": "ClaudeCode",
-        "crewai": "CrewAI",
+        "crewai": "CrewAI (已弃用)",
         "custom": "自定义"
       },
       "categories": {

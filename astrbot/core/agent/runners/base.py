@@ -20,6 +20,9 @@ class AgentState(Enum):
 
 
 class BaseAgentRunner(T.Generic[TContext]):
+    def __init__(self) -> None:
+        self._state: AgentState = AgentState.IDLE
+
     @abc.abstractmethod
     async def reset(
         self,

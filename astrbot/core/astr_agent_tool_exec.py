@@ -10,7 +10,7 @@ from collections.abc import Set as AbstractSet
 import mcp
 
 from astrbot import logger
-from astrbot.core.agent.handoff import HandoffTool
+from astrbot.core.agent.handoff import HandoffTool, MeetingHandoffTool
 from astrbot.core.agent.mcp_client import MCPTool
 from astrbot.core.agent.message import Message
 from astrbot.core.agent.run_context import ContextWrapper
@@ -52,6 +52,9 @@ from astrbot.core.utils.string_utils import normalize_and_dedupe_strings
 
 
 class FunctionToolExecutor(BaseFunctionToolExecutor[AstrAgentContext]):
+    _background_tasks: dict[str, asyncio.Task] = {}
+    _background_threads: dict[str, str] = {}
+
     @classmethod
     def _collect_image_urls_from_args(cls, image_urls_raw: T.Any) -> list[str]:
         if image_urls_raw is None:
@@ -137,6 +140,13 @@ class FunctionToolExecutor(BaseFunctionToolExecutor[AstrAgentContext]):
             AsyncGenerator[None | mcp.types.CallToolResult, None]
 
         """
+        if isinstance(tool, MeetingHandoffTool):
+            async for r in cls._execute_meeting_handoff(
+                tool, run_context, **tool_args
+            ):
+                yield r
+            return
+
         if isinstance(tool, HandoffTool):
             is_bg = tool_args.pop("background_task", False)
             if is_bg:
@@ -293,6 +303,123 @@ class FunctionToolExecutor(BaseFunctionToolExecutor[AstrAgentContext]):
         return None if toolset.empty() else toolset
 
     @classmethod
+    async def _execute_meeting_handoff(
+        cls,
+        tool: MeetingHandoffTool,
+        run_context: ContextWrapper[AstrAgentContext],
+        **tool_args: T.Any,
+    ):
+        from astrbot.core.langgraph.graphs.meeting import build_meeting_graph
+        from astrbot.core.langgraph.state import GraphRunContext
+
+        tool_args = dict(tool_args)
+        input_ = tool_args.get("input", "")
+        meeting_config = tool.meeting_config
+
+        topic = input_ or meeting_config.get("topic", "")
+        strategy = meeting_config.get("strategy", "standard")
+        max_rounds = meeting_config.get("max_rounds", 3)
+        participants = meeting_config.get("participants", [])
+        host = meeting_config.get("host")
+
+        if not participants:
+            yield mcp.types.CallToolResult(
+                content=[mcp.types.TextContent(
+                    type="text",
+                    text="会议无法启动：未配置参会者（meeting_participants）。",
+                )]
+            )
+            return
+
+        if not topic:
+            yield mcp.types.CallToolResult(
+                content=[mcp.types.TextContent(
+                    type="text",
+                    text="会议无法启动：未提供会议主题。",
+                )]
+            )
+            return
+
+        ctx = run_context.context.context
+        event = run_context.context.event
+        umo = event.unified_msg_origin
+        prov_id = getattr(tool, "provider_id", None) or await ctx.get_current_chat_provider_id(umo)
+        provider = ctx.get_provider_by_id(prov_id) if prov_id else None
+
+        from astrbot.core.astr_agent_context import AstrAgentContext
+
+        run_ctx = GraphRunContext(
+            provider=provider,
+            tool_executor=cls(),
+            hooks=None,
+            astr_event=AstrAgentContext(context=ctx, event=event),
+            config={"streaming_response": False, "provider_id": prov_id},
+        )
+
+        graph = build_meeting_graph(strategy=strategy)
+
+        state_input = {
+            "topic": topic,
+            "participants": participants,
+            "host": host,
+            "strategy": strategy,
+            "max_rounds": max_rounds,
+            "current_round": 0,
+            "round_results": [],
+            "system_prompt": tool.agent.instructions or "",
+            "user_prompt": "",
+            "messages": [],
+            "session_id": f"meeting_handoff_{uuid.uuid4().hex[:8]}",
+            "provider_id": prov_id,
+        }
+
+        thread_id = f"meeting_handoff:{uuid.uuid4().hex[:12]}"
+
+        final_state = None
+        try:
+            async for state_snapshot in graph.astream(
+                state_input,
+                config={
+                    "configurable": {
+                        "thread_id": thread_id,
+                        "run_ctx": run_ctx,
+                    }
+                },
+            ):
+                final_state = state_snapshot
+        except Exception as e:
+            logger.error(f"Meeting handoff execution failed: {e}", exc_info=True)
+            yield mcp.types.CallToolResult(
+                content=[mcp.types.TextContent(
+                    type="text",
+                    text=f"会议执行出错: {e}",
+                )]
+            )
+            return
+
+        final_minutes = ""
+        round_results = []
+        if final_state:
+            final_minutes = final_state.get("final_minutes", "")
+            round_results = final_state.get("round_results", [])
+
+        result_parts = []
+        if round_results:
+            result_parts.append("## 会议讨论记录")
+            for i, rr in enumerate(round_results, 1):
+                result_parts.append(f"**{i}.** {rr}")
+            result_parts.append("")
+        if final_minutes:
+            result_parts.append("## 会议纪要")
+            result_parts.append(final_minutes)
+
+        result_text = "\n".join(result_parts) if result_parts else "会议已完成，但未生成纪要。"
+
+        yield mcp.types.CallToolResult(
+            content=[mcp.types.TextContent(type="text", text=result_text)]
+        )
+
+    @classmethod
     async def _execute_handoff(
         cls,
         tool: HandoffTool,
@@ -374,15 +501,8 @@ class FunctionToolExecutor(BaseFunctionToolExecutor[AstrAgentContext]):
         run_context: ContextWrapper[AstrAgentContext],
         **tool_args,
     ):
-        """Execute a handoff as a background task.
-
-        Immediately yields a success response with a task_id, then runs
-        the subagent asynchronously.  When the subagent finishes, a
-        ``CronMessageEvent`` is created so the main LLM can inform the
-        user of the result – the same pattern used by
-        ``_execute_background`` for regular background tasks.
-        """
         task_id = uuid.uuid4().hex
+        thread_id = f"bg_handoff_{task_id}"
 
         async def _run_handoff_in_background() -> None:
             try:
@@ -390,6 +510,7 @@ class FunctionToolExecutor(BaseFunctionToolExecutor[AstrAgentContext]):
                     tool=tool,
                     run_context=run_context,
                     task_id=task_id,
+                    thread_id=thread_id,
                     **tool_args,
                 )
             except Exception as e:  # noqa: BLE001
@@ -397,13 +518,19 @@ class FunctionToolExecutor(BaseFunctionToolExecutor[AstrAgentContext]):
                     f"Background handoff {task_id} ({tool.name}) failed: {e!s}",
                     exc_info=True,
                 )
+            finally:
+                cls._background_tasks.pop(task_id, None)
+                cls._background_threads.pop(task_id, None)
 
-        asyncio.create_task(_run_handoff_in_background())
+        bg_task = asyncio.create_task(_run_handoff_in_background())
+        cls._background_tasks[task_id] = bg_task
+        cls._background_threads[task_id] = thread_id
 
         text_content = mcp.types.TextContent(
             type="text",
             text=(
-                f"Background task dedicated to subagent '{tool.agent.name}' submitted. task_id={task_id}. "
+                f"Background task dedicated to subagent '{tool.agent.name}' submitted. "
+                f"task_id={task_id}, thread_id={thread_id}. "
                 f"The subagent '{tool.agent.name}' is working on the task on hehalf you. "
                 f"You will be notified when it finishes."
             ),
@@ -416,26 +543,100 @@ class FunctionToolExecutor(BaseFunctionToolExecutor[AstrAgentContext]):
         tool: HandoffTool,
         run_context: ContextWrapper[AstrAgentContext],
         task_id: str,
+        thread_id: str | None = None,
         **tool_args,
     ) -> None:
-        """Run the subagent handoff and, on completion, wake the main agent."""
         result_text = ""
         tool_args = dict(tool_args)
         tool_args["image_urls"] = await cls._collect_handoff_image_urls(
             run_context,
             tool_args.get("image_urls"),
         )
+
+        if thread_id is None:
+            thread_id = f"bg_handoff_{task_id}"
+
         try:
-            async for r in cls._execute_handoff(
-                tool,
-                run_context,
-                image_urls_prepared=True,
-                **tool_args,
-            ):
-                if isinstance(r, mcp.types.CallToolResult):
-                    for content in r.content:
-                        if isinstance(content, mcp.types.TextContent):
-                            result_text += content.text + "\n"
+            from langgraph.config import RunnableConfig
+            from langgraph.graph import END, StateGraph
+
+            from astrbot.core.langgraph.checkpoint import get_checkpointer
+            from astrbot.core.langgraph.operators import AgentOperator
+            from astrbot.core.langgraph.state import AgentGraphState, GraphRunContext
+
+            _bg_operator = AgentOperator()
+
+            async def _bg_agent_node(state: AgentGraphState, config: RunnableConfig) -> dict:
+                ctx = run_context.context.context
+                event = run_context.context.event
+                umo = event.unified_msg_origin
+
+                prov_id = getattr(
+                    tool, "provider_id", None
+                ) or await ctx.get_current_chat_provider_id(umo)
+
+                prov_settings: dict = ctx.get_config(umo=umo).get("provider_settings", {})
+                agent_max_step = int(prov_settings.get("max_agent_step", 30))
+
+                bg_run_ctx = GraphRunContext(
+                    provider=None,
+                    tool_executor=None,
+                    hooks=None,
+                    astr_event=run_context.context,
+                    config={
+                        "provider_id": prov_id,
+                        "max_agent_step": agent_max_step,
+                        "tool_call_timeout": run_context.tool_call_timeout,
+                        "streaming_response": False,
+                    },
+                )
+
+                result = await _bg_operator.execute(state, bg_run_ctx, write_stream=False)
+                return {
+                    "messages": state.get("messages", []),
+                    "user_prompt": result.get("final_text", ""),
+                }
+
+            builder = StateGraph(AgentGraphState)
+            builder.add_node("agent", _bg_agent_node)
+            builder.set_entry_point("agent")
+            builder.add_edge("agent", END)
+
+            checkpointer = get_checkpointer()
+            graph = builder.compile(checkpointer=checkpointer)
+
+            ctx = run_context.context.context
+            event = run_context.context.event
+            umo = event.unified_msg_origin
+            prov_id = getattr(
+                tool, "provider_id", None
+            ) or await ctx.get_current_chat_provider_id(umo)
+
+            toolset = cls._build_handoff_toolset(run_context, tool.agent.tools)
+
+            input_state = AgentGraphState(
+                system_prompt=tool.agent.instructions or "",
+                user_prompt=tool_args.get("input", ""),
+                messages=[],
+                image_urls=tool_args.get("image_urls", []),
+                func_tools=[t.name for t in toolset.tools] if toolset and not toolset.empty() else None,
+                session_id=umo,
+                provider_id=prov_id,
+            )
+
+            config = RunnableConfig(
+                configurable={"thread_id": thread_id},
+                recursion_limit=50,
+            )
+
+            graph_result = await graph.ainvoke(input_state, config=config)
+
+            final_text = graph_result.get("user_prompt", "")
+            if final_text:
+                result_text = final_text
+            else:
+                result_text = "Background handoff completed with no text output."
+
         except Exception as e:
             result_text = (
                 f"error: Background task execution failed, internal error: {e!s}"
@@ -454,8 +655,122 @@ class FunctionToolExecutor(BaseFunctionToolExecutor[AstrAgentContext]):
                 or f"Background task for subagent '{tool.agent.name}' finished."
             ),
             summary_name=f"Dedicated to subagent `{tool.agent.name}`",
-            extra_result_fields={"subagent_name": tool.agent.name},
+            extra_result_fields={"subagent_name": tool.agent.name, "thread_id": thread_id},
         )
+
+    @classmethod
+    async def resume_background_handoff(
+        cls,
+        thread_id: str,
+        *,
+        resume_input: dict | None = None,
+    ) -> dict[str, T.Any] | None:
+        from langgraph.config import RunnableConfig
+
+        from astrbot.core.langgraph.checkpoint import get_checkpointer
+        from astrbot.core.langgraph.operators import AgentOperator
+        from astrbot.core.langgraph.state import AgentGraphState, GraphRunContext
+
+        checkpointer = get_checkpointer()
+
+        try:
+            config = RunnableConfig(
+                configurable={"thread_id": thread_id},
+                recursion_limit=50,
+            )
+
+            checkpoint_state = await checkpointer.aget(config)
+            if not checkpoint_state:
+                logger.warning(f"No checkpoint found for thread_id={thread_id}")
+                return None
+
+            builder_state = checkpoint_state.get("channel_values", {})
+            if not builder_state:
+                logger.warning(f"Empty checkpoint state for thread_id={thread_id}")
+                return None
+
+            _resume_operator = AgentOperator()
+
+            async def _resume_agent_node(state: AgentGraphState) -> dict:
+                resume_ctx = GraphRunContext(
+                    provider=None,
+                    tool_executor=None,
+                    hooks=None,
+                    astr_event=None,
+                    config={
+                        "provider_id": builder_state.get("provider_id"),
+                        "max_agent_step": 30,
+                        "tool_call_timeout": 60,
+                        "streaming_response": False,
+                    },
+                )
+                result = await _resume_operator.execute(state, resume_ctx, write_stream=False)
+                return {
+                    "messages": state.get("messages", []),
+                    "user_prompt": result.get("final_text", ""),
+                }
+
+            from langgraph.graph import END, StateGraph
+
+            builder = StateGraph(AgentGraphState)
+            builder.add_node("agent", _resume_agent_node)
+            builder.set_entry_point("agent")
+            builder.add_edge("agent", END)
+
+            graph = builder.compile(checkpointer=checkpointer)
+
+            resume_state = dict(builder_state)
+            if resume_input:
+                resume_state.update(resume_input)
+
+            graph_result = await graph.ainvoke(resume_state, config=config)
+            return {
+                "thread_id": thread_id,
+                "result": graph_result.get("user_prompt", ""),
+                "status": "resumed",
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to resume background handoff for thread_id={thread_id}: {e}")
+            return {
+                "thread_id": thread_id,
+                "error": str(e),
+                "status": "error",
+            }
+
+    @classmethod
+    def cancel_background_handoff(cls, thread_id: str) -> dict[str, T.Any]:
+        task_id_to_cancel = None
+        for tid, t_id in cls._background_threads.items():
+            if t_id == thread_id:
+                task_id_to_cancel = tid
+                break
+
+        if task_id_to_cancel is None:
+            return {
+                "thread_id": thread_id,
+                "status": "not_found",
+                "message": f"No running background task found for thread_id={thread_id}",
+            }
+
+        bg_task = cls._background_tasks.get(task_id_to_cancel)
+        if bg_task and not bg_task.done():
+            bg_task.cancel()
+            cls._background_tasks.pop(task_id_to_cancel, None)
+            cls._background_threads.pop(task_id_to_cancel, None)
+            return {
+                "thread_id": thread_id,
+                "task_id": task_id_to_cancel,
+                "status": "cancelled",
+            }
+
+        cls._background_tasks.pop(task_id_to_cancel, None)
+        cls._background_threads.pop(task_id_to_cancel, None)
+        return {
+            "thread_id": thread_id,
+            "task_id": task_id_to_cancel,
+            "status": "already_done",
+        }
 
     @classmethod
     async def _execute_background(

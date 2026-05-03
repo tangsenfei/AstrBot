@@ -60,6 +60,23 @@
       "invalidJson": "Invalid JSON format"
     }
   },
+  "tester": {
+    "title": "Тест инструмента",
+    "inputParams": "Входные параметры",
+    "paramsJson": "Параметры (JSON)",
+    "formatJson": "Форматировать",
+    "reset": "Сбросить",
+    "result": "Результат выполнения",
+    "executing": "Выполнение...",
+    "success": "Выполнено успешно",
+    "failed": "Ошибка выполнения",
+    "noResult": "Выполнено успешно, нет возвращаемого значения",
+    "clickToTest": "Нажмите \"Выполнить тест\" для просмотра результатов",
+    "execute": "Выполнить тест",
+    "invalidJson": "Неверный формат JSON",
+    "unknownError": "Неизвестная ошибка",
+    "requestFailed": "Ошибка запроса"
+  },
   "import": {
     "title": "Import Tools",
     "selectFile": "Select File",

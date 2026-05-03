@@ -5,8 +5,10 @@ from typing import TYPE_CHECKING, Any
 
 from astrbot import logger
 from astrbot.core.agent.agent import Agent
-from astrbot.core.agent.handoff import HandoffTool
+from astrbot.core.agent.handoff import HandoffTool, MeetingHandoffTool
 from astrbot.core.provider.func_tool_manager import FunctionToolManager
+
+IMPLEMENTED_MEETING_STRATEGIES = frozenset({"standard", "brainstorm", "parliament"})
 
 if TYPE_CHECKING:
     from astrbot.core.persona_mgr import PersonaManager
@@ -86,14 +88,37 @@ class SubAgentOrchestrator:
                 tools=tools,  # type: ignore
             )
             agent.begin_dialogs = begin_dialogs
-            # The tool description should be a short description for the main LLM,
-            # while the subagent system prompt can be longer/more specific.
-            handoff = HandoffTool(
-                agent=agent,
-                tool_description=public_description or None,
-            )
 
-            # Optional per-subagent chat provider override.
+            agent_type = str(item.get("type", "")).strip().lower()
+
+            if agent_type == "meeting":
+                strategy = str(item.get("meeting_strategy", "standard")).strip().lower()
+                if strategy not in IMPLEMENTED_MEETING_STRATEGIES:
+                    logger.warning(
+                        "Meeting strategy '%s' is not implemented, fallback to 'standard'. "
+                        "Available: %s",
+                        strategy,
+                        sorted(IMPLEMENTED_MEETING_STRATEGIES),
+                    )
+                    strategy = "standard"
+                meeting_config = {
+                    "strategy": strategy,
+                    "max_rounds": item.get("meeting_max_rounds", 3),
+                    "participants": item.get("meeting_participants", []),
+                    "host": item.get("meeting_host"),
+                    "topic": item.get("meeting_topic", ""),
+                }
+                handoff = MeetingHandoffTool(
+                    agent=agent,
+                    meeting_config=meeting_config,
+                    tool_description=public_description or None,
+                )
+            else:
+                handoff = HandoffTool(
+                    agent=agent,
+                    tool_description=public_description or None,
+                )
+
             handoff.provider_id = provider_id
 
             handoffs.append(handoff)

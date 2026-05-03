@@ -1,78 +1,128 @@
 {
-  "title": "Skills",
-  "subtitle": "Create and manage agent skills, configure workflows",
+  "title": "Управление навыками",
+  "subtitle": "Управление навыками агента, настройка прогрессивного раскрытия и рабочих процессов",
   "buttons": {
-    "add": "Add Skill",
-    "refresh": "Refresh",
-    "more": "More",
-    "import": "Import",
-    "export": "Export",
-    "market": "Skill Market"
+    "add": "Добавить навык",
+    "refresh": "Обновить",
+    "more": "Ещё",
+    "import": "Импорт",
+    "export": "Экспорт",
+    "market": "Маркет навыков"
   },
   "search": {
-    "placeholder": "Search skills..."
+    "placeholder": "Поиск навыков по названию или описанию..."
   },
   "tabs": {
-    "all": "All",
-    "enabled": "Enabled",
-    "disabled": "Disabled",
-    "general": "General",
-    "programming": "Programming",
-    "analysis": "Analysis",
-    "creative": "Creative",
-    "other": "Other"
+    "all": "Все",
+    "builtin": "Встроенные",
+    "astrbot": "AstrBot",
+    "claudcode": "ClaudeCode",
+    "crewai": "CrewAI (устарело)",
+    "custom": "Пользовательские"
   },
-  "empty": "No skills yet, click the button above to create",
+  "sources": {
+    "builtin": "Встроенные",
+    "astrbot": "AstrBot",
+    "claudcode": "ClaudeCode",
+    "crewai": "CrewAI (устарело)",
+    "custom": "Пользовательские"
+  },
+  "categories": {
+    "general": "Общие",
+    "programming": "Программирование",
+    "analysis": "Анализ",
+    "creative": "Творческие",
+    "other": "Прочие"
+  },
+  "disclosureLevels": {
+    "metadata": "Метаданные",
+    "instructions": "Инструкции",
+    "resources": "Ресурсы"
+  },
+  "empty": "Нет доступных навыков, добавьте новые",
   "status": {
-    "enabled": "Enabled",
-    "disabled": "Disabled"
+    "enabled": "Включено",
+    "disabled": "Отключено"
   },
   "card": {
-    "noDescription": "No description",
-    "steps": "{count} steps",
-    "edit": "Edit",
-    "delete": "Delete",
-    "test": "Test"
+    "noDescription": "Нет описания",
+    "steps": "{count} шагов",
+    "disclosureLevel": "Уровень раскрытия",
+    "preapprovedTools": "{count} предварительно одобренных инструментов",
+    "test": "Тест",
+    "edit": "Редактировать",
+    "delete": "Удалить",
+    "version": "Версия",
+    "workflow": "Рабочий процесс",
+    "builtinTag": "Встроенный",
+    "builtinTypeFlowGenerator": "Генератор потока",
+    "builtinTypeExpertAgent": "Экспертный агент"
   },
   "editor": {
-    "addTitle": "Add Skill",
-    "editTitle": "Edit Skill",
-    "basic": {
-      "name": "Skill Name",
-      "nameHint": "Set an easily identifiable name for the skill",
-      "description": "Description",
-      "descriptionHint": "Describe the purpose and function of the skill"
-    },
-    "workflow": {
-      "title": "Workflow Configuration",
-      "addStep": "Add Step",
-      "stepType": "Step Type",
-      "stepName": "Step Name",
-      "stepDescription": "Step Description",
-      "stepConfig": "Step Configuration"
-    },
+    "addTitle": "Добавить навык",
+    "editTitle": "Редактировать навык",
+    "basicInfo": "Основная информация",
+    "name": "Название навыка",
+    "nameHint": "Используйте строчные буквы, цифры и подчеркивания, например: code_review",
+    "description": "Описание навыка",
+    "descriptionHint": "Опишите функцию и назначение навыка",
+    "category": "Категория навыка",
+    "categoryHint": "Выберите категорию навыка",
+    "version": "Версия",
+    "versionHint": "например: 1.0.0",
+    "disclosure": "Прогрессивное раскрытие",
+    "disclosureLevel": "Уровень раскрытия",
+    "disclosureLevelHint": "Выберите уровень прогрессивного раскрытия навыка",
+    "preapprovedTools": "Предварительно одобренные инструменты",
+    "preapprovedToolsHint": "Выберите предварительно одобренные инструменты для этого навыка",
+    "workflow": "Конфигурация рабочего процесса",
+    "workflowHint": "Настройте шаги рабочего процесса навыка",
+    "metadata": "Метаданные",
+    "metadataJson": "Метаданные (JSON)",
+    "tags": "Теги",
+    "tagsLabel": "Теги навыка",
+    "tagsHint": "Добавьте теги для категоризации и поиска",
+    "formatJson": "Форматировать",
     "validation": {
-      "required": "This field is required",
-      "stepRequired": "At least one step is required"
+      "required": "Это поле обязательно",
+      "nameFormat": "Название может содержать только строчные буквы, цифры и подчеркивания, и должно начинаться с буквы",
+      "invalidJson": "Неверный формат JSON",
+      "stepRequired": "Требуется хотя бы один шаг"
     }
   },
+  "workflow": {
+    "title": "Редактор рабочего процесса",
+    "steps": "Список шагов",
+    "addStep": "Добавить шаг",
+    "stepName": "Название шага",
+    "stepDescription": "Описание шага",
+    "stepTool": "Использовать инструмент",
+    "stepOrder": "Порядок",
+    "noSteps": "Нет шагов рабочего процесса",
+    "jsonPreview": "Предпросмотр JSON",
+    "moveUp": "Вверх",
+    "moveDown": "Вниз",
+    "removeStep": "Удалить шаг"
+  },
   "import": {
-    "title": "Import Skills",
-    "selectFile": "Select File",
-    "hint": "Support importing JSON format skill definition files",
-    "button": "Import"
+    "title": "Импорт навыков",
+    "selectFile": "Выберите JSON файл",
+    "hint": "Выберите JSON файл с конфигурацией навыков",
+    "button": "Импорт"
   },
   "delete": {
-    "title": "Delete Skill",
-    "confirm": "Are you sure you want to delete skill \"{name}\"? "
+    "title": "Подтверждение удаления",
+    "confirm": "Вы уверены, что хотите удалить навык \"{name}\"? Это действие нельзя отменить."
   },
   "messages": {
-    "loadFailed": "Load failed",
-    "saveSuccess": "Saved successfully",
-    "saveFailed": "Save failed",
-    "deleteSuccess": "Deleted successfully",
-    "deleteFailed": "Delete failed",
-    "deleteError": "Delete failed",
-    "importError": "Import failed"
+    "loadFailed": "Ошибка загрузки",
+    "saveSuccess": "Успешно сохранено",
+    "saveFailed": "Ошибка сохранения",
+    "deleteSuccess": "Успешно удалено",
+    "deleteFailed": "Ошибка удаления",
+    "deleteError": "Ошибка удаления",
+    "importError": "Ошибка импорта",
+    "saveError": "Ошибка сохранения",
+    "loadError": "Ошибка загрузки"
   }
 }

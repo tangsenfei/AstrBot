@@ -1,4 +1,4 @@
- """
+"""
 ClaudeCode Skill 适配器
 
 读取用户的 Claude Code skill 配置，转换为智能体系统的 Skill 模型

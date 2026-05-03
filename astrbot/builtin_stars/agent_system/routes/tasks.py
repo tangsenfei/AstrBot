@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from quart import jsonify, request
+from quart import request
 
 from astrbot.core import logger
 from astrbot.dashboard.routes.route import Response
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from ..main import AgentSystemPlugin
 
 
-def register_task_routes(plugin: "AgentSystemPlugin") -> None:
+def register_task_routes(plugin: AgentSystemPlugin) -> None:
     plugin.context.register_web_api(
         "/agent/tasks",
         _list_tasks,
@@ -88,6 +88,13 @@ def register_task_routes(plugin: "AgentSystemPlugin") -> None:
     )
 
     plugin.context.register_web_api(
+        "/agent/tasks/<task_id>/input",
+        _submit_task_input,
+        ["POST"],
+        "提交任务补充信息"
+    )
+
+    plugin.context.register_web_api(
         "/agent/tasks/<task_id>/logs",
         _get_task_logs,
         ["GET"],
@@ -112,8 +119,8 @@ def register_task_routes(plugin: "AgentSystemPlugin") -> None:
 
 
 def _get_task_service():
-    from ..services.task_service import TaskService
     from ..database import get_database
+    from ..services.task_service import TaskService
 
     db = get_database()
     return TaskService(db)
@@ -307,6 +314,21 @@ async def _get_subtasks(task_id: str):
         return Response().ok([subtask.to_dict() for subtask in subtasks]).__dict__
     except Exception as e:
         logger.error(f"Failed to get subtasks for task {task_id}: {e}")
+        return Response().error(str(e)).__dict__
+
+
+async def _submit_task_input(task_id: str):
+    try:
+        data = await request.get_json()
+        if not data or "text" not in data:
+            return Response().error("Missing 'text' field").__dict__
+        service = _get_task_service()
+        ok = service.set_pending_input(task_id, data["text"])
+        if ok:
+            return Response().ok({"task_id": task_id, "status": "input_set"}).__dict__
+        return Response().error(f"Task {task_id} not found").__dict__
+    except Exception as e:
+        logger.error(f"Failed to set pending input for task {task_id}: {e}")
         return Response().error(str(e)).__dict__
 
 

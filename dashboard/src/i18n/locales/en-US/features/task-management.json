@@ -67,7 +67,88 @@
     }
   },
   "deep": {
-    "comingSoon": "Coming Soon",
-    "description": "Deep task feature is coming soon, stay tuned..."
+    "title": "Deep Tasks",
+    "subtitle": "Manage agent crew, flow and meeting tasks",
+    "stats": {
+      "total": "Total Tasks",
+      "completed": "Completed",
+      "running": "Running",
+      "meeting": "Meeting Tasks"
+    },
+    "filter": {
+      "all": "All",
+      "crew": "Crew",
+      "flow": "Flow",
+      "meeting": "Meeting",
+      "statusPlaceholder": "Filter by status",
+      "searchPlaceholder": "Search tasks..."
+    },
+    "table": {
+      "name": "Task Name",
+      "type": "Type",
+      "relation": "Relation",
+      "status": "Status",
+      "progress": "Progress",
+      "tokens": "Tokens",
+      "created": "Created",
+      "actions": "Actions"
+    },
+    "status": {
+      "pending": "Pending",
+      "running": "Running",
+      "paused": "Paused",
+      "waiting_feedback": "Waiting Feedback",
+      "completed": "Completed",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
+    },
+    "actions": {
+      "create": "New Task",
+      "refresh": "Refresh",
+      "view": "View Details",
+      "pause": "Pause",
+      "resume": "Resume",
+      "cancel": "Cancel",
+      "retry": "Retry",
+      "delete": "Delete"
+    },
+    "create": {
+      "title": "New Task",
+      "name": "Task Name",
+      "nameRequired": "Please enter a task name",
+      "description": "Description",
+      "type": "Task Type",
+      "crewTask": "Crew Task",
+      "flowTask": "Flow Task",
+      "meetingTask": "Meeting Task",
+      "selectCrew": "Select Crew",
+      "selectFlow": "Select Flow",
+      "selectMeeting": "Select Meeting",
+      "inputData": "Input Data (JSON)",
+      "cancel": "Cancel",
+      "submit": "Create"
+    },
+    "detail": {
+      "title": "Task Details",
+      "type": "Task Type",
+      "progress": "Progress",
+      "description": "Description",
+      "tokens": "Token Usage",
+      "createdAt": "Created At",
+      "completedAt": "Completed At",
+      "error": "Error",
+      "result": "Result",
+      "close": "Close"
+    },
+    "messages": {
+      "loadFailed": "Failed to load tasks",
+      "createFailed": "Failed to create task",
+      "pauseFailed": "Failed to pause task",
+      "resumeFailed": "Failed to resume task",
+      "cancelFailed": "Failed to cancel task",
+      "retryFailed": "Failed to retry task",
+      "deleteFailed": "Failed to delete task",
+      "deleteConfirm": "Are you sure you want to delete task \"{name}\"?"
+    }
   }
 }

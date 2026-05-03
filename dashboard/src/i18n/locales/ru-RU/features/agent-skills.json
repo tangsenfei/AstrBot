@@ -8,27 +8,114 @@
         "builtin": "Встроенные",
         "astrbot": "AstrBot",
         "claudcode": "ClaudeCode",
-        "crewai": "CrewAI",
+        "crewai": "CrewAI (устарело)",
         "custom": "Пользовательские"
       },
       "sources": {
         "builtin": "Встроенные",
         "astrbot": "AstrBot",
         "claudcode": "ClaudeCode",
-        "crewai": "CrewAI",
+        "crewai": "CrewAI (устарело)",
         "custom": "Пользовательские"
       },
       "categories": {
         "general": "Общие",
         "programming": "Программирование",
         "analysis": "Анализ",
-        "creative": "Творчество",
-        "other": "Другие"
+        "creative": "Творческие",
+        "other": "Прочие"
       },
       "disclosureLevels": {
         "metadata": "Метаданные",
         "instructions": "Инструкции",
         "resources": "Ресурсы"
+      },
+      "buttons": {
+        "add": "Добавить навык",
+        "refresh": "Обновить",
+        "more": "Ещё",
+        "import": "Импорт",
+        "export": "Экспорт",
+        "market": "Маркет навыков"
+      },
+      "search": {
+        "placeholder": "Поиск навыков по названию или описанию..."
+      },
+      "empty": "Нет доступных навыков, добавьте новые",
+      "card": {
+        "noDescription": "Нет описания",
+        "disclosureLevel": "Уровень раскрытия",
+        "preapprovedTools": "{count} предварительно одобренных инструментов",
+        "test": "Тест",
+        "edit": "Редактировать",
+        "delete": "Удалить",
+        "version": "Версия",
+        "workflow": "Рабочий процесс",
+        "builtinTag": "Встроенный",
+        "builtinTypeFlowGenerator": "Генератор потока",
+        "builtinTypeExpertAgent": "Экспертный агент"
+      },
+      "editor": {
+        "addTitle": "Добавить навык",
+        "editTitle": "Редактировать навык",
+        "basicInfo": "Основная информация",
+        "name": "Название навыка",
+        "nameHint": "Используйте строчные буквы, цифры и подчеркивания, например: code_review",
+        "description": "Описание навыка",
+        "descriptionHint": "Опишите функцию и назначение навыка",
+        "category": "Категория навыка",
+        "categoryHint": "Выберите категорию навыка",
+        "version": "Версия",
+        "versionHint": "например: 1.0.0",
+        "disclosure": "Прогрессивное раскрытие",
+        "disclosureLevel": "Уровень раскрытия",
+        "disclosureLevelHint": "Выберите уровень прогрессивного раскрытия навыка",
+        "preapprovedTools": "Предварительно одобренные инструменты",
+        "preapprovedToolsHint": "Выберите предварительно одобренные инструменты для этого навыка",
+        "workflow": "Конфигурация рабочего процесса",
+        "workflowHint": "Настройте шаги рабочего процесса навыка",
+        "metadata": "Метаданные",
+        "metadataJson": "Метаданные (JSON)",
+        "tags": "Теги",
+        "tagsLabel": "Теги навыка",
+        "tagsHint": "Добавьте теги для категоризации и поиска",
+        "formatJson": "Форматировать",
+        "validation": {
+          "required": "Это поле обязательно",
+          "nameFormat": "Название может содержать только строчные буквы, цифры и подчеркивания, и должно начинаться с буквы",
+          "invalidJson": "Неверный формат JSON"
+        }
+      },
+      "workflow": {
+        "title": "Редактор рабочего процесса",
+        "steps": "Список шагов",
+        "addStep": "Добавить шаг",
+        "stepName": "Название шага",
+        "stepDescription": "Описание шага",
+        "stepTool": "Использовать инструмент",
+        "stepOrder": "Порядок",
+        "noSteps": "Нет шагов рабочего процесса",
+        "jsonPreview": "Предпросмотр JSON",
+        "moveUp": "Вверх",
+        "moveDown": "Вниз",
+        "removeStep": "Удалить шаг"
+      },
+      "import": {
+        "title": "Импорт навыков",
+        "selectFile": "Выберите JSON файл",
+        "hint": "Выберите JSON файл с конфигурацией навыков",
+        "button": "Импорт"
+      },
+      "delete": {
+        "title": "Подтверждение удаления",
+        "confirm": "Вы уверены, что хотите удалить навык \"{name}\"? Это действие нельзя отменить."
+      },
+      "messages": {
+        "deleteError": "Ошибка удаления",
+        "importError": "Ошибка импорта",
+        "saveError": "Ошибка сохранения",
+        "saveSuccess": "Успешно сохранено",
+        "loadError": "Ошибка загрузки"
       }
     }
   }

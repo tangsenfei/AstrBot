@@ -482,16 +482,14 @@ def _generate_meeting_summary(roundtable) -> str:
     if discussion_rounds:
         lines.append("## 会议过程")
         for r in discussion_rounds:
-            lines.append(f"### 第 {r['round']} 轮")
-            if r.get("opening"):
-                lines.append(f"**开场**: {r['opening']}")
-                lines.append("")
-            for s in r.get("speeches", []):
-                lines.append(f"**{s['agent_name']}**: {s['content']}")
-                lines.append("")
-            if r.get("summary"):
-                lines.append(f"**总结**: {r['summary']}")
-                lines.append("")
+            lines.append(f"### 第 {r.get('round', '?')} 轮")
+            speaker = r.get("speaker", "")
+            content = r.get("content", "")
+            if speaker:
+                lines.append(f"**{speaker}**: {content}")
+            else:
+                lines.append(content)
+            lines.append("")
 
     # 完成阶段
     lines.append("## 会议结论")
@@ -613,8 +611,19 @@ def _generate_preparation_questions(roundtable) -> list[dict]:
 async def _get_meeting_types():
     """获取会议类型列表"""
     try:
-        from ..services.meeting_strategies import get_strategy_info
-        return Response().ok(get_strategy_info()).__dict__
+        meeting_types = [
+            {"type": "standard", "name": "标准讨论", "description": "多智能体围绕主题进行多轮自由讨论，逐步深入并达成共识"},
+            {"type": "brainstorm", "name": "头脑风暴", "description": "鼓励发散思维，快速生成大量创意和想法，不做评判"},
+            {"type": "parliament", "name": "议会辩论", "description": "正反双方就议题展开辩论，通过质询和反驳深化论证"},
+            {"type": "convergence", "name": "收敛决策", "description": "从多个方案中逐步筛选、评估，最终收敛到最优决策"},
+            {"type": "six_hat", "name": "六顶思考帽", "description": "按六种思维角色（白红黑黄绿蓝）依次分析问题"},
+            {"type": "fishbone", "name": "鱼骨分析", "description": "从人、机、料、法、环、测六个维度分析问题根因"},
+            {"type": "swot", "name": "SWOT 分析", "description": "从优势、劣势、机会、威胁四个维度进行战略分析"},
+            {"type": "okr", "name": "OKR 制定", "description": "制定目标与关键成果，确保目标可衡量、可追踪"},
+            {"type": "retrospective", "name": "回顾复盘", "description": "回顾过去的工作，总结经验教训，制定改进计划"},
+            {"type": "interview", "name": "面试评审", "description": "模拟面试场景，从多角度评估候选人或方案"},
+        ]
+        return Response().ok(meeting_types).__dict__
     except Exception as e:
         logger.error(f"Failed to get meeting types: {e}")
         return Response().error(str(e)).__dict__

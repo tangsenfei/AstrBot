@@ -56,25 +56,15 @@
       </v-toolbar>
 
       <v-card-text class="flex-grow-1 pa-0 d-flex" style="overflow: hidden">
-        <v-navigation-drawer
-          v-model="showPalette"
-          location="left"
-          width="280"
-          class="border-e"
-          permanent
+        <div
+          class="node-palette-container border-e"
+          style="width: 280px; min-width: 280px; overflow-y: auto; background: rgb(var(--v-theme-surface));"
         >
           <NodePalette @drag-start="handleDragStart" />
-        </v-navigation-drawer>
+        </div>
 
         <div class="flex-grow-1 d-flex flex-column">
           <v-toolbar density="compact" color="surface-variant" class="border-b">
-            <v-btn icon variant="text" @click="showPalette = !showPalette">
-              <v-icon :icon="showPalette ? 'mdi-chevron-left' : 'mdi-chevron-right'" />
-            </v-btn>
-            <v-btn icon variant="text" @click="showProperties = !showProperties">
-              <v-icon :icon="showProperties ? 'mdi-chevron-right' : 'mdi-chevron-left'" />
-            </v-btn>
-            <v-divider vertical class="mx-2" />
             <v-btn icon variant="text" @click="zoomIn" :title="$t('agent.flows.editor.zoomIn')">
               <v-icon icon="mdi-magnify-plus" />
             </v-btn>
@@ -120,20 +110,38 @@
             @edges-change="handleEdgesChange"
           />
         </div>
-
-        <v-navigation-drawer
-          v-model="showProperties"
-          location="right"
-          width="360"
-          class="border-s"
-          permanent
-        >
-          <PropertyPanel
-            :node="selectedNode"
-            @update:node="handleUpdateNode"
-          />
-        </v-navigation-drawer>
       </v-card-text>
+
+      <v-dialog v-model="showPropertyDialog" max-width="520" persistent>
+        <v-card v-if="selectedNode">
+          <v-card-title class="d-flex align-center">
+            <v-icon icon="mdi-cog" class="mr-2" color="primary" />
+            {{ selectedNode.data?.label || selectedNode.type }} - 属性配置
+            <v-spacer />
+            <v-btn icon variant="text" @click="closePropertyDialog">
+              <v-icon icon="mdi-close" />
+            </v-btn>
+          </v-card-title>
+          <v-divider />
+          <v-card-text class="pa-4" style="max-height: 60vh; overflow-y: auto;">
+            <PropertyPanel
+              :node="selectedNode"
+              @update:node="handleUpdateNode"
+            />
+          </v-card-text>
+          <v-divider />
+          <v-card-actions class="pa-4">
+            <v-spacer />
+            <v-btn variant="outlined" @click="closePropertyDialog">
+              {{ $t('common.close') }}
+            </v-btn>
+            <v-btn color="primary" @click="applyPropertyAndClose">
+              <v-icon start icon="mdi-check" />
+              确认
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
     </v-card>
   </v-dialog>
 </template>
@@ -161,8 +169,7 @@ const { t } = useI18n();
 const saving = ref(false);
 const flowName = ref('');
 const flowDescription = ref('');
-const showPalette = ref(true);
-const showProperties = ref(true);
+const showPropertyDialog = ref(false);
 
 const canvasRef = ref();
 const nodes = ref<any[]>([]);
@@ -201,6 +208,7 @@ function resetEditor() {
   nodes.value = [];
   edges.value = [];
   selectedNode.value = null;
+  showPropertyDialog.value = false;
 }
 
 function handleDragStart(event: DragEvent, nodeType: string) {
@@ -212,10 +220,12 @@ function handleDragStart(event: DragEvent, nodeType: string) {
 
 function handleNodeClick(node: any) {
   selectedNode.value = node;
+  showPropertyDialog.value = true;
 }
 
 function handlePaneClick() {
   selectedNode.value = null;
+  showPropertyDialog.value = false;
 }
 
 function handleNodesChange(changes: any[]) {}
@@ -228,6 +238,14 @@ function handleUpdateNode(updatedNode: any) {
     nodes.value[index] = { ...updatedNode };
     selectedNode.value = nodes.value[index];
   }
+}
+
+function closePropertyDialog() {
+  showPropertyDialog.value = false;
+}
+
+function applyPropertyAndClose() {
+  showPropertyDialog.value = false;
 }
 
 function zoomIn() {
@@ -257,6 +275,7 @@ function deleteSelected() {
       e.source !== selectedNode.value.id && e.target !== selectedNode.value.id
     );
     selectedNode.value = null;
+    showPropertyDialog.value = false;
   }
 }
 
@@ -316,7 +335,7 @@ async function handleSave() {
       })),
       enabled: true,
     };
-    await emit('save', flowData);
+    emit('save', flowData);
   } finally {
     saving.value = false;
   }
@@ -331,5 +350,9 @@ async function handleSave() {
 .flow-editor-dialog :deep(.v-overlay__content) {
   max-width: 100%;
   max-height: 100%;
+}
+
+.node-palette-container {
+  flex-shrink: 0;
 }
 </style>

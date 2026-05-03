@@ -83,6 +83,7 @@
               <v-col cols="12" md="4">
                 <v-tabs v-model="activeTab" color="primary">
                   <v-tab value="all">全部</v-tab>
+                  <v-tab value="daily">日常</v-tab>
                   <v-tab value="crew">团队</v-tab>
                   <v-tab value="flow">流程</v-tab>
                   <v-tab value="meeting">会议</v-tab>
@@ -152,13 +153,10 @@
                 </td>
                 <td>
                   <v-chip
-                    :color="getTaskTypeColor(task.task_type)"
-                    size="small"
-                    variant="tonal"
-                    label
-                  >
-                    <v-icon start :icon="getTaskTypeIcon(task.task_type)" size="14" />
-                    {{ getTaskTypeLabel(task.task_type) }}
+                    :color="getTaskTypeColor(task.task_type, task.category)"
+                    size="small">
+                    <v-icon start :icon="getTaskTypeIcon(task.task_type, task.category)" size="14" />
+                    {{ getTaskTypeLabel(task.task_type, task.category) }}
                   </v-chip>
                 </td>
                 <td>
@@ -348,9 +346,9 @@
           <v-row>
             <v-col cols="6">
               <div class="text-caption text-grey">任务类型</div>
-              <v-chip :color="getTaskTypeColor(selectedTask.task_type)" size="small" variant="tonal" label>
-                <v-icon start :icon="getTaskTypeIcon(selectedTask.task_type)" size="14" />
-                {{ getTaskTypeLabel(selectedTask.task_type) }}
+              <v-chip :color="getTaskTypeColor(selectedTask.task_type, selectedTask.category)" size="small" variant="tonal" label>
+                <v-icon start :icon="getTaskTypeIcon(selectedTask.task_type, selectedTask.category)" size="14" />
+                {{ getTaskTypeLabel(selectedTask.task_type, selectedTask.category) }}
               </v-chip>
             </v-col>
             <v-col cols="6">
@@ -447,7 +445,9 @@ const statusOptions = [
 
 const filteredTasks = computed(() => {
   let result = tasks.value;
-  if (activeTab.value !== 'all') {
+  if (activeTab.value === 'daily') {
+    result = result.filter(t => t.category === 'daily');
+  } else if (activeTab.value !== 'all') {
     result = result.filter(t => t.task_type === activeTab.value);
   }
   if (statusFilter.value) {
@@ -470,17 +470,20 @@ const paginatedTasks = computed(() => {
   return filteredTasks.value.slice(start, start + pageSize);
 });
 
-function getTaskTypeLabel(type: string): string {
+function getTaskTypeLabel(type: string, category?: string): string {
+  if (category === 'daily') return '日常任务';
   const labels: Record<string, string> = { crew: '团队', flow: '流程', meeting: '会议' };
   return labels[type] || type;
 }
 
-function getTaskTypeColor(type: string): string {
+function getTaskTypeColor(type: string, category?: string): string {
+  if (category === 'daily') return 'primary';
   const colors: Record<string, string> = { crew: 'cyan', flow: 'indigo', meeting: 'purple' };
   return colors[type] || 'grey';
 }
 
-function getTaskTypeIcon(type: string): string {
+function getTaskTypeIcon(type: string, category?: string): string {
+  if (category === 'daily') return 'mdi-chat-processing';
   const icons: Record<string, string> = { crew: 'mdi-account-group', flow: 'mdi-sitemap', meeting: 'mdi-video' };
   return icons[type] || 'mdi-clipboard';
 }

@@ -162,6 +162,7 @@
                     @toggle="toggleAgent"
                     @reset="resetBuiltinAgent"
                     @createFromExpert="createFromExpert"
+                    @viewDetail="openAgentDetail"
                   />
                 </v-col>
               </v-row>
@@ -203,6 +204,7 @@
                   @delete="deleteAgent"
                   @toggle="toggleAgent"
                   @reset="resetBuiltinAgent"
+                  @viewDetail="openAgentDetail"
                 />
               </v-col>
             </v-row>
@@ -278,6 +280,164 @@
           <v-btn @click="showImportDialog = false">{{ t('common.cancel') }}</v-btn>
           <v-btn color="primary" @click="executeImport" :loading="importing" :disabled="!importFile">
             {{ t('agent.agents.import.button') }}
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- 智能体详情浮窗 -->
+    <v-dialog v-model="showDetailDialog" max-width="700">
+      <v-card v-if="detailAgent">
+        <v-card-title class="d-flex align-center">
+          <v-icon icon="mdi-robot" class="mr-2" color="primary" />
+          {{ detailAgent.name }}
+          <v-chip
+            v-if="detailAgent.agent_type === 'builtin'"
+            size="small"
+            color="amber-darken-2"
+            variant="tonal"
+            class="ml-2"
+          >
+            {{ t('agent.agents.type.builtin') }}
+          </v-chip>
+          <v-chip
+            v-if="detailAgent.agent_type === 'expert'"
+            size="small"
+            color="purple"
+            variant="tonal"
+            class="ml-2"
+          >
+            {{ t('agent.agents.type.expert') }}
+          </v-chip>
+          <v-chip
+            :color="detailAgent.enabled ? 'success' : 'grey'"
+            size="small"
+            class="ml-2"
+          >
+            {{ detailAgent.enabled ? t('agent.agents.status.enabled') : t('agent.agents.status.disabled') }}
+          </v-chip>
+          <v-spacer />
+          <v-btn icon variant="text" @click="showDetailDialog = false">
+            <v-icon icon="mdi-close" />
+          </v-btn>
+        </v-card-title>
+        <v-divider />
+
+        <v-card-text class="pa-4" style="max-height: 65vh; overflow-y: auto;">
+          <div v-if="detailAgent.role" class="mb-4">
+            <div class="text-subtitle-2 mb-1">{{ t('agent.agents.editor.role') }}</div>
+            <p class="text-body-2">{{ detailAgent.role }}</p>
+          </div>
+
+          <div v-if="detailAgent.goal" class="mb-4">
+            <div class="text-subtitle-2 mb-1">{{ t('agent.agents.editor.goal') }}</div>
+            <p class="text-body-2">{{ detailAgent.goal }}</p>
+          </div>
+
+          <div v-if="detailAgent.backstory" class="mb-4">
+            <div class="text-subtitle-2 mb-1">{{ t('agent.agents.editor.backstory') }}</div>
+            <p class="text-body-2">{{ detailAgent.backstory }}</p>
+          </div>
+
+          <div v-if="detailAgent.provider_id || detailAgent.model_name" class="mb-4">
+            <div class="text-subtitle-2 mb-1">模型配置</div>
+            <v-chip size="small" variant="tonal" color="info" class="mr-1">
+              <v-icon icon="mdi-robot" start size="x-small" />
+              {{ detailAgent.provider_id }} / {{ detailAgent.model_name }}
+            </v-chip>
+          </div>
+
+          <div v-if="detailAgent.tools && detailAgent.tools.length > 0" class="mb-4">
+            <div class="text-subtitle-2 mb-2">工具列表</div>
+            <v-chip
+              v-for="tool in detailAgent.tools"
+              :key="tool"
+              size="small"
+              color="primary"
+              variant="tonal"
+              class="mr-1 mb-1"
+            >
+              <v-icon icon="mdi-tools" start size="x-small" />
+              {{ tool }}
+            </v-chip>
+          </div>
+
+          <div v-if="detailAgent.skills && detailAgent.skills.length > 0" class="mb-4">
+            <div class="text-subtitle-2 mb-2">技能列表</div>
+            <v-chip
+              v-for="skill in detailAgent.skills"
+              :key="skill"
+              size="small"
+              color="success"
+              variant="tonal"
+              class="mr-1 mb-1"
+            >
+              <v-icon icon="mdi-lightning-bolt" start size="x-small" />
+              {{ skill }}
+            </v-chip>
+          </div>
+
+          <div v-if="detailAgent.knowledge_id" class="mb-4">
+            <div class="text-subtitle-2 mb-2">知识库</div>
+            <v-chip size="small" color="info" variant="tonal">
+              <v-icon icon="mdi-database" start size="x-small" />
+              {{ detailAgent.knowledge_id }}
+            </v-chip>
+          </div>
+
+          <div v-if="detailAgent.planning" class="mb-4">
+            <div class="text-subtitle-2 mb-2">Planning 配置</div>
+            <v-table density="compact" class="bg-grey-lighten-4">
+              <tbody>
+                <tr>
+                  <td class="text-caption font-weight-medium">启用</td>
+                  <td class="text-caption">{{ detailAgent.planning.enabled ? '是' : '否' }}</td>
+                </tr>
+                <tr v-if="detailAgent.planning.maxSteps">
+                  <td class="text-caption font-weight-medium">最大步骤</td>
+                  <td class="text-caption">{{ detailAgent.planning.maxSteps }}</td>
+                </tr>
+              </tbody>
+            </v-table>
+          </div>
+
+          <div v-if="detailAgent.memory_config && Object.keys(detailAgent.memory_config).length > 0" class="mb-4">
+            <div class="text-subtitle-2 mb-2">Memory 配置</div>
+            <v-table density="compact" class="bg-grey-lighten-4">
+              <tbody>
+                <tr v-for="(value, key) in detailAgent.memory_config" :key="key">
+                  <td class="text-caption font-weight-medium">{{ key }}</td>
+                  <td class="text-caption">{{ typeof value === 'object' ? JSON.stringify(value) : value }}</td>
+                </tr>
+              </tbody>
+            </v-table>
+          </div>
+
+          <div v-if="detailAgent.system_prompt" class="mb-4">
+            <div class="text-subtitle-2 mb-1">系统提示词</div>
+            <v-alert variant="tonal" color="grey" class="text-body-2" style="white-space: pre-wrap;">
+              {{ detailAgent.system_prompt }}
+            </v-alert>
+          </div>
+        </v-card-text>
+
+        <v-divider />
+        <v-card-actions class="pa-4">
+          <v-spacer />
+          <v-btn variant="outlined" @click="showDetailDialog = false">
+            {{ t('common.close') }}
+          </v-btn>
+          <v-btn color="info" @click="showDetailDialog = false; openTester(detailAgent)">
+            <v-icon start icon="mdi-chat" />
+            对话
+          </v-btn>
+          <v-btn
+            v-if="detailAgent.agent_type === 'custom'"
+            color="primary"
+            @click="showDetailDialog = false; openEditor(detailAgent)"
+          >
+            <v-icon start icon="mdi-pencil" />
+            编辑
           </v-btn>
         </v-card-actions>
       </v-card>
@@ -480,6 +640,10 @@ const resettingAgent = ref<any>(null);
 const showResetDialog = ref(false);
 const resetting = ref(false);
 
+// 详情
+const showDetailDialog = ref(false);
+const detailAgent = ref<any>(null);
+
 // 专家团相关
 const selectedExpertCategory = ref('all');
 
@@ -660,6 +824,22 @@ function openEditor(agent: any) {
 function openTester(agent: any) {
   testingAgent.value = agent;
   showTester.value = true;
+}
+
+// 打开智能体详情
+async function openAgentDetail(agent: any) {
+  detailAgent.value = agent;
+  showDetailDialog.value = true;
+
+  try {
+    const agentId = agent.id || agent.name;
+    const response = await axios.get(`/api/plug/agent/agents/${encodeURIComponent(agentId)}`);
+    if (response.data.status === 'ok' && response.data.data) {
+      detailAgent.value = { ...agent, ...response.data.data };
+    }
+  } catch (error) {
+    console.error('Failed to load agent detail:', error);
+  }
 }
 
 // 复制智能体

@@ -126,6 +126,8 @@ export function useMessages(options: UseMessagesOptions) {
       : [],
   );
 
+  const activeCards = ref<any[]>([]);
+
   onBeforeUnmount(() => {
     cleanupConnections();
     for (const promise of attachmentBlobCache.values()) {
@@ -661,6 +663,29 @@ export function useMessages(options: UseMessagesOptions) {
       return;
     }
 
+    if (msgType === "interaction_card") {
+      activeCards.value = [...activeCards.value, { ...data, _resolved: null }];
+      return;
+    }
+    if (msgType === "interaction_card_update") {
+      const idx = activeCards.value.findIndex(
+        (c: any) => c.interaction_id === data.interaction_id
+      );
+      if (idx !== -1) {
+        activeCards.value[idx] = {
+          ...activeCards.value[idx],
+          _resolved: { status: data.status, message: data.message },
+        };
+      }
+      return;
+    }
+    if (msgType === "interaction_card_dismiss") {
+      activeCards.value = activeCards.value.filter(
+        (c: any) => c.interaction_id !== data.interaction_id
+      );
+      return;
+    }
+
     if (msgType === "plain") {
       markMessageStarted(botRecord);
       if (chainType === "reasoning") {
@@ -705,6 +730,7 @@ export function useMessages(options: UseMessagesOptions) {
     loadedSessions,
     sessionProjects,
     activeMessages,
+    activeCards,
     isSessionRunning,
     isUserMessage,
     isMessageStreaming,

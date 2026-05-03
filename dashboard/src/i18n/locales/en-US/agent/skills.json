@@ -1,6 +1,6 @@
 {
-  "title": "Skills",
-  "subtitle": "Create and manage agent skills, configure workflows",
+  "title": "Skills Management",
+  "subtitle": "Manage Agent skills, configure progressive disclosure and workflows",
   "buttons": {
     "add": "Add Skill",
     "refresh": "Refresh",
@@ -10,19 +10,36 @@
     "market": "Skill Market"
   },
   "search": {
-    "placeholder": "Search skills..."
+    "placeholder": "Search skill name or description..."
   },
   "tabs": {
     "all": "All",
-    "enabled": "Enabled",
-    "disabled": "Disabled",
+    "builtin": "Built-in",
+    "astrbot": "AstrBot",
+    "claudcode": "ClaudeCode",
+    "crewai": "CrewAI (deprecated)",
+    "custom": "Custom"
+  },
+  "sources": {
+    "builtin": "Built-in",
+    "astrbot": "AstrBot",
+    "claudcode": "ClaudeCode",
+    "crewai": "CrewAI (deprecated)",
+    "custom": "Custom"
+  },
+  "categories": {
     "general": "General",
     "programming": "Programming",
     "analysis": "Analysis",
     "creative": "Creative",
     "other": "Other"
   },
-  "empty": "No skills yet, click the button above to create",
+  "disclosureLevels": {
+    "metadata": "Metadata",
+    "instructions": "Instructions",
+    "resources": "Resources"
+  },
+  "empty": "No skills available, please add new skills",
   "status": {
     "enabled": "Enabled",
     "disabled": "Disabled"
@@ -30,49 +47,82 @@
   "card": {
     "noDescription": "No description",
     "steps": "{count} steps",
+    "disclosureLevel": "Disclosure Level",
+    "preapprovedTools": "{count} pre-approved tools",
+    "test": "Test",
     "edit": "Edit",
     "delete": "Delete",
-    "test": "Test"
+    "version": "Version",
+    "workflow": "Workflow",
+    "builtinTag": "Built-in",
+    "builtinTypeFlowGenerator": "Flow Generator",
+    "builtinTypeExpertAgent": "Expert Agent"
   },
   "editor": {
     "addTitle": "Add Skill",
     "editTitle": "Edit Skill",
-    "basic": {
-      "name": "Skill Name",
-      "nameHint": "Set an easily identifiable name for the skill",
-      "description": "Description",
-      "descriptionHint": "Describe the purpose and function of the skill"
-    },
-    "workflow": {
-      "title": "Workflow Configuration",
-      "addStep": "Add Step",
-      "stepType": "Step Type",
-      "stepName": "Step Name",
-      "stepDescription": "Step Description",
-      "stepConfig": "Step Configuration"
-    },
+    "basicInfo": "Basic Information",
+    "name": "Skill Name",
+    "nameHint": "Use lowercase letters, numbers and underscores, e.g.: code_review",
+    "description": "Skill Description",
+    "descriptionHint": "Describe the function and purpose of the skill",
+    "category": "Skill Category",
+    "categoryHint": "Select the category of the skill",
+    "version": "Version",
+    "versionHint": "e.g.: 1.0.0",
+    "disclosure": "Progressive Disclosure",
+    "disclosureLevel": "Disclosure Level",
+    "disclosureLevelHint": "Select the progressive disclosure level of the skill",
+    "preapprovedTools": "Pre-approved Tools",
+    "preapprovedToolsHint": "Select the pre-approved tools available for this skill",
+    "workflow": "Workflow Configuration",
+    "workflowHint": "Configure the workflow steps of the skill",
+    "metadata": "Metadata",
+    "metadataJson": "Metadata (JSON)",
+    "tags": "Tags",
+    "tagsLabel": "Skill Tags",
+    "tagsHint": "Add tags for categorization and searching",
+    "formatJson": "Format",
     "validation": {
       "required": "This field is required",
+      "nameFormat": "Name can only contain lowercase letters, numbers and underscores, and must start with a letter",
+      "invalidJson": "Invalid JSON format",
       "stepRequired": "At least one step is required"
     }
   },
+  "workflow": {
+    "title": "Workflow Editor",
+    "steps": "Step List",
+    "addStep": "Add Step",
+    "stepName": "Step Name",
+    "stepDescription": "Step Description",
+    "stepTool": "Use Tool",
+    "stepOrder": "Order",
+    "noSteps": "No workflow steps",
+    "jsonPreview": "JSON Preview",
+    "moveUp": "Move Up",
+    "moveDown": "Move Down",
+    "removeStep": "Remove Step"
+  },
   "import": {
     "title": "Import Skills",
-    "selectFile": "Select File",
-    "hint": "Support importing JSON format skill definition files",
+    "selectFile": "Select JSON File",
+    "hint": "Please select a JSON file containing skill configuration",
     "button": "Import"
   },
   "delete": {
-    "title": "Delete Skill",
-    "confirm": "Are you sure you want to delete skill \"{name}\"? "
+    "title": "Confirm Delete",
+    "confirm": "Are you sure you want to delete skill \"{name}\"? This action cannot be undone."
   },
   "messages": {
-    "loadFailed": "Load failed",
+    "loadFailed": "Failed to load",
     "saveSuccess": "Saved successfully",
-    "saveFailed": "Save failed",
+    "saveFailed": "Failed to save",
     "deleteSuccess": "Deleted successfully",
-    "deleteFailed": "Delete failed",
-    "deleteError": "Delete failed",
-    "importError": "Import failed"
+    "deleteFailed": "Failed to delete",
+    "deleteError": "Failed to delete",
+    "importError": "Failed to import",
+    "saveError": "Failed to save",
+    "loadError": "Failed to load"
   }
 }

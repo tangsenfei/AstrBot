@@ -1,5 +1,9 @@
 import { createI18n } from 'vue-i18n';
 
+import zhCNCommon from './locales/zh-CN/core/common.json';
+import enUSCommon from './locales/en-US/core/common.json';
+import ruRUCommon from './locales/ru-RU/core/common.json';
+
 import zhCNAgentSkills from './locales/zh-CN/features/agent-skills.json';
 import zhCNAgentTools from './locales/zh-CN/features/agent-tools.json';
 import zhCNAgentAgents from './locales/zh-CN/features/agent-agents.json';
@@ -73,6 +77,7 @@ export const i18n = createI18n({
 export function loadI18nMessages() {
   const staticTranslations = {
     'zh-CN': {
+      common: zhCNCommon,
       agent: {
         ...(zhCNAgentSkills as any).agent,
         ...(zhCNAgentTools as any).agent,
@@ -88,6 +93,7 @@ export function loadI18nMessages() {
         roundtables: zhCNAgentRoundtables,
         flows: zhCNAgentFlows
       },
+      expertTeam: zhCNAgentExpertTeam,
       nicebot: {
         evolution_center: zhCNEvolutionCenter,
         navigation: zhCNNicebotNavigation,
@@ -96,6 +102,7 @@ export function loadI18nMessages() {
       }
     },
     'en-US': {
+      common: enUSCommon,
       agent: {
         ...(enUSAgentSkills as any).agent,
         ...(enUSAgentTools as any).agent,
@@ -111,6 +118,7 @@ export function loadI18nMessages() {
         roundtables: enUSAgentRoundtables,
         flows: enUSAgentFlows
       },
+      expertTeam: enUSAgentExpertTeam,
       nicebot: {
         evolution_center: enUSEvolutionCenter,
         navigation: enUSNicebotNavigation,
@@ -119,6 +127,7 @@ export function loadI18nMessages() {
       }
     },
     'ru-RU': {
+      common: ruRUCommon,
       agent: {
         ...(ruRUAgentSkills as any).agent,
         ...(ruRUAgentTools as any).agent,
@@ -134,6 +143,7 @@ export function loadI18nMessages() {
         roundtables: ruRUAgentRoundtables,
         flows: ruRUAgentFlows
       },
+      expertTeam: ruRUAgentExpertTeam,
       nicebot: {
         evolution_center: ruRUEvolutionCenter,
         navigation: ruRUNicebotNavigation,

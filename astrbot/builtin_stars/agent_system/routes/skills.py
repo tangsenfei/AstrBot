@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from quart import jsonify, request
+from quart import request
 
 from astrbot.core import logger
 from astrbot.dashboard.routes.route import Response
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from ..main import AgentSystemPlugin
 
 
-def register_skill_routes(plugin: "AgentSystemPlugin") -> None:
+def register_skill_routes(plugin: AgentSystemPlugin) -> None:
     """注册技能管理 API 路由
 
     Args:
@@ -139,8 +139,8 @@ def register_skill_routes(plugin: "AgentSystemPlugin") -> None:
 
 def _get_skill_service():
     """获取 SkillService 实例"""
-    from ..services.skill_service import SkillService
     from ..database import get_database
+    from ..services.skill_service import SkillService
 
     db = get_database()
     return SkillService(db)
@@ -150,7 +150,7 @@ async def _list_skills():
     """获取技能列表
 
     Query Parameters:
-        source: 按来源筛选 (astrbot, claudcode, crewai, custom)
+        source: 按来源筛选 (astrbot, claudcode, custom)
         category: 技能分类筛选
     """
     try:
@@ -178,12 +178,12 @@ async def _get_skill(skill_id: str):
         service = _get_skill_service()
 
         skill = service.get_skill(skill_id)
-        
+
         if not skill:
             from ..services.astrbot_skill_adapter import AstrBotSkillAdapter
             if AstrBotSkillAdapter.is_astrbot_skill(skill_id):
                 skill = service.get_astrbot_skill_by_id(skill_id)
-        
+
         if not skill:
             return Response().error(f"技能 '{skill_id}' 不存在").__dict__
 
@@ -256,7 +256,7 @@ async def _update_skill():
             return Response().error("缺少技能 ID").__dict__
 
         from ..services.astrbot_skill_adapter import AstrBotSkillAdapter
-        
+
         if AstrBotSkillAdapter.is_astrbot_skill(skill_id):
             return Response().error("AstrBot 技能不能修改，请在 AstrBot 技能管理中操作").__dict__
 
@@ -293,7 +293,7 @@ async def _delete_skill():
             return Response().error("缺少技能 ID").__dict__
 
         from ..services.astrbot_skill_adapter import AstrBotSkillAdapter
-        
+
         if AstrBotSkillAdapter.is_astrbot_skill(skill_id):
             return Response().error("AstrBot 技能不能删除，请在 AstrBot 技能管理中操作").__dict__
 

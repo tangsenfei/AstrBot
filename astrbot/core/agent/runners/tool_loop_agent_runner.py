@@ -1212,6 +1212,7 @@ class ToolLoopAgentRunner(BaseAgentRunner[TContext]):
                             Json(
                                 data={
                                     "id": func_tool_id,
+                                    "name": func_tool_name,
                                     "ts": time.time(),
                                     "result": tool_result_content,
                                 }

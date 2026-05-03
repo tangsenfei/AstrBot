@@ -7,39 +7,171 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import AsyncGenerator
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncGenerator
+from typing import TYPE_CHECKING, Any
 
 from astrbot.core import logger
-
-from astrbot.builtin_stars.agent_system.services.crewai_integration import (
-    get_memory_provider,
-    get_planning_provider,
-    CREWAI_AVAILABLE,
-    AstrBotLLMAdapter,
-    AstrBotToolAdapter,
-    CrewAIAgentFactory,
-)
+from astrbot.core.langgraph.operators import AgentOperator
+from astrbot.core.langgraph.state import AgentGraphState, GraphRunContext
 
 if TYPE_CHECKING:
-    from ..database import Database
     from astrbot.core.star.context import Context
 
+    from ..database import Database
+
 from ..models import Agent, PlanningEffort
+
+_agent_operator = AgentOperator()
+
+PLANNING_EFFORT_MAP = {
+    "low": {
+        "reasoning_effort": "low",
+        "max_steps": 5,
+        "max_replans": 1,
+        "prompt_template": "请简要列出完成以下任务的关键步骤（1-3步）：\n\n任务：{message}\n\n请按以下格式输出：\n## 执行计划\n1. [步骤1]\n2. [步骤2]\n...",
+    },
+    "medium": {
+        "reasoning_effort": "medium",
+        "max_steps": 15,
+        "max_replans": 3,
+        "prompt_template": "请为以下任务制定详细的执行计划，包含具体步骤和预期结果：\n\n任务：{message}\n\n请按以下格式输出：\n## 执行计划\n### 步骤1: [标题]\n- 描述: ...\n- 预期输出: ...\n\n### 步骤2: [标题]\n- 描述: ...\n- 预期输出: ...\n...",
+    },
+    "high": {
+        "reasoning_effort": "high",
+        "max_steps": 30,
+        "max_replans": 5,
+        "prompt_template": "请为以下任务制定非常详细的执行计划，包含问题分析、信息收集策略、详细执行步骤（含子步骤）、每步预期输出和风险评估：\n\n任务：{message}\n\n请按以下格式输出：\n## 执行计划\n\n### 问题分析\n- 核心问题: ...\n- 关键约束: ...\n\n### 信息收集\n- 需要的信息: ...\n- 获取方式: ...\n\n### 执行步骤\n#### 步骤1: [标题]\n- 描述: ...\n- 子步骤:\n  1.1. ...\n  1.2. ...\n- 预期输出: ...\n- 风险: ...\n- 备选方案: ...\n\n#### 步骤2: [标题]\n...\n\n### 总结\n- 预计总步骤数: ...\n- 关键里程碑: ...\n",
+    },
+}
+
+
+class _BuiltinMemoryProvider:
+    def __init__(self, db):
+        self._db = db
+
+    def store(self, agent_id: str, role: str, content: str, summary: str = "", **kwargs) -> None:
+        memory_id = f"mem_{uuid.uuid4().hex[:8]}"
+        self._db.insert("agent_memories", {
+            "id": memory_id,
+            "agent_id": agent_id,
+            "role": role,
+            "content": content[:2000],
+            "summary": summary[:500] if summary else content[:200],
+            "scope": kwargs.get("scope", "default"),
+            "importance": kwargs.get("importance", 0.5),
+        })
+
+    def retrieve(self, agent_id: str, query: str, memory_type: str = "short_term", max_items: int = 20) -> list[dict]:
+        if memory_type == "short_term":
+            rows = self._db.select_all(
+                "agent_memories",
+                where="agent_id = ?",
+                where_params=(agent_id,),
+                order_by="created_at DESC",
+                limit=max_items,
+            )
+        else:
+            rows = self._db.select_all(
+                "agent_memories",
+                where="agent_id = ?",
+                where_params=(agent_id,),
+                order_by="importance DESC, created_at DESC",
+                limit=max_items,
+            )
+        memories = []
+        for row in reversed(rows):
+            memories.append({
+                "role": row.get("role", ""),
+                "content": row.get("summary") or row.get("content", ""),
+            })
+        return memories
+
+
+def _create_mock_event(message: str = "", context=None):
+    class MockEvent:
+        def __init__(self, msg="", ctx=None):
+            self.unified_msg_origin = "agent_test:private:test_session"
+            self.message_str = msg
+            self.role = "admin"
+            self.is_wake = True
+            self.is_at_or_wake_command = True
+            self._result = None
+            self._extras = {}
+            self._has_send_oper = False
+            self.call_llm = False
+            self._temporary_local_files = []
+            self.plugins_name = None
+            self.context = ctx
+
+            from astrbot.core.platform.message_session import MessageSession
+            from astrbot.core.platform.message_type import MessageType
+            self.session = MessageSession(
+                platform_name="agent_test",
+                message_type=MessageType.FRIEND_MESSAGE,
+                session_id="test_session",
+            )
+
+            from astrbot.core.platform.astrbot_message import (
+                AstrBotMessage,
+                MessageMember,
+            )
+            from astrbot.core.platform.message_type import MessageType as MsgType
+            from astrbot.core.platform.platform_metadata import PlatformMetadata
+            self.platform_meta = PlatformMetadata(name="agent_test", description="Agent Test", id="agent_test")
+            self.platform = self.platform_meta
+
+            self.message_obj = AstrBotMessage()
+            self.message_obj.message = []
+            self.message_obj.message_str = msg
+            self.message_obj.session_id = "test_session"
+            self.message_obj.self_id = "agent_test"
+            self.message_obj.message_id = "test_msg_id"
+            self.message_obj.sender = MessageMember(user_id="test_user", nickname="Tester")
+            self.message_obj.type = MsgType.FRIEND_MESSAGE
+            self.message_obj.raw_message = msg
+
+        def get_result(self): return self._result
+        def set_result(self, result): self._result = result
+        def clear_result(self): self._result = None
+        def stop_event(self): pass
+        def continue_event(self): pass
+        def is_stopped(self): return False
+        def should_call_llm(self, call_llm): self.call_llm = call_llm
+        def set_extra(self, key, value): self._extras[key] = value
+        def get_extra(self, key=None, default=None):
+            if key is None: return self._extras
+            return self._extras.get(key, default)
+        def clear_extra(self): self._extras = {}
+        def get_platform_name(self): return "agent_test"
+        def get_platform_id(self): return "agent_test"
+        def get_message_str(self): return self.message_str
+        def get_session_id(self): return "test_session"
+        def get_group_id(self): return ""
+        def get_self_id(self): return "agent_test"
+        def get_sender_id(self): return "test_user"
+        def get_sender_name(self): return "Tester"
+        async def send(self, Chain): self._has_send_oper = True
+        async def send_streaming(self, generator, use_fallback=False): pass
+        async def send_typing(self): pass
+        async def stop_typing(self): pass
+        def track_temporary_local_file(self, path): self._temporary_local_files.append(path)
+        def cleanup_temporary_local_files(self): pass
+
+    return MockEvent(message, ctx=context)
 
 
 class AgentService:
     """智能体管理服务"""
 
-    def __init__(self, db: "Database", context: "Context | None" = None):
+    def __init__(self, db: Database, context: Context | None = None):
         self.db = db
         self._context = context
         self._memory_provider = None
-        self._planning_provider = None
 
     @property
-    def context(self) -> "Context | None":
+    def context(self) -> Context | None:
         """获取 Context 实例"""
         return self._context
 
@@ -356,7 +488,7 @@ class AgentService:
     async def test_agent(self, agent_id: str, message: str, history: list | None = None) -> dict[str, Any]:
         """测试智能体
 
-        优先使用 CrewAI Agent 执行，降级到 AstrBot Provider 直接调用。
+        使用 AstrBot Provider 直接调用。
 
         Args:
             agent_id: 智能体 ID
@@ -401,12 +533,8 @@ class AgentService:
             if not self._context:
                 raise ValueError("Context 未初始化，无法测试智能体")
 
-            if CREWAI_AVAILABLE:
-                crewai_result = await self._test_agent_with_crewai(agent, message, history)
-                result.update(crewai_result)
-            else:
-                fallback_result = await self._test_agent_with_provider(agent, message, history)
-                result.update(fallback_result)
+            fallback_result = await self._test_agent_with_graph(agent, message, history)
+            result.update(fallback_result)
 
             if agent.memory_config.get("enabled"):
                 self._store_memory(agent_id, "user", original_message)
@@ -424,67 +552,7 @@ class AgentService:
 
         return result
 
-    async def _test_agent_with_crewai(self, agent: Agent, message: str, history: list | None = None) -> dict[str, Any]:
-        """使用 CrewAI Agent 执行测试"""
-        crewai_agent = CrewAIAgentFactory.create_agent(agent, self._context, disable_planning=True)
-        if not crewai_agent:
-            logger.warning("Failed to create CrewAI Agent, falling back to provider")
-            return await self._test_agent_with_provider(agent, message, history)
-
-        try:
-            context_str = ""
-            if history:
-                for msg in history:
-                    role = msg.get("role", "")
-                    content = msg.get("content", "")
-                    if role and content:
-                        context_str += f"{role}: {content}\n"
-
-            full_message = message
-            if context_str:
-                full_message = f"对话历史:\n{context_str}\n\n当前问题: {message}"
-
-            output = await crewai_agent.kickoff_async(full_message)
-
-            response_text = ""
-            if hasattr(output, 'raw') and output.raw:
-                response_text = output.raw
-            elif hasattr(output, 'result') and output.result:
-                response_text = str(output.result)
-            elif hasattr(output, '__str__'):
-                response_text = str(output)
-
-            tokens = {"input": 0, "output": 0, "total": 0}
-            if hasattr(output, 'token_usage') and output.token_usage:
-                tokens["input"] = getattr(output.token_usage, 'prompt_tokens', 0) or 0
-                tokens["output"] = getattr(output.token_usage, 'completion_tokens', 0) or 0
-                tokens["total"] = getattr(output.token_usage, 'total_tokens', 0) or 0
-
-            tools_used = []
-            if hasattr(output, 'tasks_output') and output.tasks_output:
-                for task_output in output.tasks_output:
-                    if hasattr(task_output, 'tools_used') and task_output.tools_used:
-                        for tu in task_output.tools_used:
-                            tools_used.append(tu.tool_name if hasattr(tu, 'tool_name') else str(tu))
-
-            planning_steps = None
-            if agent.planning and hasattr(crewai_agent, 'planning_config') and crewai_agent.planning_config:
-                planning_steps = f"[CrewAI Planning 已启用, effort={getattr(crewai_agent.planning_config, 'planning_effort', 'medium')}]"
-
-            return {
-                "success": True,
-                "response": response_text,
-                "tools_used": tools_used,
-                "planning_steps": planning_steps,
-                "tokens": tokens,
-            }
-
-        except Exception as e:
-            logger.error(f"CrewAI Agent execution failed, falling back to provider: {e}")
-            return await self._test_agent_with_provider(agent, message, history)
-
-    async def _test_agent_with_provider(self, agent: Agent, message: str, history: list | None = None) -> dict[str, Any]:
-        """使用 AstrBot Provider 直接调用（降级方案）"""
+    async def _test_agent_with_graph(self, agent: Agent, message: str, history: list | None = None) -> dict[str, Any]:
         provider = self._context.get_provider_by_id(agent.provider_id)
         if not provider:
             raise ValueError(f"LLM 提供商 '{agent.provider_id}' 不存在")
@@ -494,22 +562,6 @@ class AgentService:
             retrieved_memories = self._retrieve_memories(agent.id, message, agent.memory_config)
 
         system_prompt = self._build_system_prompt(agent, memories=retrieved_memories)
-
-        func_tool = None
-        if agent.tools and len(agent.tools) > 0:
-            try:
-                tool_manager = self._context.get_llm_tool_manager()
-                if tool_manager:
-                    from astrbot.core.agent.tool import ToolSet
-                    tool_set = ToolSet()
-                    for tool_id in agent.tools:
-                        tool = tool_manager.get_func(tool_id)
-                        if tool:
-                            tool_set.add_tool(tool)
-                    if not tool_set.empty():
-                        func_tool = tool_set
-            except Exception as e:
-                logger.warning(f"Failed to get tools for agent test: {e}")
 
         contexts = []
         if history:
@@ -521,27 +573,19 @@ class AgentService:
 
         planning_steps = None
         if agent.planning:
-            planning_provider = self._get_planning_provider()
-            planning_effort = agent.planning_effort.value if hasattr(agent.planning_effort, 'value') else str(agent.planning_effort)
-            if planning_provider:
-                try:
-                    planning_steps = await planning_provider.generate_plan(
-                        system_prompt, message, provider, contexts, planning_effort
-                    )
-                except Exception as e:
-                    logger.error(f"Planning provider failed: {e}")
-                    planning_steps = None
-
-            if planning_steps is None:
-                from ..services.crewai_integration import PLANNING_EFFORT_MAP
-                effort_config = PLANNING_EFFORT_MAP.get(planning_effort, PLANNING_EFFORT_MAP["medium"])
-                planning_prompt = effort_config["prompt_template"].format(message=message)
+            planning_effort = agent.planning_effort.value if hasattr(agent.planning_effort, "value") else str(agent.planning_effort)
+            effort_config = PLANNING_EFFORT_MAP.get(planning_effort, PLANNING_EFFORT_MAP["medium"])
+            planning_prompt = effort_config["prompt_template"].format(message=message)
+            try:
                 planning_response = await provider.text_chat(
                     prompt=planning_prompt,
                     system_prompt=system_prompt,
                     contexts=contexts,
                 )
                 planning_steps = planning_response.completion_text
+            except Exception as e:
+                logger.error(f"Planning failed: {e}")
+                planning_steps = None
 
             if planning_steps:
                 contexts.append({
@@ -549,118 +593,51 @@ class AgentService:
                     "content": f"[执行计划]\n{planning_steps}"
                 })
 
-        max_steps = 5
-        step = 0
-        final_response = ""
-        tools_used = []
-        tokens = {"input": 0, "output": 0, "total": 0}
+        func_tools = []
+        if agent.tools and len(agent.tools) > 0:
+            func_tools = list(agent.tools)
 
-        mock_event = self._create_mock_event(message)
+        session_id = f"test_{agent.id}_{uuid.uuid4().hex[:6]}"
 
-        while step < max_steps:
-            llm_response = await provider.text_chat(
-                prompt=message if step == 0 else None,
-                system_prompt=system_prompt,
-                contexts=contexts,
-                func_tool=func_tool,
-            )
+        run_ctx = GraphRunContext(
+            provider=provider,
+            tool_executor=None,
+            hooks=None,
+            astr_event=None,
+            config={
+                "provider_id": agent.provider_id,
+                "max_agent_step": 5,
+                "tool_call_timeout": 60,
+                "streaming_response": False,
+            },
+        )
+        state = AgentGraphState(
+            system_prompt=system_prompt,
+            user_prompt=message,
+            messages=contexts,
+            session_id=session_id,
+            provider_id=agent.provider_id,
+            func_tools=func_tools if func_tools else None,
+        )
 
-            if llm_response.usage:
-                tokens["input"] += getattr(llm_response.usage, 'prompt_tokens', None) or getattr(llm_response.usage, 'input', 0)
-                tokens["output"] += getattr(llm_response.usage, 'completion_tokens', None) or getattr(llm_response.usage, 'output', 0)
-                tokens["total"] += getattr(llm_response.usage, 'total_tokens', None) or getattr(llm_response.usage, 'total', 0)
+        result = await _agent_operator.execute(state, run_ctx, write_stream=False)
 
-            if llm_response.tools_call_args and llm_response.tools_call_name and func_tool:
-                tool_results = []
-                tool_call_ids = llm_response.tools_call_ids or [f"call_{i}" for i in range(len(llm_response.tools_call_name))]
-
-                for i, (tool_name, tool_args, tool_id) in enumerate(zip(
-                    llm_response.tools_call_name,
-                    llm_response.tools_call_args,
-                    tool_call_ids
-                )):
-                    try:
-                        if isinstance(tool_args, str):
-                            try:
-                                tool_args = json.loads(tool_args)
-                            except json.JSONDecodeError:
-                                tool_args = {}
-
-                        if not isinstance(tool_args, dict):
-                            tool_args = {}
-
-                        tool = None
-                        for t in func_tool.tools:
-                            if t.name == tool_name:
-                                tool = t
-                                break
-                        if tool and tool.handler:
-                            import inspect
-                            sig = inspect.signature(tool.handler)
-                            params = list(sig.parameters.keys())
-
-                            if params and params[0] in ('event', 'AstrMessageEvent'):
-                                tool_result = await tool.handler(mock_event, **tool_args)
-                            else:
-                                tool_result = await tool.handler(**tool_args)
-
-                            if tool_result is None:
-                                tool_result = ""
-                            tool_results.append({
-                                "tool_call_id": tool_id,
-                                "name": tool_name,
-                                "content": str(tool_result)
-                            })
-                            tools_used.append(tool_name)
-                        else:
-                            tool_results.append({
-                                "tool_call_id": tool_id,
-                                "name": tool_name,
-                                "content": f"工具 '{tool_name}' 不可用或没有处理器"
-                            })
-                    except Exception as e:
-                        logger.error(f"Tool execution error: {tool_name} - {e}")
-                        tool_results.append({
-                            "tool_call_id": tool_id,
-                            "name": tool_name,
-                            "content": f"工具执行错误: {str(e)}"
-                        })
-
-                contexts.append({
-                    "role": "assistant",
-                    "tool_calls": [{
-                        "id": r["tool_call_id"],
-                        "type": "function",
-                        "function": {
-                            "name": r["name"],
-                            "arguments": json.dumps(
-                                llm_response.tools_call_args[i]
-                                if isinstance(llm_response.tools_call_args[i], dict)
-                                else llm_response.tools_call_args[i],
-                                ensure_ascii=False
-                            )
-                        }
-                    } for i, r in enumerate(tool_results)]
-                })
-                for r in tool_results:
-                    contexts.append({
-                        "role": "tool",
-                        "tool_call_id": r["tool_call_id"],
-                        "content": r["content"]
-                    })
-
-                step += 1
-                message = None
-            else:
-                final_response = llm_response.completion_text
-                break
-
-        if not final_response:
-            final_response = llm_response.completion_text if 'llm_response' in dir() else "未能获取响应"
+        final_text = result.get("final_text", "")
+        tool_calls = result.get("tool_calls", [])
+        tools_used = [tc.get("name", "") for tc in tool_calls if tc.get("name")]
+        stats = result.get("stats", {})
+        raw_token_usage = stats.get("token_usage", {})
+        tokens = {
+            "input": raw_token_usage.get("input_other", 0) + raw_token_usage.get("input_cached", 0),
+            "input_other": raw_token_usage.get("input_other", 0),
+            "input_cached": raw_token_usage.get("input_cached", 0),
+            "output": raw_token_usage.get("output", 0),
+            "total": raw_token_usage.get("input_other", 0) + raw_token_usage.get("input_cached", 0) + raw_token_usage.get("output", 0),
+        }
 
         return {
             "success": True,
-            "response": final_response,
+            "response": final_text or "未能获取响应",
             "tools_used": tools_used,
             "planning_steps": planning_steps,
             "tokens": tokens,
@@ -672,7 +649,7 @@ class AgentService:
     ) -> AsyncGenerator[dict[str, Any], None]:
         """流式测试智能体
 
-        优先使用 CrewAI Agent 执行，降级到 AstrBot Provider 流式调用。
+        使用 AstrBot Provider 流式调用。
 
         Args:
             agent_id: 智能体 ID
@@ -699,12 +676,8 @@ class AgentService:
                 yield {"type": "error", "data": "智能体未配置 LLM 提供商"}
                 return
 
-            if CREWAI_AVAILABLE:
-                async for event in self._test_agent_stream_with_crewai(agent, message):
-                    yield event
-            else:
-                async for event in self._test_agent_stream_with_provider(agent, message):
-                    yield event
+            async for event in self._test_agent_stream_with_graph(agent, message):
+                yield event
 
             if agent.memory_config.get("enabled"):
                 self._store_memory(agent_id, "user", original_message)
@@ -715,17 +688,7 @@ class AgentService:
             logger.error(f"Agent stream traceback: {traceback.format_exc()}")
             yield {"type": "error", "data": str(e)}
 
-    async def _test_agent_stream_with_crewai(self, agent: Agent, message: str) -> AsyncGenerator[dict[str, Any], None]:
-        """使用 CrewAI Agent 流式执行
-
-        CrewAI 的 kickoff_async 是非流式调用，无法实现逐字输出效果。
-        对话场景优先使用 Provider 的 text_chat_stream 实现真正的流式输出。
-        """
-        async for event in self._test_agent_stream_with_provider(agent, message):
-            yield event
-
-    async def _test_agent_stream_with_provider(self, agent: Agent, message: str) -> AsyncGenerator[dict[str, Any], None]:
-        """使用 AstrBot Provider 流式调用（降级方案）"""
+    async def _test_agent_stream_with_graph(self, agent: Agent, message: str) -> AsyncGenerator[dict[str, Any], None]:
         provider = self._context.get_provider_by_id(agent.provider_id)
         if not provider:
             yield {"type": "error", "data": f"提供商 '{agent.provider_id}' 未找到"}
@@ -743,27 +706,19 @@ class AgentService:
 
         planning_steps = None
         if agent.planning:
-            planning_provider = self._get_planning_provider()
-            planning_effort = agent.planning_effort.value if hasattr(agent.planning_effort, 'value') else str(agent.planning_effort)
-            if planning_provider:
-                try:
-                    planning_steps = await planning_provider.generate_plan(
-                        system_prompt, message, provider, contexts, planning_effort
-                    )
-                except Exception as e:
-                    logger.error(f"Planning provider failed, falling back to builtin: {e}")
-                    planning_steps = None
-
-            if planning_steps is None:
-                from ..services.crewai_integration import PLANNING_EFFORT_MAP
-                effort_config = PLANNING_EFFORT_MAP.get(planning_effort, PLANNING_EFFORT_MAP["medium"])
-                planning_prompt = effort_config["prompt_template"].format(message=message)
+            planning_effort = agent.planning_effort.value if hasattr(agent.planning_effort, "value") else str(agent.planning_effort)
+            effort_config = PLANNING_EFFORT_MAP.get(planning_effort, PLANNING_EFFORT_MAP["medium"])
+            planning_prompt = effort_config["prompt_template"].format(message=message)
+            try:
                 planning_response = await provider.text_chat(
                     prompt=planning_prompt,
                     system_prompt=system_prompt,
                     contexts=contexts,
                 )
                 planning_steps = planning_response.completion_text
+            except Exception as e:
+                logger.error(f"Planning failed: {e}")
+                planning_steps = None
 
             if planning_steps:
                 contexts.append({
@@ -772,199 +727,92 @@ class AgentService:
                 })
                 yield {"type": "planning", "data": planning_steps}
 
-        func_tool = None
+        func_tools = []
         if agent.tools and len(agent.tools) > 0:
-            try:
-                tool_manager = self._context.get_llm_tool_manager()
-                if tool_manager:
-                    from astrbot.core.agent.tool import ToolSet
-                    tool_set = ToolSet()
-                    for tool_id in agent.tools:
-                        tool = tool_manager.get_func(tool_id)
-                        if tool:
-                            tool_set.add_tool(tool)
-                    if not tool_set.empty():
-                        func_tool = tool_set
-            except Exception as e:
-                logger.warning(f"Failed to get tools for agent stream test: {e}")
+            func_tools = list(agent.tools)
 
-        max_steps = 5
-        step = 0
-        final_response = ""
-        tools_used = []
+        session_id = f"test_{agent.id}_{uuid.uuid4().hex[:6]}"
 
-        while step < max_steps:
-            full_text = ""
-            has_tool_calls = False
-            tool_call_data = None
-            chunk_buffer = ""
-            thinking_buffer = ""
-            CHUNK_FLUSH_SIZE = 4
-            THINKING_FLUSH_SIZE = 6
-            chunk_count = 0
-            thinking_count = 0
+        import asyncio
+        stream_queue: asyncio.Queue = asyncio.Queue()
 
-            async for llm_response in provider.text_chat_stream(
-                prompt=message if step == 0 else None,
-                system_prompt=system_prompt if system_prompt else None,
-                contexts=contexts,
-                func_tool=func_tool,
-            ):
-                if llm_response.role == "err":
-                    if chunk_buffer:
-                        yield {"type": "chunk", "data": chunk_buffer}
-                        chunk_buffer = ""
-                    if thinking_buffer:
-                        yield {"type": "thinking", "data": thinking_buffer}
-                        thinking_buffer = ""
-                    yield {"type": "error", "data": llm_response.completion_text}
-                    return
+        def _stream_callback(event):
+            stream_queue.put_nowait(event)
 
-                if llm_response.is_chunk:
-                    if llm_response.result_chain:
-                        for component in llm_response.result_chain.chain:
-                            if hasattr(component, 'text') and component.text:
-                                chunk = component.text
-                                full_text += chunk
-                                chunk_buffer += chunk
-                                chunk_count += 1
-                                if chunk_count >= CHUNK_FLUSH_SIZE:
-                                    if thinking_buffer:
-                                        yield {"type": "thinking", "data": thinking_buffer}
-                                        thinking_buffer = ""
-                                        thinking_count = 0
-                                    yield {"type": "chunk", "data": chunk_buffer}
-                                    chunk_buffer = ""
-                                    chunk_count = 0
+        mock_event = self._create_mock_event(message)
 
-                    if llm_response.reasoning_content:
-                        thinking_buffer += llm_response.reasoning_content
-                        thinking_count += 1
-                        if thinking_count >= THINKING_FLUSH_SIZE:
-                            if chunk_buffer:
-                                yield {"type": "chunk", "data": chunk_buffer}
-                                chunk_buffer = ""
-                                chunk_count = 0
-                            yield {"type": "thinking", "data": thinking_buffer}
-                            thinking_buffer = ""
-                            thinking_count = 0
-                else:
-                    if llm_response.tools_call_name:
-                        has_tool_calls = True
-                        tool_call_data = llm_response
+        run_ctx = GraphRunContext(
+            provider=provider,
+            tool_executor=None,
+            hooks=None,
+            astr_event=mock_event,
+            config={
+                "provider_id": agent.provider_id,
+                "max_agent_step": 5,
+                "tool_call_timeout": 60,
+                "streaming_response": True,
+            },
+            writer=_stream_callback,
+        )
+        state = AgentGraphState(
+            system_prompt=system_prompt,
+            user_prompt=message,
+            messages=contexts,
+            session_id=session_id,
+            provider_id=agent.provider_id,
+            func_tools=func_tools if func_tools else None,
+        )
 
-                    if llm_response.result_chain:
-                        for component in llm_response.result_chain.chain:
-                            if hasattr(component, 'text') and component.text:
-                                if not full_text:
-                                    full_text += component.text
+        execute_task = asyncio.create_task(
+            _agent_operator.execute(state, run_ctx, write_stream=True)
+        )
 
-            if thinking_buffer:
-                yield {"type": "thinking", "data": thinking_buffer}
-            if chunk_buffer:
-                yield {"type": "chunk", "data": chunk_buffer}
+        try:
+            while not execute_task.done() or not stream_queue.empty():
+                try:
+                    ev = await asyncio.wait_for(stream_queue.get(), timeout=0.5)
+                except asyncio.TimeoutError:
+                    continue
 
-            if has_tool_calls and tool_call_data and func_tool:
-                for tool_name in tool_call_data.tools_call_name:
-                    yield {"type": "tool_start", "data": tool_name}
+                event_type = ev.event if hasattr(ev, "event") else ev.get("event", "")
+                event_data = ev.data if hasattr(ev, "data") else ev.get("data", {})
 
-                tool_results = []
-                tool_call_ids = tool_call_data.tools_call_ids or [f"call_{i}" for i in range(len(tool_call_data.tools_call_name))]
+                if event_type == "text_delta":
+                    yield {"type": "chunk", "data": event_data.get("text", "")}
+                elif event_type == "reasoning":
+                    yield {"type": "thinking", "data": event_data.get("text", "")}
+                elif event_type == "tool_call":
+                    yield {"type": "tool_start", "data": {"name": event_data.get("name", ""), "args": event_data.get("args", {}), "id": event_data.get("id", "")}}
+                elif event_type == "tool_result":
+                    yield {"type": "tool_result", "data": {"name": event_data.get("name", ""), "result": event_data.get("result", event_data.get("content", "")), "id": event_data.get("id", "")}}
+                elif event_type == "error":
+                    yield {"type": "error", "data": event_data.get("message", str(event_data))}
 
-                mock_event = self._create_mock_event(message)
+                await asyncio.sleep(0)
 
-                for i, (tool_name, tool_args, tool_id) in enumerate(zip(
-                    tool_call_data.tools_call_name,
-                    tool_call_data.tools_call_args,
-                    tool_call_ids
-                )):
-                    try:
-                        if isinstance(tool_args, str):
-                            try:
-                                tool_args = json.loads(tool_args)
-                            except json.JSONDecodeError:
-                                tool_args = {}
+            result = await execute_task
+        except Exception as e:
+            logger.error(f"Agent stream execute error: {e}", exc_info=True)
+            yield {"type": "error", "data": str(e)}
+            if not execute_task.done():
+                execute_task.cancel()
+            return
 
-                        if not isinstance(tool_args, dict):
-                            tool_args = {}
+        if result.get("error"):
+            yield {"type": "error", "data": result["error"]}
 
-                        tool = None
-                        for t in func_tool.tools:
-                            if t.name == tool_name:
-                                tool = t
-                                break
-
-                        tool_result_str = ""
-                        if tool and tool.handler:
-                            import inspect
-                            sig = inspect.signature(tool.handler)
-                            params = list(sig.parameters.keys())
-
-                            if params and params[0] in ('event', 'AstrMessageEvent'):
-                                tool_result = await tool.handler(mock_event, **tool_args)
-                            else:
-                                tool_result = await tool.handler(**tool_args)
-
-                            if tool_result is None:
-                                tool_result = ""
-                            tool_result_str = str(tool_result)
-                            tool_results.append({
-                                "tool_call_id": tool_id,
-                                "name": tool_name,
-                                "content": tool_result_str
-                            })
-                            tools_used.append(tool_name)
-                        else:
-                            tool_result_str = f"工具 '{tool_name}' 不可用或没有处理器"
-                            tool_results.append({
-                                "tool_call_id": tool_id,
-                                "name": tool_name,
-                                "content": tool_result_str
-                            })
-
-                        yield {"type": "tool_result", "data": {"name": tool_name, "result": tool_result_str}}
-
-                    except Exception as e:
-                        logger.error(f"Tool execution error: {tool_name} - {e}")
-                        error_msg = f"工具执行错误: {str(e)}"
-                        tool_results.append({
-                            "tool_call_id": tool_id,
-                            "name": tool_name,
-                            "content": error_msg
-                        })
-                        yield {"type": "tool_result", "data": {"name": tool_name, "result": error_msg}}
-
-                contexts.append({
-                    "role": "assistant",
-                    "tool_calls": [{
-                        "id": r["tool_call_id"],
-                        "type": "function",
-                        "function": {
-                            "name": r["name"],
-                            "arguments": json.dumps(
-                                tool_call_data.tools_call_args[i]
-                                if isinstance(tool_call_data.tools_call_args[i], dict)
-                                else tool_call_data.tools_call_args[i],
-                                ensure_ascii=False
-                            )
-                        }
-                    } for i, r in enumerate(tool_results)]
-                })
-                for r in tool_results:
-                    contexts.append({
-                        "role": "tool",
-                        "tool_call_id": r["tool_call_id"],
-                        "content": r["content"]
-                    })
-
-                step += 1
-                message = None
-            else:
-                final_response = full_text
-                break
-
-        if not final_response:
-            final_response = "未能获取响应"
+        final_text = result.get("final_text", "")
+        tool_calls = result.get("tool_calls", [])
+        tools_used = [tc.get("name", "") for tc in tool_calls if tc.get("name")]
+        stats = result.get("stats", {})
+        raw_token_usage = stats.get("token_usage", {})
+        tokens = {
+            "input": raw_token_usage.get("input_other", 0) + raw_token_usage.get("input_cached", 0),
+            "input_other": raw_token_usage.get("input_other", 0),
+            "input_cached": raw_token_usage.get("input_cached", 0),
+            "output": raw_token_usage.get("output", 0),
+            "total": raw_token_usage.get("input_other", 0) + raw_token_usage.get("input_cached", 0) + raw_token_usage.get("output", 0),
+        }
 
         end_time = datetime.now()
         execution_time_ms = int((end_time - start_time).total_seconds() * 1000)
@@ -972,10 +820,12 @@ class AgentService:
         yield {
             "type": "done",
             "data": {
-                "response": final_response,
+                "response": final_text or "未能获取响应",
                 "tools_used": tools_used,
                 "planning_steps": planning_steps,
                 "execution_time_ms": execution_time_ms,
+                "tokens": tokens,
+                "time_to_first_token": stats.get("time_to_first_token", 0),
             }
         }
 
@@ -1348,7 +1198,7 @@ class AgentService:
             return {"categories": {}, "total": 0}
 
         try:
-            with open(index_path, 'r', encoding='utf-8') as f:
+            with open(index_path, encoding="utf-8") as f:
                 index_data = json.load(f)
             return index_data
         except Exception as e:
@@ -1363,7 +1213,7 @@ class AgentService:
             return []
 
         try:
-            with open(cat_path, 'r', encoding='utf-8') as f:
+            with open(cat_path, encoding="utf-8") as f:
                 data = json.load(f)
             return data.get("experts", [])
         except Exception as e:
@@ -1437,7 +1287,6 @@ class AgentService:
 
     def batch_set_expert_llm(self, provider_id: str | None = None, model_name: str | None = None, llm_config: dict | None = None) -> int:
         """批量设置所有专家智能体的 LLM 配置"""
-        from astrbot.builtin_stars.agent_system.models import AgentType
         experts = []
         rows = self.db.select_all(
             "agents",
@@ -1557,7 +1406,7 @@ class AgentService:
         """将数据库行转换为 Agent 对象"""
         from astrbot.builtin_stars.agent_system.models import AgentType
         agent_type_val = row.get("agent_type", "custom")
-        if agent_type_val in (None, ''):
+        if agent_type_val in (None, ""):
             is_builtin = bool(row.get("is_builtin", 0))
             agent_type_val = "builtin" if is_builtin else "custom"
         return Agent(
@@ -1600,18 +1449,10 @@ class AgentService:
     def _get_memory_provider(self):
         if self._memory_provider is None:
             try:
-                self._memory_provider = get_memory_provider(self.db)
+                self._memory_provider = _BuiltinMemoryProvider(self.db)
             except Exception:
                 self._memory_provider = None
         return self._memory_provider
-
-    def _get_planning_provider(self):
-        if self._planning_provider is None:
-            try:
-                self._planning_provider = get_planning_provider()
-            except Exception:
-                self._planning_provider = None
-        return self._planning_provider
 
     def _store_memory(self, agent_id: str, role: str, content: str, summary: str = "") -> None:
         # 防御性检查：content 为 None 或空字符串时不存储
@@ -1677,8 +1518,7 @@ class AgentService:
         return memories
 
     def _create_mock_event(self, message: str = ""):
-        from ..services.crewai_integration import _create_mock_event as _create_mock
-        return _create_mock(message)
+        return _create_mock_event(message, context=self._context)
 
     def _build_system_prompt(self, agent: Agent, memories: list | None = None) -> str:
         """构建智能体的系统提示

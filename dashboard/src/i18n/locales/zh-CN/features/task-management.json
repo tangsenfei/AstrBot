@@ -67,7 +67,88 @@
     }
   },
   "deep": {
-    "comingSoon": "功能开发中",
-    "description": "深度任务功能即将上线，敬请期待..."
+    "title": "深度任务",
+    "subtitle": "管理智能体团队、流程和会议任务",
+    "stats": {
+      "total": "总任务",
+      "completed": "已完成",
+      "running": "运行中",
+      "meeting": "会议任务"
+    },
+    "filter": {
+      "all": "全部",
+      "crew": "团队",
+      "flow": "流程",
+      "meeting": "会议",
+      "statusPlaceholder": "状态筛选",
+      "searchPlaceholder": "搜索任务..."
+    },
+    "table": {
+      "name": "任务名称",
+      "type": "类型",
+      "relation": "关联",
+      "status": "状态",
+      "progress": "进度",
+      "tokens": "Token",
+      "created": "创建时间",
+      "actions": "操作"
+    },
+    "status": {
+      "pending": "待执行",
+      "running": "运行中",
+      "paused": "已暂停",
+      "waiting_feedback": "等待反馈",
+      "completed": "已完成",
+      "failed": "失败",
+      "cancelled": "已取消"
+    },
+    "actions": {
+      "create": "新建任务",
+      "refresh": "刷新",
+      "view": "查看详情",
+      "pause": "暂停",
+      "resume": "恢复",
+      "cancel": "取消",
+      "retry": "重试",
+      "delete": "删除"
+    },
+    "create": {
+      "title": "新建任务",
+      "name": "任务名称",
+      "nameRequired": "请输入任务名称",
+      "description": "任务描述",
+      "type": "任务类型",
+      "crewTask": "团队任务",
+      "flowTask": "流程任务",
+      "meetingTask": "会议任务",
+      "selectCrew": "选择团队",
+      "selectFlow": "选择流程",
+      "selectMeeting": "选择会议",
+      "inputData": "输入数据（JSON格式）",
+      "cancel": "取消",
+      "submit": "创建"
+    },
+    "detail": {
+      "title": "任务详情",
+      "type": "任务类型",
+      "progress": "进度",
+      "description": "描述",
+      "tokens": "Token 消耗",
+      "createdAt": "创建时间",
+      "completedAt": "完成时间",
+      "error": "错误信息",
+      "result": "执行结果",
+      "close": "关闭"
+    },
+    "messages": {
+      "loadFailed": "加载任务失败",
+      "createFailed": "创建任务失败",
+      "pauseFailed": "暂停失败",
+      "resumeFailed": "恢复失败",
+      "cancelFailed": "取消失败",
+      "retryFailed": "重试失败",
+      "deleteFailed": "删除失败",
+      "deleteConfirm": "确定删除任务 \"{name}\" 吗？"
+    }
   }
 }

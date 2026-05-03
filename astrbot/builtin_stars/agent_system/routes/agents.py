@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import asyncio
 import json
 
 from quart import jsonify, request, Response as QuartResponse
@@ -447,6 +448,7 @@ async def _test_agent_stream():
             try:
                 async for event in service.test_agent_stream(agent_id, message):
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                    await asyncio.sleep(0)
             except Exception as e:
                 logger.error(f"Stream generator error: {e}")
                 yield f"data: {json.dumps({'type': 'error', 'data': str(e)}, ensure_ascii=False)}\n\n"

@@ -1,4 +1,4 @@
-from typing import Generic
+from typing import Any, Generic
 
 from .agent import Agent
 from .run_context import TContext
@@ -15,12 +15,6 @@ class HandoffTool(FunctionTool, Generic[TContext]):
         tool_description: str | None = None,
         **kwargs,
     ) -> None:
-        # Avoid passing duplicate `description` to the FunctionTool dataclass.
-        # Some call sites (e.g. SubAgentOrchestrator) pass `description` via kwargs
-        # to override what the main agent sees, while we also compute a default
-        # description here.
-        # `tool_description` is the public description shown to the main LLM.
-        # Keep a separate kwarg to avoid conflicting with FunctionTool's `description`.
         description = tool_description or self.default_description(agent.name)
         super().__init__(
             name=f"transfer_to_{agent.name}",
@@ -29,10 +23,7 @@ class HandoffTool(FunctionTool, Generic[TContext]):
             **kwargs,
         )
 
-        # Optional provider override for this subagent. When set, the handoff
-        # execution will use this chat provider id instead of the global/default.
         self.provider_id: str | None = None
-        # Note: Must assign after super().__init__() to prevent parent class from overriding this attribute
         self.agent = agent
 
     def default_parameters(self) -> dict:
@@ -62,3 +53,57 @@ class HandoffTool(FunctionTool, Generic[TContext]):
     def default_description(self, agent_name: str | None) -> str:
         agent_name = agent_name or "another"
         return f"Delegate tasks to {agent_name} agent to handle the request."
+
+
+class MeetingHandoffTool(HandoffTool[TContext]):
+    """Handoff tool that triggers a meeting graph instead of a regular agent loop.
+
+    When the main agent hands off to a meeting-type sub-agent, this tool
+    invokes ``build_meeting_graph()`` and returns the structured meeting
+    result (minutes + round summaries) as text injected into the main
+    conversation.
+    """
+
+    def __init__(
+        self,
+        agent: Agent[TContext],
+        meeting_config: dict[str, Any] | None = None,
+        parameters: dict | None = None,
+        tool_description: str | None = None,
+        **kwargs,
+    ) -> None:
+        super().__init__(
+            agent=agent,
+            parameters=parameters or self.default_parameters(),
+            tool_description=tool_description,
+            **kwargs,
+        )
+        self.meeting_config: dict[str, Any] = meeting_config or {}
+
+    def default_parameters(self) -> dict:
+        return {
+            "type": "object",
+            "properties": {
+                "input": {
+                    "type": "string",
+                    "description": "The meeting topic or question to discuss. This will be used as the meeting topic.",
+                },
+                "image_urls": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional: An array of image sources used as references.",
+                },
+                "background_task": {
+                    "type": "boolean",
+                    "description": (
+                        "Defaults to true for meetings since they take time. "
+                        "Set to false only if the user needs to wait for the meeting result."
+                    ),
+                    "default": True,
+                },
+            },
+        }
+
+    def default_description(self, agent_name: str | None) -> str:
+        agent_name = agent_name or "meeting"
+        return f"Trigger a multi-agent meeting discussion via {agent_name}. The meeting will involve multiple participants discussing the given topic and producing structured minutes."

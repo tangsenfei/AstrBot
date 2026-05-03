@@ -60,6 +60,23 @@
       "invalidJson": "Invalid JSON format"
     }
   },
+  "tester": {
+    "title": "Test Tool",
+    "inputParams": "Input Parameters",
+    "paramsJson": "Parameters (JSON)",
+    "formatJson": "Format",
+    "reset": "Reset",
+    "result": "Execution Result",
+    "executing": "Executing...",
+    "success": "Execution Successful",
+    "failed": "Execution Failed",
+    "noResult": "Execution successful, no return value",
+    "clickToTest": "Click \"Execute Test\" to see results",
+    "execute": "Execute Test",
+    "invalidJson": "Invalid JSON format",
+    "unknownError": "Unknown error",
+    "requestFailed": "Request failed"
+  },
   "import": {
     "title": "Import Tools",
     "selectFile": "Select File",

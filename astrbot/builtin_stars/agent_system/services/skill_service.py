@@ -17,13 +17,13 @@ from astrbot.core.star.star_tools import StarTools
 if TYPE_CHECKING:
     from ..database import Database
 
-from ..models import Skill, DisclosureLevel
+from ..models import DisclosureLevel, Skill
 
 
 class SkillService:
     """技能管理服务"""
 
-    def __init__(self, db: "Database"):
+    def __init__(self, db: Database):
         self.db = db
         self._skills_dir: Path | None = None
 
@@ -591,7 +591,7 @@ class SkillService:
         try:
             skill_file = self.skills_dir / f"{skill_id}.json"
             if skill_file.exists():
-                with open(skill_file, "r", encoding="utf-8") as f:
+                with open(skill_file, encoding="utf-8") as f:
                     return json.load(f)
         except Exception as e:
             logger.error(f"Failed to load skill file: {skill_id} - {e}")
@@ -600,10 +600,10 @@ class SkillService:
     # ==================== 多来源技能集成 ====================
 
     def get_all_skills_merged(self, source: str | None = None, category: str | None = None) -> list[Skill]:
-        """获取所有技能（合并 AstrBot、ClaudeCode、CrewAI 三种来源）
+        """获取所有技能（合并 AstrBot、ClaudeCode 来源，crewai 已弃用）
 
         Args:
-            source: 按来源筛选 (astrbot, claudcode, crewai, custom)
+            source: 按来源筛选 (astrbot, claudcode, custom)
             category: 技能分类筛选
 
         Returns:
@@ -623,6 +623,7 @@ class SkillService:
         if source is None or source == "astrbot":
             try:
                 from astrbot.core.skills.skill_manager import SkillManager
+
                 from .astrbot_skill_adapter import AstrBotSkillAdapter
 
                 skill_manager = SkillManager()
@@ -656,23 +657,6 @@ class SkillService:
             except Exception as e:
                 logger.error(f"Failed to merge ClaudeCode skills: {e}")
 
-        # 合并 CrewAI 技能
-        if source is None or source == "crewai":
-            try:
-                from .crewai_skill_adapter import CrewAISkillAdapter
-
-                crewai_skills = CrewAISkillAdapter.discover_skills()
-
-                if category:
-                    crewai_skills = [s for s in crewai_skills if s.category == category]
-
-                for skill in crewai_skills:
-                    if skill.id not in db_skill_ids:
-                        merged_skills.append(skill)
-                        db_skill_ids.add(skill.id)
-            except Exception as e:
-                logger.error(f"Failed to merge CrewAI skills: {e}")
-
         # 按来源筛选
         if source:
             merged_skills = [s for s in merged_skills if s.source == source]
@@ -702,6 +686,7 @@ class SkillService:
             AstrBot 技能列表（已转换为智能体系统格式）
         """
         from astrbot.core.skills.skill_manager import SkillManager
+
         from .astrbot_skill_adapter import AstrBotSkillAdapter
 
         try:
@@ -726,6 +711,7 @@ class SkillService:
             Skill 对象，不存在则返回 None
         """
         from astrbot.core.skills.skill_manager import SkillManager
+
         from .astrbot_skill_adapter import AstrBotSkillAdapter
 
         if not AstrBotSkillAdapter.is_astrbot_skill(skill_id):
@@ -759,6 +745,7 @@ class SkillService:
             ValueError: 导入失败
         """
         from astrbot.core.skills.skill_manager import SkillManager
+
         from .astrbot_skill_adapter import AstrBotSkillAdapter
 
         try:
@@ -812,6 +799,7 @@ class SkillService:
             同步结果统计
         """
         from astrbot.core.skills.skill_manager import SkillManager
+
         from .astrbot_skill_adapter import AstrBotSkillAdapter
 
         result = {

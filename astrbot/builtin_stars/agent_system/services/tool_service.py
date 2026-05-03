@@ -13,8 +13,9 @@ from typing import TYPE_CHECKING, Any
 from astrbot.core import logger
 
 if TYPE_CHECKING:
-    from ..database import Database
     from astrbot.core.provider.func_tool_manager import FunctionToolManager
+
+    from ..database import Database
 
 from ..models import Tool, ToolSource
 
@@ -22,17 +23,16 @@ from ..models import Tool, ToolSource
 class ToolService:
     """工具管理服务"""
 
-    def __init__(self, db: "Database", func_tool_manager: "FunctionToolManager | None" = None):
+    def __init__(self, db: Database, func_tool_manager: FunctionToolManager | None = None):
         self.db = db
         self._func_tool_manager = func_tool_manager
 
     @property
-    def func_tool_manager(self) -> "FunctionToolManager | None":
+    def func_tool_manager(self) -> FunctionToolManager | None:
         """获取 FunctionToolManager 实例"""
         if self._func_tool_manager is None:
             # 尝试从全局上下文获取
             try:
-                from astrbot.core.star.context import Context
                 # 这里需要获取全局的 context，但这种方式不太优雅
                 # 更好的方式是在初始化时传入
                 logger.warning("FunctionToolManager not initialized, tool functionality may be limited")
@@ -381,11 +381,31 @@ class ToolService:
         """获取内置工具列表"""
         tools = []
 
-        # 1. 从 FunctionToolManager 获取内置工具
         if self._func_tool_manager:
             try:
+                for func_tool in self._func_tool_manager.iter_builtin_tools():
+                    tool = Tool(
+                        id=f"builtin_{func_tool.name}",
+                        name=func_tool.name,
+                        description=func_tool.description or "",
+                        source=ToolSource.BUILTIN,
+                        parameters=func_tool.parameters or {},
+                        return_type=None,
+                        version="1.0.0",
+                        enabled=getattr(func_tool, "active", True),
+                        metadata={
+                            "handler_module_path": getattr(func_tool, "handler_module_path", None),
+                            "is_background_task": getattr(func_tool, "is_background_task", False),
+                            "is_astrbot_builtin": True,
+                        },
+                        created_at=datetime.now(),
+                        updated_at=datetime.now(),
+                    )
+                    tools.append(tool)
+
                 for func_tool in self._func_tool_manager.func_list:
-                    # 排除 MCP 工具
+                    if isinstance(func_tool, type) and hasattr(func_tool, "mcp_server_name"):
+                        continue
                     if hasattr(func_tool, "mcp_server_name"):
                         continue
 
@@ -401,6 +421,7 @@ class ToolService:
                         metadata={
                             "handler_module_path": getattr(func_tool, "handler_module_path", None),
                             "is_background_task": getattr(func_tool, "is_background_task", False),
+                            "is_astrbot_builtin": False,
                         },
                         created_at=datetime.now(),
                         updated_at=datetime.now(),
@@ -409,234 +430,6 @@ class ToolService:
 
             except Exception as e:
                 logger.error(f"Failed to get builtin tools from FunctionToolManager: {e}")
-
-        # 2. 获取 CrewAI 内置工具
-        crewai_tools = self._get_crewai_builtin_tools()
-        tools.extend(crewai_tools)
-
-        return tools
-
-    def _get_crewai_builtin_tools(self) -> list[Tool]:
-        """获取 CrewAI 内置工具列表"""
-        tools = []
-
-        # 定义 CrewAI 内置工具列表（静态定义，不依赖导入）
-        crewai_tools_config = [
-            {
-                "name": "FileReadTool",
-                "description": "读取文件内容",
-                "parameters": {
-                    "file_path": {"type": "string", "description": "文件路径"}
-                }
-            },
-            {
-                "name": "FileWriterTool",
-                "description": "写入文件内容",
-                "parameters": {
-                    "file_path": {"type": "string", "description": "文件路径"},
-                    "content": {"type": "string", "description": "文件内容"}
-                }
-            },
-            {
-                "name": "DirectoryReadTool",
-                "description": "读取目录内容",
-                "parameters": {
-                    "directory": {"type": "string", "description": "目录路径"}
-                }
-            },
-            {
-                "name": "DirectorySearchTool",
-                "description": "搜索目录",
-                "parameters": {
-                    "directory": {"type": "string", "description": "目录路径"},
-                    "search_query": {"type": "string", "description": "搜索查询"}
-                }
-            },
-            {
-                "name": "SerperDevTool",
-                "description": "Serper.dev 搜索",
-                "parameters": {
-                    "search_query": {"type": "string", "description": "搜索查询"}
-                }
-            },
-            {
-                "name": "WebsiteSearchTool",
-                "description": "网站搜索",
-                "parameters": {
-                    "website": {"type": "string", "description": "网站URL"},
-                    "search_query": {"type": "string", "description": "搜索查询"}
-                }
-            },
-            {
-                "name": "ScrapeWebsiteTool",
-                "description": "网页抓取",
-                "parameters": {
-                    "website_url": {"type": "string", "description": "网站URL"}
-                }
-            },
-            {
-                "name": "CodeInterpreterTool",
-                "description": "代码解释器",
-                "parameters": {
-                    "code": {"type": "string", "description": "Python代码"}
-                }
-            },
-            {
-                "name": "CSVSearchTool",
-                "description": "CSV搜索",
-                "parameters": {
-                    "csv": {"type": "string", "description": "CSV文件路径"},
-                    "search_query": {"type": "string", "description": "搜索查询"}
-                }
-            },
-            {
-                "name": "PDFSearchTool",
-                "description": "PDF搜索",
-                "parameters": {
-                    "pdf": {"type": "string", "description": "PDF文件路径"},
-                    "search_query": {"type": "string", "description": "搜索查询"}
-                }
-            },
-            {
-                "name": "DOCXSearchTool",
-                "description": "Word文档搜索",
-                "parameters": {
-                    "docx": {"type": "string", "description": "Word文档路径"},
-                    "search_query": {"type": "string", "description": "搜索查询"}
-                }
-            },
-            {
-                "name": "JSONSearchTool",
-                "description": "JSON文件搜索",
-                "parameters": {
-                    "json_path": {"type": "string", "description": "JSON文件路径"},
-                    "search_query": {"type": "string", "description": "搜索查询"}
-                }
-            },
-            {
-                "name": "TXTSearchTool",
-                "description": "文本文件搜索",
-                "parameters": {
-                    "txt": {"type": "string", "description": "文本文件路径"},
-                    "search_query": {"type": "string", "description": "搜索查询"}
-                }
-            },
-            {
-                "name": "XMLSearchTool",
-                "description": "XML文件搜索",
-                "parameters": {
-                    "xml": {"type": "string", "description": "XML文件路径"},
-                    "search_query": {"type": "string", "description": "搜索查询"}
-                }
-            },
-            {
-                "name": "YoutubeVideoSearchTool",
-                "description": "YouTube视频搜索",
-                "parameters": {
-                    "search_query": {"type": "string", "description": "搜索查询"}
-                }
-            },
-            {
-                "name": "YoutubeChannelSearchTool",
-                "description": "YouTube频道搜索",
-                "parameters": {
-                    "channel": {"type": "string", "description": "频道名称"}
-                }
-            },
-            {
-                "name": "GithubSearchTool",
-                "description": "GitHub搜索",
-                "parameters": {
-                    "search_query": {"type": "string", "description": "搜索查询"},
-                    "repo_url": {"type": "string", "description": "仓库URL"}
-                }
-            },
-            {
-                "name": "DallETool",
-                "description": "DALL-E图像生成",
-                "parameters": {
-                    "prompt": {"type": "string", "description": "图像描述"}
-                }
-            },
-            {
-                "name": "VisionTool",
-                "description": "视觉处理和图像分析",
-                "parameters": {
-                    "image_path": {"type": "string", "description": "图像路径"}
-                }
-            },
-            {
-                "name": "EXASearchTool",
-                "description": "EXA搜索引擎",
-                "parameters": {
-                    "search_query": {"type": "string", "description": "搜索查询"}
-                }
-            },
-            {
-                "name": "BraveSearchTool",
-                "description": "Brave搜索",
-                "parameters": {
-                    "search_query": {"type": "string", "description": "搜索查询"}
-                }
-            },
-            {
-                "name": "SeleniumScrapingTool",
-                "description": "Selenium网页抓取",
-                "parameters": {
-                    "website_url": {"type": "string", "description": "网站URL"}
-                }
-            },
-            {
-                "name": "FirecrawlSearchTool",
-                "description": "Firecrawl搜索",
-                "parameters": {
-                    "search_query": {"type": "string", "description": "搜索查询"}
-                }
-            },
-            {
-                "name": "FirecrawlScrapeWebsiteTool",
-                "description": "Firecrawl网页抓取",
-                "parameters": {
-                    "website_url": {"type": "string", "description": "网站URL"}
-                }
-            },
-            {
-                "name": "CodeDocsSearchTool",
-                "description": "代码文档搜索",
-                "parameters": {
-                    "docs_url": {"type": "string", "description": "文档URL"},
-                    "search_query": {"type": "string", "description": "搜索查询"}
-                }
-            },
-        ]
-
-        for tool_config in crewai_tools_config:
-            try:
-                tool_name = tool_config["name"]
-                parameters = tool_config["parameters"]
-                tool = Tool(
-                    id=f"crewai_{tool_name}",
-                    name=tool_name,
-                    description=tool_config["description"],
-                    source=ToolSource.BUILTIN,
-                    parameters={
-                        "type": "object",
-                        "properties": parameters,
-                        "required": list(parameters.keys()),
-                    },
-                    return_type="string",
-                    version="1.0.0",
-                    enabled=True,
-                    metadata={
-                        "crewai_tool": True,
-                        "tool_class": tool_name,
-                    },
-                    created_at=datetime.now(),
-                    updated_at=datetime.now(),
-                )
-                tools.append(tool)
-            except Exception as e:
-                logger.warning(f"Failed to create tool {tool_config['name']}: {e}")
 
         return tools
 
@@ -737,7 +530,9 @@ class ToolService:
     async def _test_api_wrapper_tool(self, tool: Tool, params: dict[str, Any]) -> Any:
         """测试 API 封装工具"""
         try:
-            from astrbot.builtin_stars.tool_provider.api_wrapper_adapter import APIWrapperAdapter
+            from astrbot.builtin_stars.tool_provider.api_wrapper_adapter import (
+                APIWrapperAdapter,
+            )
 
             # 从 metadata 获取 API 配置
             api_config = tool.metadata.get("api_config", {})

@@ -363,6 +363,7 @@
             <ChatMessageList
               v-model:edit-draft="messageEditDraft"
               :messages="activeMessages"
+              :active-cards="activeCards"
               :is-dark="isDark"
               :is-streaming="
                 Boolean(currSessionId && isSessionRunning(currSessionId))
@@ -389,6 +390,16 @@
         </section>
 
         <section class="composer-shell">
+          <div class="composer-toolbar d-flex justify-end pa-1">
+            <v-btn
+              icon="mdi-clipboard-list"
+              size="small"
+              variant="text"
+              :color="taskPanelOpen ? 'primary' : undefined"
+              :title="'任务列表'"
+              @click="taskPanelOpen = !taskPanelOpen"
+            />
+          </div>
           <ChatInput
             ref="inputRef"
             v-model:prompt="draft"
@@ -487,6 +498,14 @@
       :is-dark="isDark"
     />
     <RefsSidebar v-model="refsSidebarOpen" :refs="selectedRefs" />
+    <v-navigation-drawer
+      v-model="taskPanelOpen"
+      location="right"
+      width="320"
+      temporary
+    >
+      <TaskPanel @close="taskPanelOpen = false" />
+    </v-navigation-drawer>
   </div>
 </template>
 
@@ -516,6 +535,7 @@ import type { RegenerateModelSelection } from "@/components/chat/RegenerateMenu.
 import ReasoningSidebar from "@/components/chat/ReasoningSidebar.vue";
 import ThreadPanel from "@/components/chat/ThreadPanel.vue";
 import RefsSidebar from "@/components/chat/message_list_comps/RefsSidebar.vue";
+import TaskPanel from "@/components/chat/TaskPanel.vue";
 import { useSessions, type Session } from "@/composables/useSessions";
 import {
   messageBlocks as buildMessageBlocks,
@@ -618,6 +638,7 @@ const activeReasoningTarget = ref<{
 } | null>(null);
 const deletingThread = ref(false);
 const refsSidebarOpen = ref(false);
+const taskPanelOpen = ref(false);
 const selectedRefs = ref<Record<string, unknown> | null>(null);
 const threadSelection = reactive<{
   visible: boolean;
@@ -670,6 +691,7 @@ const {
   loadedSessions,
   sessionProjects,
   activeMessages,
+  activeCards,
   isSessionRunning,
   isUserMessage,
   messageParts,

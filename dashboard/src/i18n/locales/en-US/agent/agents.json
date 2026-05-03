@@ -67,6 +67,110 @@
     "builtin": "Built-in",
     "expert": "Expert"
   },
+  "editor": {
+    "addTitle": "Add Agent",
+    "editTitle": "Edit Agent",
+    "tabs": {
+      "basic": "Basic Info",
+      "abilities": "Abilities",
+      "model": "Model Config",
+      "advanced": "Advanced"
+    },
+    "basic": {
+      "name": "Agent Name",
+      "nameHint": "Set an easily recognizable name for the agent",
+      "role": "Role",
+      "roleHint": "Define the agent's role, e.g. 'Assistant', 'Researcher'",
+      "goal": "Goal",
+      "goalHint": "Describe the agent's primary goal and tasks",
+      "backstory": "Backstory",
+      "backstoryHint": "Set a backstory for the agent to enhance its character"
+    },
+    "abilities": {
+      "tools": "Tool Selection",
+      "toolsHint": "Select tools the agent can use",
+      "selectTools": "Select Tools",
+      "skills": "Skill Selection",
+      "skillsHint": "Select skills the agent possesses",
+      "selectSkills": "Select Skills",
+      "knowledgeBases": "Knowledge Base Selection",
+      "knowledgeBasesHint": "Select knowledge bases the agent can access",
+      "selectKnowledgeBases": "Select Knowledge Bases"
+    },
+    "model": {
+      "provider": "LLM Provider",
+      "providerHint": "Select the language model provider for the agent",
+      "selectProvider": "Select Provider",
+      "model": "Model",
+      "modelHint": "Select a specific model",
+      "selectModel": "Select Model",
+      "parameters": "Model Parameters",
+      "temperature": "Temperature",
+      "temperatureHint": "Control output randomness, 0 for deterministic, 1 for maximum randomness",
+      "maxTokens": "Max Tokens",
+      "maxTokensHint": "Limit the maximum number of tokens per response",
+      "topP": "Top P",
+      "topPHint": "Control output diversity, 0.1 means only considering the top 10% probability tokens"
+    },
+    "advanced": {
+      "planning": "Enable Planning",
+      "planningHint": "Let the agent automatically plan task steps",
+      "enablePlanning": "Enable Auto Planning",
+      "memory": "Enable Memory",
+      "memoryHint": "Give the agent memory capabilities",
+      "enableMemory": "Enable Memory",
+      "maxSteps": "Max Steps",
+      "maxStepsHint": "Maximum number of planning steps",
+      "memoryType": "Memory Type",
+      "maxMessages": "Max Messages",
+      "maxMessagesHint": "Maximum number of messages to retain in memory",
+      "behavior": "Behavior Config",
+      "maxRetries": "Max Retries",
+      "maxRetriesHint": "Maximum retry attempts on task failure",
+      "timeout": "Timeout",
+      "seconds": "seconds",
+      "verbose": "Verbose Mode",
+      "verboseHint": "Output detailed execution logs",
+      "memoryTypes": {
+        "shortTerm": "Short-term Memory",
+        "longTerm": "Long-term Memory"
+      }
+    },
+    "validation": {
+      "required": "This field is required"
+    }
+  },
+  "tester": {
+    "title": "Agent Chat",
+    "emptyMessage": "Send a message to start chatting",
+    "thinking": "Thinking",
+    "toolsUsed": "Tools Used",
+    "inputPlaceholder": "Type a message... (Ctrl+Enter to send)",
+    "hint": "Press Ctrl+Enter to send",
+    "send": "Send",
+    "currentConfig": "Current Config",
+    "basicInfo": "Basic Info",
+    "role": "Role",
+    "goal": "Goal",
+    "abilities": "Abilities",
+    "tools": "Tools",
+    "skills": "Skills",
+    "knowledgeBases": "Knowledge Bases",
+    "knowledgeBase": "Knowledge Base",
+    "noAbilities": "No abilities configured",
+    "advanced": "Advanced",
+    "planning": "Planning",
+    "memory": "Memory",
+    "clearHistory": "Clear History",
+    "error": "Chat error",
+    "llmConfig": "LLM Config",
+    "provider": "Provider",
+    "model": "Model",
+    "temperature": "Temperature",
+    "maxTokens": "Max Tokens",
+    "notConfigured": "Not Configured",
+    "default": "Default"
+  },
   "delete": {
     "title": "Delete Agent",
     "confirm": "Are you sure you want to delete agent \"{name}\"? "

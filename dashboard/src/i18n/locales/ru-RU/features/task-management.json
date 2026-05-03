@@ -1,73 +1,154 @@
 {
   "tabs": {
-    "simple": "Simple Tasks",
-    "deep": "Deep Tasks"
+    "simple": "Простые задачи",
+    "deep": "Глубокие задачи"
   },
   "simple": {
-    "title": "Future Tasks",
+    "title": "Будущие задачи",
     "beta": "Beta",
-    "subtitle": "View future tasks assigned to AstrBot. AstrBot will be automatically woken up, execute the task, and then notify the task creator. You need to enable 'Proactive Capability' in the configuration first.",
+    "subtitle": "Просмотр будущих задач, назначенных AstrBot. AstrBot будет автоматически пробужден, выполнит задачу и уведомит создателя задачи. Сначала необходимо включить 'Проактивную возможность' в конфигурации.",
     "proactive": {
-      "supported": "Platforms supporting proactive messaging: {platforms}.",
-      "unsupported": "No platforms currently support proactive messaging."
+      "supported": "Платформы, поддерживающие проактивные сообщения: {platforms}.",
+      "unsupported": "В настоящее время нет платформ, поддерживающих проактивные сообщения."
     },
     "actions": {
-      "create": "Create Task",
-      "refresh": "Refresh",
-      "delete": "Delete",
-      "cancel": "Cancel",
-      "submit": "Submit"
+      "create": "Создать задачу",
+      "refresh": "Обновить",
+      "delete": "Удалить",
+      "cancel": "Отмена",
+      "submit": "Отправить"
     },
     "table": {
-      "title": "Task List",
-      "empty": "No tasks yet",
-      "notAvailable": "N/A",
-      "timezoneLocal": "Local Timezone",
+      "title": "Список задач",
+      "empty": "Задач пока нет",
+      "notAvailable": "Н/Д",
+      "timezoneLocal": "Местный часовой пояс",
       "headers": {
-        "name": "Task Name",
-        "type": "Type",
-        "cron": "Schedule",
-        "session": "Session",
-        "nextRun": "Next Run",
-        "lastRun": "Last Run",
-        "note": "Note",
-        "actions": "Actions"
+        "name": "Название задачи",
+        "type": "Тип",
+        "cron": "Расписание",
+        "session": "Сессия",
+        "nextRun": "Следующий запуск",
+        "lastRun": "Последний запуск",
+        "note": "Примечание",
+        "actions": "Действия"
       },
       "type": {
-        "once": "One-time",
-        "activeAgent": "Active Agent",
-        "workflow": "Workflow",
-        "unknown": "Unknown ( {type} )"
+        "once": "Одноразовая",
+        "activeAgent": "Активный агент",
+        "workflow": "Рабочий процесс",
+        "unknown": "Неизвестно ( {type} )"
       }
     },
     "form": {
-      "title": "Create New Task",
-      "chatHint": "The task will be automatically executed at the specified time, and the result will be sent to the specified session.",
-      "runOnce": "One-time Task",
-      "name": "Task Name",
-      "note": "Task Content",
-      "cron": "Cron Expression",
-      "cronPlaceholder": "e.g.: 0 9 * * * (daily at 9:00)",
-      "runAt": "Execution Time",
-      "session": "Session ID",
-      "timezone": "Timezone (optional)",
-      "enabled": "Enabled"
+      "title": "Создать новую задачу",
+      "chatHint": "Задача будет автоматически выполнена в указанное время, и результат будет отправлен в указанную сессию.",
+      "runOnce": "Одноразовая задача",
+      "name": "Название задачи",
+      "note": "Содержание задачи",
+      "cron": "Выражение Cron",
+      "cronPlaceholder": "напр.: 0 9 * * * (ежедневно в 9:00)",
+      "runAt": "Время выполнения",
+      "session": "ID сессии",
+      "timezone": "Часовой пояс (необязательно)",
+      "enabled": "Включено"
     },
     "messages": {
-      "loadFailed": "Failed to load tasks",
-      "updateFailed": "Failed to update task",
-      "deleteSuccess": "Deleted successfully",
-      "deleteFailed": "Delete failed",
-      "createSuccess": "Created successfully",
-      "createFailed": "Creation failed",
-      "sessionRequired": "Please enter a session ID",
-      "noteRequired": "Please enter task content",
-      "cronRequired": "Please enter a cron expression",
-      "runAtRequired": "Please select an execution time"
+      "loadFailed": "Не удалось загрузить задачи",
+      "updateFailed": "Не удалось обновить задачу",
+      "deleteSuccess": "Успешно удалено",
+      "deleteFailed": "Не удалось удалить",
+      "createSuccess": "Успешно создано",
+      "createFailed": "Не удалось создать",
+      "sessionRequired": "Пожалуйста, введите ID сессии",
+      "noteRequired": "Пожалуйста, введите содержание задачи",
+      "cronRequired": "Пожалуйста, введите выражение Cron",
+      "runAtRequired": "Пожалуйста, выберите время выполнения"
     }
   },
   "deep": {
-    "comingSoon": "Coming Soon",
-    "description": "Deep task feature is coming soon, stay tuned..."
+    "title": "Глубокие задачи",
+    "subtitle": "Управление задачами агентов, процессов и совещаний",
+    "stats": {
+      "total": "Всего задач",
+      "completed": "Завершено",
+      "running": "Выполняется",
+      "meeting": "Задачи совещаний"
+    },
+    "filter": {
+      "all": "Все",
+      "crew": "Команда",
+      "flow": "Процесс",
+      "meeting": "Совещание",
+      "statusPlaceholder": "Фильтр по статусу",
+      "searchPlaceholder": "Поиск задач..."
+    },
+    "table": {
+      "name": "Название",
+      "type": "Тип",
+      "relation": "Связь",
+      "status": "Статус",
+      "progress": "Прогресс",
+      "tokens": "Токены",
+      "created": "Создано",
+      "actions": "Действия"
+    },
+    "status": {
+      "pending": "Ожидание",
+      "running": "Выполняется",
+      "paused": "Приостановлено",
+      "waiting_feedback": "Ожидание обратной связи",
+      "completed": "Завершено",
+      "failed": "Ошибка",
+      "cancelled": "Отменено"
+    },
+    "actions": {
+      "create": "Новая задача",
+      "refresh": "Обновить",
+      "view": "Подробнее",
+      "pause": "Приостановить",
+      "resume": "Возобновить",
+      "cancel": "Отменить",
+      "retry": "Повторить",
+      "delete": "Удалить"
+    },
+    "create": {
+      "title": "Новая задача",
+      "name": "Название задачи",
+      "nameRequired": "Введите название задачи",
+      "description": "Описание",
+      "type": "Тип задачи",
+      "crewTask": "Задача команды",
+      "flowTask": "Задача процесса",
+      "meetingTask": "Задача совещания",
+      "selectCrew": "Выбрать команду",
+      "selectFlow": "Выбрать процесс",
+      "selectMeeting": "Выбрать совещание",
+      "inputData": "Входные данные (JSON)",
+      "cancel": "Отмена",
+      "submit": "Создать"
+    },
+    "detail": {
+      "title": "Детали задачи",
+      "type": "Тип задачи",
+      "progress": "Прогресс",
+      "description": "Описание",
+      "tokens": "Использование токенов",
+      "createdAt": "Создано",
+      "completedAt": "Завершено",
+      "error": "Ошибка",
+      "result": "Результат",
+      "close": "Закрыть"
+    },
+    "messages": {
+      "loadFailed": "Не удалось загрузить задачи",
+      "createFailed": "Не удалось создать задачу",
+      "pauseFailed": "Не удалось приостановить задачу",
+      "resumeFailed": "Не удалось возобновить задачу",
+      "cancelFailed": "Не удалось отменить задачу",
+      "retryFailed": "Не удалось повторить задачу",
+      "deleteFailed": "Не удалось удалить задачу",
+      "deleteConfirm": "Вы уверены, что хотите удалить задачу \"{name}\"?"
+    }
   }
 }

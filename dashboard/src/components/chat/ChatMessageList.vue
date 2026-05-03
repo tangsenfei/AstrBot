@@ -132,7 +132,7 @@
                   :has-non-reasoning-content="
                     hasFollowingContentBlock(msg, blockIndex)
                   "
-                  :open-in-sidebar="variant === 'main'"
+                  :open-in-sidebar="false"
                   @open="emit('openReasoning', { message: msg, blockIndex })"
                 />
 
@@ -362,6 +362,16 @@
       </div>
     </div>
 
+    <div v-if="hasDisplayCards" class="active-cards-section px-3 pb-2">
+      <InteractionCardComponent
+        v-for="card in allCards"
+        :key="card.interaction_id"
+        :card="card"
+        :is-dark="isDark"
+        :resolved="card._resolved"
+      />
+    </div>
+
     <RefsSidebar
       v-if="manageRefsSidebar"
       v-model="refsSidebarOpen"
@@ -385,7 +395,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import axios from "axios";
 import { setCustomComponents } from "markstream-vue";
 import "markstream-vue/index.css";
@@ -404,6 +414,7 @@ import ActionRef from "@/components/chat/message_list_comps/ActionRef.vue";
 import MarkdownMessagePart from "@/components/chat/message_list_comps/MarkdownMessagePart.vue";
 import ThemeAwareMarkdownCodeBlock from "@/components/shared/ThemeAwareMarkdownCodeBlock.vue";
 import StyledMenu from "@/components/shared/StyledMenu.vue";
+import InteractionCardComponent from "@/components/chat/InteractionCardComponent.vue";
 import {
   displayParts as displayMessageParts,
   messageBlocks as buildMessageBlocks,
@@ -432,6 +443,7 @@ const props = withDefaults(
     editingMessageId?: string | number | null;
     editDraft?: string;
     savingEdit?: boolean;
+    activeCards?: any[];
   }>(),
   {
     isDark: false,
@@ -908,6 +920,57 @@ function formatDuration(seconds: number) {
   const restSeconds = Math.round(seconds % 60);
   return `${minutes}m ${restSeconds}s`;
 }
+
+const polledCards = ref<any[]>([]);
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+const allCards = computed(() => {
+  const propCards = props.activeCards || [];
+  const pollCards = polledCards.value;
+  const map = new Map<string, any>();
+  for (const c of [...propCards, ...pollCards]) {
+    const existing = map.get(c.interaction_id);
+    map.set(c.interaction_id, { ...(existing || {}), ...c });
+  }
+  return Array.from(map.values());
+});
+
+const hasDisplayCards = computed(() => allCards.value.length > 0);
+
+async function fetchPendingCards() {
+  try {
+    const resp = await axios.get("/api/interaction/pending");
+    if (resp.data?.status === "ok" && resp.data?.data?.cards) {
+      const fresh = resp.data.data.cards;
+      const existing = polledCards.value;
+      const existingIds = new Set(existing.map((c: any) => c.interaction_id));
+      for (const card of fresh) {
+        if (!existingIds.has(card.interaction_id)) {
+          existing.push({ ...card, _resolved: null });
+        }
+      }
+      for (const card of existing) {
+        const freshCard = fresh.find((c: any) => c.interaction_id === card.interaction_id);
+        if (!freshCard && !card._resolved) {
+          card._resolved = { status: "cancelled", message: "已过期" };
+        } else if (freshCard && card._resolved) {
+          card._resolved = null;
+        }
+      }
+    }
+  } catch (e) {
+    // ignore polling errors
+  }
+}
+
+onMounted(() => {
+  pollTimer = setInterval(fetchPendingCards, 2000);
+  fetchPendingCards();
+});
+
+onBeforeUnmount(() => {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+});
 </script>
 
 <style scoped>

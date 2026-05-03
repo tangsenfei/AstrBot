@@ -11,32 +11,28 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from astrbot.core import logger
-
-from astrbot.builtin_stars.agent_system.services.crewai_integration import (
-    CREWAI_AVAILABLE,
-    CrewAIAgentFactory,
-)
+from astrbot.core.langgraph.checkpoint import create_checkpointer
+from astrbot.core.langgraph.graphs.workflow import build_workflow_graph
+from astrbot.core.langgraph.state import WorkflowState
 
 if TYPE_CHECKING:
-    from ..database import Database
     from astrbot.core.star.context import Context
 
-from ..models import (
-    Flow, FlowNode, FlowEdge, FlowNodeType,
-    AgentTask, TaskStatus
-)
+    from ..database import Database
+
+from ..models import Flow, FlowEdge, FlowNode, FlowNodeType, TaskStatus
 
 
 class FlowService:
     """Flow 管理服务"""
 
-    def __init__(self, db: "Database", context: "Context | None" = None, crew_service=None):
+    def __init__(self, db: Database, context: Context | None = None, crew_service=None):
         self.db = db
         self._context = context
         self._crew_service = crew_service
 
     @property
-    def context(self) -> "Context | None":
+    def context(self) -> Context | None:
         """获取 Context 实例"""
         return self._context
 
@@ -276,126 +272,6 @@ class FlowService:
         logger.info(f"Deleted flow: {flow_id}")
         return True
 
-    async def _execute_crew_node(self, crew_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
-        """执行 Crew 节点
-
-        优先使用 CrewAI Crew 执行，降级到模拟执行。
-
-        Args:
-            crew_id: Crew ID
-            input_data: 输入数据
-
-        Returns:
-            Crew 执行结果
-        """
-        if CREWAI_AVAILABLE and self._context:
-            try:
-                return await self._execute_crew_with_crewai(crew_id, input_data)
-            except Exception as e:
-                logger.warning(f"CrewAI Crew execution failed, falling back to crew_service: {e}")
-
-        if self._crew_service:
-            try:
-                crew_result = await self._crew_service.execute_crew(crew_id, input_data)
-                return {
-                    "crew_id": crew_id,
-                    "success": crew_result.get("success", True),
-                    "result": crew_result.get("output", {}).get("final_output", ""),
-                    "output": crew_result.get("output", {}),
-                    "tokens": crew_result.get("output", {}).get("tokens", {"input": 0, "output": 0, "total": 0}),
-                }
-            except Exception as e:
-                logger.warning(f"Crew service execution also failed: {e}")
-
-        return {
-            "crew_id": crew_id,
-            "success": True,
-            "result": f"[模拟] Crew {crew_id} 执行完成（CrewAI 和 CrewService 均不可用）",
-            "input": input_data,
-        }
-
-    async def _execute_crew_with_crewai(self, crew_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
-        """使用 CrewAI Crew 执行"""
-        from ..models import (
-            Crew, CrewTask, ProcessType, Agent as AgentModel,
-            AgentType, PlanningEffort,
-        )
-
-        crew_row = self.db.select_one("crews", where="id = ?", where_params=(crew_id,))
-        if not crew_row:
-            raise ValueError(f"Crew '{crew_id}' 不存在")
-
-        crew = self._row_to_crew(crew_row)
-
-        crewai_agents = []
-        agent_map = {}
-        for agent_id in crew.agents:
-            agent_row = self.db.select_one("agents", where="id = ?", where_params=(agent_id,))
-            if not agent_row:
-                raise ValueError(f"Agent '{agent_id}' 不存在")
-
-            agent_model = self._row_to_agent_model(agent_row)
-            crewai_agent = CrewAIAgentFactory.create_agent(agent_model, self._context, disable_planning=True)
-            if not crewai_agent:
-                raise ValueError(f"无法为 Agent '{agent_id}' 创建 CrewAI Agent")
-
-            crewai_agents.append(crewai_agent)
-            agent_map[agent_id] = crewai_agent
-
-        tasks = self._get_crew_tasks(crew.tasks)
-        crewai_tasks = []
-        task_map = {}
-
-        for task_model in tasks:
-            agent = None
-            if task_model.agent_id and task_model.agent_id in agent_map:
-                agent = agent_map[task_model.agent_id]
-            elif crewai_agents:
-                agent = crewai_agents[0]
-
-            context_tasks = []
-            for ctx_id in task_model.context:
-                if ctx_id in task_map:
-                    context_tasks.append(task_map[ctx_id])
-
-            crewai_task = CrewAIAgentFactory.create_task(
-                task_model, agent=agent, context_tasks=context_tasks if context_tasks else None
-            )
-            if crewai_task:
-                crewai_tasks.append(crewai_task)
-                task_map[task_model.id] = crewai_task
-
-        if not crewai_tasks:
-            raise ValueError("没有可执行的任务")
-
-        crewai_crew = CrewAIAgentFactory.create_crew(
-            crew, crewai_agents, crewai_tasks, self._context
-        )
-        if not crewai_crew:
-            raise ValueError("无法创建 CrewAI Crew")
-
-        crew_output = await crewai_crew.kickoff_async(inputs=input_data)
-
-        response_text = ""
-        if hasattr(crew_output, 'raw') and crew_output.raw:
-            response_text = crew_output.raw
-        elif hasattr(crew_output, '__str__'):
-            response_text = str(crew_output)
-
-        tokens = {"input": 0, "output": 0, "total": 0}
-        if hasattr(crew_output, 'token_usage') and crew_output.token_usage:
-            tokens["input"] = getattr(crew_output.token_usage, 'prompt_tokens', 0) or 0
-            tokens["output"] = getattr(crew_output.token_usage, 'completion_tokens', 0) or 0
-            tokens["total"] = getattr(crew_output.token_usage, 'total_tokens', 0) or 0
-
-        return {
-            "crew_id": crew_id,
-            "success": True,
-            "result": response_text,
-            "tokens": tokens,
-            "crewai_execution": True,
-        }
-
     def _row_to_crew(self, row: dict[str, Any]) -> Crew:
         """将数据库行转换为 Crew 对象"""
         return Crew(
@@ -420,7 +296,7 @@ class FlowService:
     def _row_to_agent_model(self, row: dict[str, Any]) -> AgentModel:
         """将数据库行转换为 Agent 数据模型"""
         agent_type_val = row.get("agent_type", "custom")
-        if agent_type_val in (None, ''):
+        if agent_type_val in (None, ""):
             agent_type_val = "custom"
 
         return AgentModel(
@@ -624,12 +500,18 @@ class FlowService:
 
         return result
 
-    async def execute_flow(self, flow_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
-        """执行 Flow
+    async def execute_flow(
+        self,
+        flow_id: str,
+        input_data: dict[str, Any],
+        stream_callback=None,
+    ) -> dict[str, Any]:
+        """执行 Flow（使用 LangGraph 工作流图）
 
         Args:
             flow_id: Flow ID
             input_data: 输入数据
+            stream_callback: 可选的流式回调函数
 
         Returns:
             执行结果
@@ -644,12 +526,10 @@ class FlowService:
         if not flow.enabled:
             raise ValueError(f"Flow '{flow_id}' 未启用")
 
-        # 验证 Flow
         validation = self.validate_flow(flow_id)
         if not validation["success"]:
             raise ValueError(f"Flow 验证失败: {'; '.join(validation['errors'])}")
 
-        # 创建 AgentTask 记录
         task_id = f"task_flow_{uuid.uuid4().hex[:8]}"
         now = datetime.now()
 
@@ -697,14 +577,44 @@ class FlowService:
         start_time = datetime.now()
 
         try:
-            # 获取执行顺序
-            execution_order = self._get_execution_order(flow)
-            total_nodes = len(execution_order)
-            current_context = input_data.copy()
+            flow_def = self._flow_to_definition(flow)
+            checkpointer = create_checkpointer()
+            graph = build_workflow_graph(flow_def, checkpointer=checkpointer)
 
-            for idx, node in enumerate(execution_order):
-                # 更新进度
-                progress = int((idx / total_nodes) * 100) if total_nodes > 0 else 100
+            from astrbot.core.astr_agent_tool_exec import FunctionToolExecutor
+            from astrbot.core.langgraph.state import GraphRunContext
+
+            run_ctx = GraphRunContext(
+                provider=None,
+                tool_executor=FunctionToolExecutor(),
+                hooks=None,
+                astr_event=self._context,
+                config={"provider_id": input_data.get("provider_id"), "streaming_response": False},
+            )
+
+            initial_state = WorkflowState(
+                flow_definition=flow_def,
+                node_results={},
+                current_node_id="",
+                system_prompt=input_data.get("system_prompt", ""),
+                user_prompt=input_data.get("prompt", ""),
+                messages=[],
+                session_id=input_data.get("session_id", ""),
+                provider_id=input_data.get("provider_id"),
+            )
+
+            thread_id = f"workflow:{flow_id}"
+            config = {"configurable": {"thread_id": thread_id, "run_ctx": run_ctx}}
+            total_nodes = len(flow.nodes)
+
+            async for state_update in graph.astream(initial_state, config=config):
+                for node_id, node_output in state_update.items():
+                    result["execution_path"].append(node_id)
+                    if isinstance(node_output, dict) and "node_results" in node_output:
+                        result["node_results"].update(node_output["node_results"])
+
+                completed = len(result["execution_path"])
+                progress = int((completed / total_nodes) * 100) if total_nodes > 0 else 100
                 self.db.update(
                     "agent_tasks",
                     {"progress": progress, "updated_at": datetime.now().isoformat()},
@@ -712,29 +622,17 @@ class FlowService:
                     where_params=(task_id,)
                 )
 
-                # 执行节点
-                node_result = await self._execute_node(flow, node, current_context)
+            if result["node_results"]:
+                result["success"] = True
+                result["final_output"] = result["node_results"]
 
-                result["execution_path"].append(node.id)
-                result["node_results"][node.id] = node_result
-
-                # 更新上下文
-                if node_result.get("success"):
-                    current_context = node_result.get("output", {})
-                else:
-                    raise Exception(f"节点 '{node.name}' 执行失败: {node_result.get('error')}")
-
-            result["success"] = True
-            result["final_output"] = current_context
-
-            # 更新任务状态
             self.db.update(
                 "agent_tasks",
                 {
                     "status": TaskStatus.COMPLETED.value,
                     "progress": 100,
-                    "output": current_context,
-                    "result": json.dumps(current_context, ensure_ascii=False),
+                    "output": result["node_results"],
+                    "result": json.dumps(result["node_results"], ensure_ascii=False),
                     "completed_at": datetime.now().isoformat(),
                     "updated_at": datetime.now().isoformat(),
                 },
@@ -746,7 +644,6 @@ class FlowService:
             result["error"] = str(e)
             logger.error(f"Flow execution failed: {flow_id} - {e}")
 
-            # 更新任务状态为失败
             self.db.update(
                 "agent_tasks",
                 {
@@ -766,6 +663,29 @@ class FlowService:
         return result
 
     # ==================== 私有方法 ====================
+
+    def _flow_to_definition(self, flow: Flow) -> dict[str, Any]:
+        """将 Flow 对象转换为 build_workflow_graph 所需的 dict 格式"""
+        nodes = []
+        for n in flow.nodes:
+            nodes.append({
+                "id": n.id,
+                "name": n.name,
+                "type": n.type.value,
+                "config": n.config,
+                "position": n.position,
+            })
+
+        edges = []
+        for e in flow.edges:
+            edges.append({
+                "id": e.id,
+                "source": e.source,
+                "target": e.target,
+                "condition": e.condition,
+            })
+
+        return {"nodes": nodes, "edges": edges}
 
     def _row_to_flow(self, row: dict[str, Any]) -> Flow:
         """将数据库行转换为 Flow 对象"""
@@ -993,147 +913,3 @@ class FlowService:
                     queue.sort()
 
         return result
-
-    async def _execute_node(
-        self,
-        flow: Flow,
-        node: FlowNode,
-        input_data: dict[str, Any]
-    ) -> dict[str, Any]:
-        """执行单个节点
-
-        Args:
-            flow: Flow 对象
-            node: 节点对象
-            input_data: 输入数据
-
-        Returns:
-            节点执行结果
-        """
-        result = {
-            "node_id": node.id,
-            "node_name": node.name,
-            "node_type": node.type.value,
-            "success": False,
-            "input": input_data,
-            "output": None,
-            "error": None,
-        }
-
-        try:
-            if node.type == FlowNodeType.START:
-                # 开始节点直接传递输入
-                result["success"] = True
-                result["output"] = input_data
-
-            elif node.type == FlowNodeType.LISTEN:
-                # 监听节点等待事件
-                result["success"] = True
-                result["output"] = {
-                    "event_type": node.config.get("event_type"),
-                    "data": input_data,
-                }
-
-            elif node.type == FlowNodeType.ROUTER:
-                # 路由节点根据条件选择分支
-                conditions = node.config.get("conditions", [])
-                selected_branch = None
-
-                for condition in conditions:
-                    if self._evaluate_condition(condition, input_data):
-                        selected_branch = condition.get("target")
-                        break
-
-                result["success"] = True
-                result["output"] = {
-                    "selected_branch": selected_branch,
-                    "data": input_data,
-                }
-
-            elif node.type == FlowNodeType.AND:
-                # AND 合并节点：等待所有输入完成
-                result["success"] = True
-                result["output"] = {
-                    "merged": True,
-                    "data": input_data,
-                }
-
-            elif node.type == FlowNodeType.OR:
-                # OR 合并节点：任一输入完成即可
-                result["success"] = True
-                result["output"] = {
-                    "merged": True,
-                    "data": input_data,
-                }
-
-            elif node.type == FlowNodeType.CREW:
-                crew_id = node.config.get("crew_id")
-                if not crew_id:
-                    raise ValueError(f"Crew 节点 '{node.name}' 缺少 crew_id 配置")
-
-                crew_row = self.db.select_one("crews", where="id = ?", where_params=(crew_id,))
-                if not crew_row:
-                    raise ValueError(f"Crew '{crew_id}' 不存在")
-
-                crew_result = await self._execute_crew_node(crew_id, input_data)
-
-                result["success"] = crew_result.get("success", True)
-                result["output"] = crew_result
-
-            elif node.type == FlowNodeType.HUMAN:
-                # 人工反馈节点
-                result["success"] = True
-                result["output"] = {
-                    "waiting_for_feedback": True,
-                    "message": node.config.get("message", "等待人工反馈"),
-                    "data": input_data,
-                }
-
-            else:
-                raise ValueError(f"未知的节点类型: {node.type}")
-
-        except Exception as e:
-            result["error"] = str(e)
-            logger.error(f"Node execution failed: {node.id} - {e}")
-
-        return result
-
-    def _evaluate_condition(self, condition: dict[str, Any], data: dict[str, Any]) -> bool:
-        """评估条件表达式
-
-        Args:
-            condition: 条件配置
-            data: 输入数据
-
-        Returns:
-            条件是否满足
-        """
-        # 简化的条件评估逻辑
-        # 支持简单的字段比较
-        field = condition.get("field")
-        operator = condition.get("operator", "==")
-        value = condition.get("value")
-
-        if not field:
-            return True
-
-        actual_value = data.get(field)
-
-        if operator == "==":
-            return actual_value == value
-        elif operator == "!=":
-            return actual_value != value
-        elif operator == ">":
-            return actual_value > value
-        elif operator == ">=":
-            return actual_value >= value
-        elif operator == "<":
-            return actual_value < value
-        elif operator == "<=":
-            return actual_value <= value
-        elif operator == "contains":
-            return value in actual_value if actual_value else False
-        elif operator == "in":
-            return actual_value in value if value else False
-
-        return True
