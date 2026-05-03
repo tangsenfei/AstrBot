@@ -26,6 +26,7 @@ from astrbot.core.utils.io import get_local_ip_addresses
 from .routes import *
 from .routes.api_key import ALL_OPEN_API_SCOPES
 from .routes.backup import BackupRoute
+from .routes.interaction import InteractionRoute
 from .routes.live_chat import LiveChatRoute
 from .routes.platform import PlatformRoute
 from .routes.route import Response, RouteContext
@@ -140,11 +141,12 @@ class AstrBotDashboard:
         self.platform_route = PlatformRoute(self.context, core_lifecycle)
         self.backup_route = BackupRoute(self.context, db, core_lifecycle)
         self.live_chat_route = LiveChatRoute(self.context, db, core_lifecycle)
+        self.interaction_route = InteractionRoute(self.context)
 
         self.app.add_url_rule(
             "/api/plug/<path:subpath>",
             view_func=self.srv_plug_route,
-            methods=["GET", "POST", "PUT", "DELETE"],
+            methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         )
 
         self.shutdown_event = shutdown_event

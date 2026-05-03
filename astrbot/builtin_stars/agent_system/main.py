@@ -1,7 +1,7 @@
 """
 NiceBot 智能体管理模块 - 主入口
 
-支持 CrewAI 集成，实现多智能体协作、任务分解、执行追踪、Token 消耗监控
+基于 LangGraph 实现多智能体协作、任务分解、执行追踪、Token 消耗监控
 """
 from __future__ import annotations
 
@@ -9,13 +9,13 @@ import os
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from quart import jsonify, request
+from quart import jsonify
 
 from astrbot.api import llm_tool
 from astrbot.api.event import AstrMessageEvent
+from astrbot.core import logger
 from astrbot.core.star import Star, StarMetadata
 from astrbot.core.star.context import Context
-from astrbot.core import logger
 
 if TYPE_CHECKING:
     from .database import Database
@@ -27,7 +27,7 @@ class AgentSystemPlugin(Star):
     def __init__(self, context: Context) -> None:
         super().__init__(context)
         self.config = context.get_config() or {}
-        self.db: "Database | None" = None
+        self.db: Database | None = None
         self._initialized = False
 
     @staticmethod
@@ -35,7 +35,7 @@ class AgentSystemPlugin(Star):
         return StarMetadata(
             name="agent_system",
             author="astrbot",
-            desc="智能体管理模块，支持 CrewAI 集成，实现多智能体协作、任务分解、执行追踪、Token 消耗监控",
+            desc="智能体管理模块，基于 LangGraph 实现多智能体协作、任务分解、执行追踪、Token 消耗监控",
             version="1.0.0",
         )
 
@@ -93,14 +93,15 @@ class AgentSystemPlugin(Star):
 
         # 注册工具管理 API
         from .routes import (
-            register_tool_routes,
-            register_knowledge_routes,
-            register_skill_routes,
             register_agent_routes,
             register_crew_routes,
             register_flow_routes,
+            register_knowledge_routes,
             register_roundtable_routes,
+            register_skill_routes,
             register_task_routes,
+            register_tool_routes,
+            register_work_routes,
         )
         register_tool_routes(self)
         register_knowledge_routes(self)
@@ -110,6 +111,7 @@ class AgentSystemPlugin(Star):
         register_flow_routes(self)
         register_roundtable_routes(self)
         register_task_routes(self)
+        register_work_routes(self)
 
         logger.info("AgentSystemPlugin APIs registered")
 
@@ -157,7 +159,7 @@ class AgentSystemPlugin(Star):
             logger.error(f"Health check failed: {e}")
             return self._error_response(f"Health check failed: {e}")
 
-    def get_database(self) -> "Database":
+    def get_database(self) -> Database:
         """获取数据库实例"""
         if not self.db:
             raise RuntimeError("Plugin not initialized")
@@ -185,7 +187,7 @@ class AgentSystemPlugin(Star):
             os.makedirs(data_dir, exist_ok=True)
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '_', '-', '，', '。'))[:50]
+            safe_title = "".join(c for c in title if c.isalnum() or c in (" ", "_", "-", "，", "。"))[:50]
             filename = f"{timestamp}_{safe_title}.{format}"
             filepath = os.path.join(data_dir, filename)
 

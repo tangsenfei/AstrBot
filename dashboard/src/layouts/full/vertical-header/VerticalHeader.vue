@@ -31,6 +31,7 @@ const { t } = useI18n();
 const route = useRoute();
 const LAST_BOT_ROUTE_KEY = 'astrbot:last_bot_route';
 const LAST_CHAT_ROUTE_KEY = 'astrbot:last_chat_route';
+const LAST_WORK_ROUTE_KEY = 'astrbot:last_work_route';
 let dialog = ref(false);
 let accountWarning = ref(false)
 let updateStatusDialog = ref(false);
@@ -64,6 +65,10 @@ const desktopUpdateStatus = ref('');
 const isChatPath = computed(() =>
   route.path === '/chat' || route.path.startsWith('/chat/')
 );
+const isWorkPath = computed(() =>
+  route.path === '/work' || route.path.startsWith('/work/')
+);
+const isImmersivePath = computed(() => isChatPath.value || isWorkPath.value);
 const getAppUpdaterBridge = (): AstrBotAppUpdaterBridge | null => {
   if (typeof window === 'undefined') {
     return null;
@@ -385,7 +390,7 @@ function openReleaseNotesDialog(body: string, tag: string) {
 }
 
 function handleLogoClick() {
-  if (isChatPath.value) {
+  if (isImmersivePath.value) {
     aboutDialog.value = true;
   } else {
     router.push('/about');
@@ -411,6 +416,8 @@ onMounted(() => {
         sessionStorage.setItem(LAST_CHAT_ROUTE_KEY, sessionId);
         console.log('Initial save chat ID:', sessionId);
       }
+    } else if (isWorkPath.value) {
+      sessionStorage.setItem(LAST_WORK_ROUTE_KEY, route.fullPath);
     } else {
       // 保存 bot 路由（非 chat 頁面）
       sessionStorage.setItem(LAST_BOT_ROUTE_KEY, route.fullPath);
@@ -432,9 +439,10 @@ watch(() => route.fullPath, (newPath) => {
   try {
     // 使用現有的 isChatPath 計算屬性來避免名稱衝突
     const isChat = isChatPath.value; // 這裡使用已經計算好的 isChatPath
+    const isWork = isWorkPath.value;
 
     // ✅ bot：只存「非 chat 頁」
-    if (!isChat) {
+    if (!isChat && !isWork) {
       sessionStorage.setItem(LAST_BOT_ROUTE_KEY, newPath);
     }
 
@@ -448,14 +456,18 @@ watch(() => route.fullPath, (newPath) => {
       }
     }
 
+    if (isWork) {
+      sessionStorage.setItem(LAST_WORK_ROUTE_KEY, newPath);
+    }
+
   } catch (e) {
     console.error('Failed to save route:', e);
   }
 });
 
 const currentMode = computed({
-  get: () => (isChatPath.value ? 'chat' : 'bot'),
-  set: (val: 'chat' | 'bot') => {
+  get: () => (isWorkPath.value ? 'work' : isChatPath.value ? 'chat' : 'bot'),
+  set: (val: 'chat' | 'bot' | 'work') => {
     try {
       // 檢查 window 和 sessionStorage 是否存在
       if (typeof window === 'undefined' || typeof sessionStorage === 'undefined') {
@@ -467,9 +479,12 @@ const currentMode = computed({
       if (val === 'chat') {
         const lastSessionId = sessionStorage.getItem(LAST_CHAT_ROUTE_KEY);
         router.push(lastSessionId ? `/chat/${lastSessionId}` : '/chat');
+      } else if (val === 'work') {
+        const lastWorkRoute = sessionStorage.getItem(LAST_WORK_ROUTE_KEY) || '/work';
+        router.push(lastWorkRoute.startsWith('/work') ? lastWorkRoute : '/work');
       } else {
         let lastBotRoute = sessionStorage.getItem(LAST_BOT_ROUTE_KEY) || '/';
-        if (lastBotRoute.startsWith('/chat')) {
+        if (lastBotRoute.startsWith('/chat') || lastBotRoute.startsWith('/work')) {
           lastBotRoute = '/';
         }
         router.push(lastBotRoute);
@@ -520,7 +535,7 @@ onMounted(async () => {
 
     <!-- 桌面端 menu 按钮 - 仅在 bot 模式下显示 -->
 <v-btn
-  v-if="!isChatPath"
+  v-if="!isImmersivePath"
   style="margin-left: 16px;"
   class="hidden-md-and-down"
   icon
@@ -533,7 +548,7 @@ onMounted(async () => {
 
 <!-- 移动端 menu 按钮 -->
 <v-btn
-  v-if="!isChatPath"
+  v-if="!isImmersivePath"
   class="hidden-lg-and-up ms-3"
   icon
   rounded="sm"
@@ -554,11 +569,12 @@ onMounted(async () => {
   <v-icon>mdi-menu</v-icon>
 </v-btn>
 
-    <div class="logo-container" :class="{ 'mobile-logo': $vuetify.display.xs, 'chat-mode-logo': isChatPath }" @click="handleLogoClick">
+    <div class="logo-container" :class="{ 'mobile-logo': $vuetify.display.xs, 'chat-mode-logo': isImmersivePath }" @click="handleLogoClick">
       <span class="logo-text Outfit">{{ brandName.first }}<span class="logo-text bot-text-wrapper">{{ brandName.second }}
         <img v-if="isChristmas" src="@/assets/images/xmas-hat.png" alt="Christmas hat" class="xmas-hat" />
       </span></span>
       <span class="logo-text logo-text-light Outfit" style="color: grey;" v-if="isChatPath">ChatUI</span>
+      <span class="logo-text logo-text-light Outfit" style="color: grey;" v-else-if="isWorkPath">Work</span>
       <span class="version-text hidden-xs">{{ botCurrVersion }}</span>
     </div>
 
@@ -590,6 +606,10 @@ onMounted(async () => {
   <v-btn value="chat" size="small">
     <v-icon start>mdi-chat</v-icon>
     Chat
+  </v-btn>
+  <v-btn value="work" size="small">
+    <v-icon start>mdi-briefcase-outline</v-icon>
+    Work
   </v-btn>
 </v-btn-toggle>
 
@@ -628,6 +648,10 @@ onMounted(async () => {
             <v-btn value="chat" size="small">
               <v-icon start>mdi-chat</v-icon>
               Chat
+            </v-btn>
+            <v-btn value="work" size="small">
+              <v-icon start>mdi-briefcase-outline</v-icon>
+              Work
             </v-btn>
           </v-btn-toggle>
         </div>

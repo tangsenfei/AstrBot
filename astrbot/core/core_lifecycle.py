@@ -220,6 +220,66 @@ class AstrBotCoreLifecycle:
         # Dynamic subagents (handoff tools) from config.
         await self._init_or_reload_subagent_orchestrator()
 
+        # 初始化 LangGraph TaskCenter
+        try:
+            from astrbot.core.langgraph.checkpoint import create_checkpointer
+            from astrbot.core.langgraph.task_center import TaskCenter
+            from astrbot.core.langgraph.task_tools import set_task_center
+
+            checkpointer = create_checkpointer()
+            self.task_center = TaskCenter(checkpointer)
+            set_task_center(self.task_center)
+
+            async def _db_status_callback(thread_id: str, updates: dict):
+                try:
+                    from astrbot.builtin_stars.agent_system.database import get_database
+                    from astrbot.builtin_stars.agent_system.services.task_service import (
+                        TaskService,
+                    )
+
+                    db = get_database()
+                    TaskService(db).update_task_status(thread_id, updates)
+                except Exception:
+                    pass
+
+            self.task_center.set_db_callback(_db_status_callback)
+
+            from astrbot.core.langgraph.graphs.crew import build_crew_graph
+            from astrbot.core.langgraph.graphs.meeting import build_meeting_graph
+            from astrbot.core.langgraph.graphs.plan_execute import (
+                build_plan_execute_graph,
+            )
+            from astrbot.core.langgraph.graphs.task_manager import (
+                build_task_manager_graph,
+            )
+            from astrbot.core.langgraph.graphs.workflow import build_workflow_graph
+            from astrbot.core.langgraph.graphs.work_task import build_work_task_graph
+
+            TaskCenter.register_executor("meeting", build_meeting_graph)
+            TaskCenter.register_executor("plan_execute", build_plan_execute_graph)
+            TaskCenter.register_executor("workflow", build_workflow_graph)
+            TaskCenter.register_executor("crew", build_crew_graph)
+            TaskCenter.register_executor("daily", build_task_manager_graph)
+            TaskCenter.register_executor("work_task", build_work_task_graph)
+
+            logger.info("LangGraph TaskCenter initialized.")
+
+            from astrbot.core.langgraph.chatui_adapter import ChatUIAdapter
+            from astrbot.core.langgraph.feishu_adapter import FeishuAdapter
+            from astrbot.core.langgraph.interaction_manager import (
+                InteractionManager,
+                set_interaction_manager,
+            )
+
+            interaction_mgr = InteractionManager()
+            interaction_mgr.register_adapter("chatui", ChatUIAdapter())
+            interaction_mgr.register_adapter("feishu", FeishuAdapter())
+            set_interaction_manager(interaction_mgr)
+            logger.info("InteractionManager initialized with ChatUI + Feishu adapters.")
+        except ImportError as e:
+            logger.warning("LangGraph not available, TaskCenter disabled: %s", e)
+            self.task_center = None
+
         # 初始化提供给插件的上下文
         self.star_context = Context(
             self.event_queue,

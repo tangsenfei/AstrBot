@@ -9,6 +9,7 @@ from .crews import register_crew_routes
 from .flows import register_flow_routes
 from .roundtables import register_roundtable_routes
 from .tasks import register_task_routes
+from .work import register_work_routes
 
 __all__ = [
     "register_tool_routes",
@@ -19,4 +20,5 @@ __all__ = [
     "register_flow_routes",
     "register_roundtable_routes",
     "register_task_routes",
+    "register_work_routes",
 ]

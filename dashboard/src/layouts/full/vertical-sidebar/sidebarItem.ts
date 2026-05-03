@@ -31,9 +31,9 @@ const sidebarItems: menu[] = [
     to: '/providers',
   },
   {
-    title: 'nicebot.navigation.tool_provider',
+    title: 'nicebot.navigation.tool_skills',
     icon: 'mdi-toolbox',
-    to: '/tool-provider'
+    to: '/tool-skills'
   },
   {
     title: 'agent.navigation.title',
@@ -50,16 +50,6 @@ const sidebarItems: menu[] = [
         to: '/roundtables'
       },
       {
-        title: 'agent.navigation.tools',
-        icon: 'mdi-tools',
-        to: '/agent/tools'
-      },
-      {
-        title: 'agent.navigation.skills',
-        icon: 'mdi-lightning-bolt',
-        to: '/agent/skills'
-      },
-      {
         title: 'agent.navigation.knowledge',
         icon: 'mdi-database',
         to: '/knowledge'
@@ -73,11 +63,6 @@ const sidebarItems: menu[] = [
         title: 'agent.navigation.flows',
         icon: 'mdi-graph',
         to: '/flows'
-      },
-      {
-        title: 'agent.navigation.tasks',
-        icon: 'mdi-clipboard-list-outline',
-        to: '/agent/tasks'
       }
     ]
   },
@@ -85,6 +70,11 @@ const sidebarItems: menu[] = [
     title: 'nicebot.navigation.task_management',
     icon: 'mdi-clipboard-list-outline',
     to: '/task-management'
+  },
+  {
+    title: 'nicebot.navigation.work',
+    icon: 'mdi-briefcase-outline',
+    to: '/work'
   },
   {
     title: 'nicebot.navigation.memory_management',
@@ -114,21 +104,6 @@ const sidebarItems: menu[] = [
             title: 'core.navigation.extensionTabs.market',
             icon: 'mdi-store',
             to: '/extension#market'
-          },
-          {
-            title: 'core.navigation.extensionTabs.mcp',
-            icon: 'mdi-server-network',
-            to: '/extension#mcp'
-          },
-          {
-            title: 'core.navigation.extensionTabs.skills',
-            icon: 'mdi-lightning-bolt',
-            to: '/extension#skills'
-          },
-          {
-            title: 'core.navigation.extensionTabs.components',
-            icon: 'mdi-wrench',
-            to: '/extension#components'
           }
         ]
       },

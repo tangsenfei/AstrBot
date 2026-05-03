@@ -225,14 +225,29 @@ class Database:
                 id TEXT PRIMARY KEY,
                 crew_id TEXT,
                 flow_id TEXT,
+                meeting_id TEXT,
                 name TEXT NOT NULL,
                 description TEXT,
+                task_type TEXT DEFAULT 'crew',
+                category TEXT DEFAULT '',
+                work_scope TEXT DEFAULT '',
+                work_project_id TEXT,
+                work_daily_dir_id TEXT,
+                work_task_kind TEXT DEFAULT '',
+                executor_config TEXT DEFAULT '{}',
+                plan_config TEXT DEFAULT '{}',
+                review_config TEXT DEFAULT '{}',
+                deliverables TEXT DEFAULT '[]',
                 status TEXT DEFAULT 'pending',
                 progress INTEGER DEFAULT 0,
                 input TEXT DEFAULT '{}',
                 output TEXT DEFAULT '{}',
                 result TEXT,
                 error TEXT,
+                steps TEXT DEFAULT '[]',
+                thread_id TEXT DEFAULT '',
+                pending_input TEXT DEFAULT '',
+                interaction_id TEXT DEFAULT '',
                 total_tokens INTEGER DEFAULT 0,
                 input_tokens INTEGER DEFAULT 0,
                 output_tokens INTEGER DEFAULT 0,
@@ -244,6 +259,29 @@ class Database:
                 FOREIGN KEY (flow_id) REFERENCES flows(id)
             )
         """)
+
+        # Migration: add new columns to existing agent_tasks table
+        migrations = [
+            "ALTER TABLE agent_tasks ADD COLUMN category TEXT DEFAULT ''",
+            "ALTER TABLE agent_tasks ADD COLUMN work_scope TEXT DEFAULT ''",
+            "ALTER TABLE agent_tasks ADD COLUMN work_project_id TEXT DEFAULT NULL",
+            "ALTER TABLE agent_tasks ADD COLUMN work_daily_dir_id TEXT DEFAULT NULL",
+            "ALTER TABLE agent_tasks ADD COLUMN work_task_kind TEXT DEFAULT ''",
+            "ALTER TABLE agent_tasks ADD COLUMN executor_config TEXT DEFAULT '{}'",
+            "ALTER TABLE agent_tasks ADD COLUMN plan_config TEXT DEFAULT '{}'",
+            "ALTER TABLE agent_tasks ADD COLUMN review_config TEXT DEFAULT '{}'",
+            "ALTER TABLE agent_tasks ADD COLUMN deliverables TEXT DEFAULT '[]'",
+            "ALTER TABLE agent_tasks ADD COLUMN steps TEXT DEFAULT '[]'",
+            "ALTER TABLE agent_tasks ADD COLUMN thread_id TEXT DEFAULT ''",
+            "ALTER TABLE agent_tasks ADD COLUMN pending_input TEXT DEFAULT ''",
+            "ALTER TABLE agent_tasks ADD COLUMN interaction_id TEXT DEFAULT ''",
+            "ALTER TABLE agent_tasks ADD COLUMN meeting_id TEXT DEFAULT NULL",
+        ]
+        for sql in migrations:
+            try:
+                self.execute(sql)
+            except Exception:
+                pass
 
         # 子任务表
         self.execute("""
@@ -298,6 +336,48 @@ class Database:
                 created_at TEXT NOT NULL,
                 FOREIGN KEY (task_id) REFERENCES agent_tasks(id) ON DELETE CASCADE,
                 FOREIGN KEY (agent_id) REFERENCES agents(id)
+            )
+        """)
+
+        # Work 模式项目表
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS work_projects (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                directory TEXT NOT NULL,
+                goal TEXT DEFAULT '',
+                rules TEXT DEFAULT '',
+                status TEXT DEFAULT 'active',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+
+        # Work 模式日常任务目录表
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS work_daily_dirs (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                directory TEXT NOT NULL,
+                default_rules TEXT DEFAULT '',
+                status TEXT DEFAULT 'active',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+
+        # Work 模式交付物表
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS work_artifacts (
+                id TEXT PRIMARY KEY,
+                task_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                artifact_type TEXT DEFAULT 'markdown',
+                content TEXT DEFAULT '',
+                file_path TEXT DEFAULT '',
+                metadata TEXT DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (task_id) REFERENCES agent_tasks(id) ON DELETE CASCADE
             )
         """)
 
@@ -383,6 +463,14 @@ class Database:
             ("agents", "agent_type", "TEXT DEFAULT 'custom'"),
             ("agent_tasks", "meeting_id", "TEXT"),
             ("agent_tasks", "task_type", "TEXT DEFAULT 'crew'"),
+            ("agent_tasks", "work_scope", "TEXT DEFAULT ''"),
+            ("agent_tasks", "work_project_id", "TEXT"),
+            ("agent_tasks", "work_daily_dir_id", "TEXT"),
+            ("agent_tasks", "work_task_kind", "TEXT DEFAULT ''"),
+            ("agent_tasks", "executor_config", "TEXT DEFAULT '{}'"),
+            ("agent_tasks", "plan_config", "TEXT DEFAULT '{}'"),
+            ("agent_tasks", "review_config", "TEXT DEFAULT '{}'"),
+            ("agent_tasks", "deliverables", "TEXT DEFAULT '[]'"),
             ("agent_memories", "id", "TEXT PRIMARY KEY"),
             ("agent_memories", "agent_id", "TEXT NOT NULL"),
             ("agent_memories", "role", "TEXT NOT NULL"),
@@ -411,7 +499,7 @@ class Database:
             rows = cursor.fetchall()
             for row in rows:
                 agent_id, is_builtin, agent_type = row[0], row[1], row[2]
-                if agent_type in (None, '', 'custom') and is_builtin:
+                if agent_type in (None, "", "custom") and is_builtin:
                     self.execute(
                         "UPDATE agents SET agent_type = 'builtin' WHERE id = ?",
                         (agent_id,)
@@ -436,6 +524,9 @@ class Database:
             "CREATE INDEX IF NOT EXISTS idx_agent_tasks_flow ON agent_tasks(flow_id)",
             "CREATE INDEX IF NOT EXISTS idx_agent_tasks_meeting ON agent_tasks(meeting_id)",
             "CREATE INDEX IF NOT EXISTS idx_agent_tasks_type ON agent_tasks(task_type)",
+            "CREATE INDEX IF NOT EXISTS idx_agent_tasks_work_scope ON agent_tasks(work_scope)",
+            "CREATE INDEX IF NOT EXISTS idx_agent_tasks_work_project ON agent_tasks(work_project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_agent_tasks_work_daily ON agent_tasks(work_daily_dir_id)",
             "CREATE INDEX IF NOT EXISTS idx_sub_tasks_parent ON sub_tasks(parent_task_id)",
             "CREATE INDEX IF NOT EXISTS idx_sub_tasks_agent ON sub_tasks(agent_id)",
             "CREATE INDEX IF NOT EXISTS idx_execution_logs_task ON execution_logs(task_id)",
@@ -445,6 +536,9 @@ class Database:
             "CREATE INDEX IF NOT EXISTS idx_agent_memories_agent ON agent_memories(agent_id)",
             "CREATE INDEX IF NOT EXISTS idx_agent_memories_scope ON agent_memories(scope)",
             "CREATE INDEX IF NOT EXISTS idx_agent_memories_importance ON agent_memories(importance)",
+            "CREATE INDEX IF NOT EXISTS idx_work_projects_status ON work_projects(status)",
+            "CREATE INDEX IF NOT EXISTS idx_work_daily_dirs_status ON work_daily_dirs(status)",
+            "CREATE INDEX IF NOT EXISTS idx_work_artifacts_task ON work_artifacts(task_id)",
         ]
 
         for index_sql in indexes:

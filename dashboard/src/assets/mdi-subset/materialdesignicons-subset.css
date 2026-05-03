@@ -1,4 +1,4 @@
-/* Auto-generated MDI subset – 409 icons */
+/* Auto-generated MDI subset – 412 icons */
 /* Do not edit manually. Run: pnpm run subset-icons */
 
 @font-face {
@@ -42,6 +42,10 @@
 
 .mdi-account-question::before {
   content: "\F0B59";
+}
+
+.mdi-account-question-outline::before {
+  content: "\F0B5A";
 }
 
 .mdi-account-search::before {
@@ -160,6 +164,10 @@
   content: "\F09D1";
 }
 
+.mdi-briefcase-outline::before {
+  content: "\F0814";
+}
+
 .mdi-broadcast::before {
   content: "\F1720";
 }
@@ -202,6 +210,10 @@
 
 .mdi-calendar-check::before {
   content: "\F00EF";
+}
+
+.mdi-calendar-check-outline::before {
+  content: "\F0C44";
 }
 
 .mdi-calendar-clock::before {
@@ -336,6 +348,10 @@
   content: "\F0765";
 }
 
+.mdi-circle-outline::before {
+  content: "\F0766";
+}
+
 .mdi-circle-small::before {
   content: "\F09DF";
 }
@@ -346,6 +362,10 @@
 
 .mdi-clipboard-check::before {
   content: "\F014E";
+}
+
+.mdi-clipboard-check-outline::before {
+  content: "\F08A8";
 }
 
 .mdi-clipboard-list::before {
@@ -362,6 +382,10 @@
 
 .mdi-clipboard-text-outline::before {
   content: "\F0A38";
+}
+
+.mdi-clipboard-text-search-outline::before {
+  content: "\F1623";
 }
 
 .mdi-clock-outline::before {
@@ -518,10 +542,6 @@
 
 .mdi-delete-outline::before {
   content: "\F09E7";
-}
-
-.mdi-delete-sweep::before {
-  content: "\F05E9";
 }
 
 .mdi-delete-sweep-outline::before {
@@ -720,6 +740,10 @@
   content: "\F024B";
 }
 
+.mdi-folder-clock-outline::before {
+  content: "\F0ABB";
+}
+
 .mdi-folder-move::before {
   content: "\F0252";
 }
@@ -742,6 +766,10 @@
 
 .mdi-folder-plus::before {
   content: "\F0257";
+}
+
+.mdi-folder-star-outline::before {
+  content: "\F0B9F";
 }
 
 .mdi-folder-zip-outline::before {
@@ -788,6 +816,10 @@
   content: "\F1049";
 }
 
+.mdi-hand-back-right::before {
+  content: "\F0E47";
+}
+
 .mdi-hand-heart::before {
   content: "\F10F1";
 }
@@ -810,10 +842,6 @@
 
 .mdi-head-lightbulb::before {
   content: "\F1344";
-}
-
-.mdi-head-lightbulb-outline::before {
-  content: "\F1345";
 }
 
 .mdi-headset::before {
@@ -1022,10 +1050,6 @@
 
 .mdi-menu-right::before {
   content: "\F035F";
-}
-
-.mdi-merge::before {
-  content: "\F0F5C";
 }
 
 .mdi-message-outline::before {
@@ -1316,10 +1340,6 @@
   content: "\F048B";
 }
 
-.mdi-server-network::before {
-  content: "\F048D";
-}
-
 .mdi-server-off::before {
   content: "\F048F";
 }
@@ -1424,10 +1444,6 @@
   content: "\F04CE";
 }
 
-.mdi-star-check::before {
-  content: "\F1566";
-}
-
 .mdi-star-circle::before {
   content: "\F04CF";
 }
@@ -1482,10 +1498,6 @@
 
 .mdi-text-box::before {
   content: "\F021A";
-}
-
-.mdi-text-box-check::before {
-  content: "\F0EA6";
 }
 
 .mdi-text-box-edit::before {

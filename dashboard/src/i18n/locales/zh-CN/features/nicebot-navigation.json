@@ -1,6 +1,8 @@
 {
   "tool_provider": "工具管理",
+  "tool_skills": "工具技能",
   "task_management": "任务管理",
+  "work": "Work 工作台",
   "memory_management": "记忆管理",
   "evolution_center": "进化中心"
 }

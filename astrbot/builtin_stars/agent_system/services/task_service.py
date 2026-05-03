@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from astrbot.core import logger
@@ -15,13 +15,13 @@ from astrbot.core import logger
 if TYPE_CHECKING:
     from ..database import Database
 
-from ..models import AgentTask, SubTask, ExecutionLog, TaskStatus
+from ..models import AgentTask, ExecutionLog, SubTask, TaskStatus
 
 
 class TaskService:
     """任务管理服务"""
 
-    def __init__(self, db: "Database"):
+    def __init__(self, db: Database):
         self.db = db
 
     def create_task(
@@ -33,6 +33,16 @@ class TaskService:
         flow_id: str | None = None,
         meeting_id: str | None = None,
         input_data: dict[str, Any] | None = None,
+        category: str = "",
+        thread_id: str = "",
+        task_id: str | None = None,
+        work_scope: str = "",
+        work_project_id: str | None = None,
+        work_daily_dir_id: str | None = None,
+        work_task_kind: str = "",
+        executor_config: dict[str, Any] | None = None,
+        plan_config: dict[str, Any] | None = None,
+        review_config: dict[str, Any] | None = None,
     ) -> AgentTask:
         """创建任务
 
@@ -48,14 +58,26 @@ class TaskService:
         Returns:
             创建的 AgentTask 对象
         """
-        task_id = f"task_{uuid.uuid4().hex[:8]}"
+        task_id = task_id or f"task_{uuid.uuid4().hex[:8]}"
         now = datetime.now()
+        crew_id = crew_id or None
+        flow_id = flow_id or None
+        meeting_id = meeting_id or None
 
         task_data = {
             "id": task_id,
             "name": name,
             "description": description,
             "task_type": task_type,
+            "category": category,
+            "work_scope": work_scope,
+            "work_project_id": work_project_id,
+            "work_daily_dir_id": work_daily_dir_id,
+            "work_task_kind": work_task_kind,
+            "executor_config": executor_config or {},
+            "plan_config": plan_config or {},
+            "review_config": review_config or {},
+            "deliverables": [],
             "crew_id": crew_id,
             "flow_id": flow_id,
             "meeting_id": meeting_id,
@@ -65,6 +87,10 @@ class TaskService:
             "output": {},
             "result": None,
             "error": None,
+            "steps": "[]",
+            "thread_id": thread_id,
+            "pending_input": "",
+            "interaction_id": "",
             "total_tokens": 0,
             "input_tokens": 0,
             "output_tokens": 0,
@@ -166,7 +192,7 @@ class TaskService:
                 task = self._row_to_agent_task(dict(row))
                 tasks.append(task)
             except Exception as e:
-                logger.error(f"Failed to parse task {row.get('id')}: {e}")
+                logger.error(f"Failed to parse task: {e}")
 
         return {
             "tasks": [t.to_dict() for t in tasks],
@@ -189,7 +215,7 @@ class TaskService:
         """
         row = self.db.select_one("agent_tasks", where="id = ?", where_params=(task_id,))
         if row:
-            return self._row_to_agent_task(row)
+            return self._row_to_agent_task(dict(row) if not isinstance(row, dict) else row)
         return None
 
     def pause_task(self, task_id: str) -> bool:
@@ -377,6 +403,38 @@ class TaskService:
 
         logger.info(f"Task retried: {task_id} -> {new_task_id}")
         return self._row_to_agent_task(new_task_data)
+
+    def update_task_status(
+        self,
+        thread_id: str,
+        updates: dict[str, Any],
+    ) -> bool:
+        """通过 thread_id 更新任务状态（供 TaskCenter 回调使用）。"""
+        row = self.db.select_one(
+            "agent_tasks", where="thread_id = ?", where_params=(thread_id,)
+        )
+        if not row:
+            return False
+        updates["updated_at"] = datetime.now().isoformat()
+        self.db.update(
+            "agent_tasks", updates,
+            where="thread_id = ?", where_params=(thread_id,),
+        )
+        return True
+
+    def set_pending_input(self, task_id: str, text: str) -> bool:
+        """设置任务的用户补充信息。"""
+        row = self.db.select_one(
+            "agent_tasks", where="id = ?", where_params=(task_id,)
+        )
+        if not row:
+            return False
+        self.db.update(
+            "agent_tasks",
+            {"pending_input": text, "updated_at": datetime.now().isoformat()},
+            where="id = ?", where_params=(task_id,),
+        )
+        return True
 
     def get_task_logs(self, task_id: str) -> list[ExecutionLog]:
         """获取任务日志
@@ -575,6 +633,19 @@ class TaskService:
             output=self._parse_json(row.get("output", "{}")),
             result=row.get("result"),
             error=row.get("error"),
+            category=row.get("category", ""),
+            work_scope=row.get("work_scope", ""),
+            work_project_id=row.get("work_project_id"),
+            work_daily_dir_id=row.get("work_daily_dir_id"),
+            work_task_kind=row.get("work_task_kind", ""),
+            executor_config=self._parse_json(row.get("executor_config", "{}")),
+            plan_config=self._parse_json(row.get("plan_config", "{}")),
+            review_config=self._parse_json(row.get("review_config", "{}")),
+            deliverables=self._parse_json(row.get("deliverables", "[]")),
+            steps=self._parse_json(row.get("steps", "[]")),
+            thread_id=row.get("thread_id", ""),
+            pending_input=row.get("pending_input", ""),
+            interaction_id=row.get("interaction_id", ""),
             total_tokens=row.get("total_tokens", 0),
             input_tokens=row.get("input_tokens", 0),
             output_tokens=row.get("output_tokens", 0),

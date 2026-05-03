@@ -53,6 +53,12 @@ const MainRoutes = {
       meta: { requiresAuth: true }
     },
     {
+      name: 'ToolSkills',
+      path: '/tool-skills',
+      component: () => import('@/views/ToolSkillsPage.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       name: 'TaskManagement',
       path: '/task-management',
       component: () => import('@/views/TaskManagementPage.vue'),
@@ -224,6 +230,12 @@ const MainRoutes = {
           props: true
         }
       ]
+    },
+    {
+      name: 'Work',
+      path: '/work',
+      component: () => import('@/views/WorkPage.vue'),
+      meta: { requiresAuth: true }
     },
     {
       name: 'Settings',

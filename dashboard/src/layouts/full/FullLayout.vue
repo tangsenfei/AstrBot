@@ -18,9 +18,11 @@ const { locale } = useI18n();
 const route = useRoute();
 const routerLoadingStore = useRouterLoadingStore();
 const isCurrentChatRoute = computed(() => route.path === '/chat' || route.path.startsWith('/chat/'));
+const isCurrentWorkRoute = computed(() => route.path === '/work' || route.path.startsWith('/work/'));
+const isImmersiveRoute = computed(() => isCurrentChatRoute.value || isCurrentWorkRoute.value);
 const shouldMountChat = ref(isCurrentChatRoute.value);
 
-const showSidebar = computed(() => !isCurrentChatRoute.value)
+const showSidebar = computed(() => !isImmersiveRoute.value)
 
 const migrationDialog = ref<InstanceType<typeof MigrationDialog> | null>(null);
 const showFirstNoticeDialog = ref(false);
@@ -109,19 +111,19 @@ onMounted(() => {
       <VerticalHeaderVue />
       <VerticalSidebarVue v-if="showSidebar" />
       <v-main :style="{
-        height: isCurrentChatRoute ? 'calc(100vh - 55px)' : undefined,
-        overflow: isCurrentChatRoute ? 'hidden' : undefined
+        height: isImmersiveRoute ? 'calc(100vh - 55px)' : undefined,
+        overflow: isImmersiveRoute ? 'hidden' : undefined
       }">
         <v-container
           fluid
           class="page-wrapper"
-          :class="{ 'chat-mode-container': isCurrentChatRoute }"
+          :class="{ 'chat-mode-container': isImmersiveRoute }"
           :style="{
-            height: isCurrentChatRoute ? '100%' : 'calc(100% - 8px)',
-            padding: isCurrentChatRoute ? '0' : undefined,
-            minHeight: isCurrentChatRoute ? 'unset' : undefined
+            height: isImmersiveRoute ? '100%' : 'calc(100% - 8px)',
+            padding: isImmersiveRoute ? '0' : undefined,
+            minHeight: isImmersiveRoute ? 'unset' : undefined
           }">
-          <div :style="{ height: '100%', width: '100%', overflow: isCurrentChatRoute ? 'hidden' : undefined }">
+          <div :style="{ height: '100%', width: '100%', overflow: isImmersiveRoute ? 'hidden' : undefined }">
             <div
               v-if="shouldMountChat"
               v-show="isCurrentChatRoute"

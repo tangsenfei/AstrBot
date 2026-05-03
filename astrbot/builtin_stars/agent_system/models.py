@@ -8,7 +8,6 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-
 # ==================== 枚举类型 ====================
 
 class ToolSource(Enum):
@@ -20,7 +19,7 @@ class ToolSource(Enum):
 
 
 class SkillSource(Enum):
-    """技能来源"""
+    """技能来源（CREWAI 已弃用，保留仅用于兼容历史数据）"""
     ASTRBOT = "astrbot"
     CLAUDECODE = "claudcode"
     CREWAI = "crewai"
@@ -75,6 +74,19 @@ class TaskStatus(Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+
+
+class WorkScope(Enum):
+    """Work 模式任务归属"""
+    DAILY = "daily"
+    PROJECT = "project"
+
+
+class WorkTaskKind(Enum):
+    """Work 模式任务类型"""
+    SINGLE_AGENT = "single_agent"
+    MULTI_AGENT = "multi_agent"
+    WORKFLOW = "workflow"
 
 
 class RoundtableStatus(Enum):
@@ -562,6 +574,19 @@ class AgentTask:
     total_tokens: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
+    category: str = ""
+    work_scope: str = ""
+    work_project_id: str | None = None
+    work_daily_dir_id: str | None = None
+    work_task_kind: str = ""
+    executor_config: dict[str, Any] = field(default_factory=dict)
+    plan_config: dict[str, Any] = field(default_factory=dict)
+    review_config: dict[str, Any] = field(default_factory=dict)
+    deliverables: list[dict[str, Any]] = field(default_factory=list)
+    steps: list[dict] = field(default_factory=list)
+    thread_id: str = ""
+    pending_input: str = ""
+    interaction_id: str = ""
     started_at: datetime | None = None
     completed_at: datetime | None = None
     created_at: datetime = field(default_factory=datetime.now)
@@ -585,6 +610,19 @@ class AgentTask:
             "total_tokens": self.total_tokens,
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
+            "category": self.category,
+            "work_scope": self.work_scope,
+            "work_project_id": self.work_project_id,
+            "work_daily_dir_id": self.work_daily_dir_id,
+            "work_task_kind": self.work_task_kind,
+            "executor_config": self.executor_config,
+            "plan_config": self.plan_config,
+            "review_config": self.review_config,
+            "deliverables": self.deliverables,
+            "steps": self.steps,
+            "thread_id": self.thread_id,
+            "pending_input": self.pending_input,
+            "interaction_id": self.interaction_id,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "created_at": self.created_at.isoformat(),
@@ -610,6 +648,19 @@ class AgentTask:
             total_tokens=data.get("total_tokens", 0),
             input_tokens=data.get("input_tokens", 0),
             output_tokens=data.get("output_tokens", 0),
+            category=data.get("category", ""),
+            work_scope=data.get("work_scope", ""),
+            work_project_id=data.get("work_project_id"),
+            work_daily_dir_id=data.get("work_daily_dir_id"),
+            work_task_kind=data.get("work_task_kind", ""),
+            executor_config=data.get("executor_config", {}),
+            plan_config=data.get("plan_config", {}),
+            review_config=data.get("review_config", {}),
+            deliverables=data.get("deliverables", []),
+            steps=data.get("steps", []),
+            thread_id=data.get("thread_id", ""),
+            pending_input=data.get("pending_input", ""),
+            interaction_id=data.get("interaction_id", ""),
             started_at=datetime.fromisoformat(data["started_at"]) if data.get("started_at") else None,
             completed_at=datetime.fromisoformat(data["completed_at"]) if data.get("completed_at") else None,
             created_at=datetime.fromisoformat(data["created_at"]) if "created_at" in data else datetime.now(),
@@ -750,6 +801,79 @@ class TokenStats:
             total_tokens=data.get("total_tokens", 0),
             created_at=datetime.fromisoformat(data["created_at"]) if "created_at" in data else datetime.now(),
         )
+
+
+@dataclass
+class WorkProject:
+    """Work 模式项目"""
+    id: str
+    name: str
+    directory: str
+    goal: str = ""
+    rules: str = ""
+    status: str = "active"
+    created_at: datetime = field(default_factory=datetime.now)
+    updated_at: datetime = field(default_factory=datetime.now)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "directory": self.directory,
+            "goal": self.goal,
+            "rules": self.rules,
+            "status": self.status,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+        }
+
+
+@dataclass
+class WorkDailyDir:
+    """Work 模式日常任务目录"""
+    id: str
+    name: str
+    directory: str
+    default_rules: str = ""
+    status: str = "active"
+    created_at: datetime = field(default_factory=datetime.now)
+    updated_at: datetime = field(default_factory=datetime.now)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "directory": self.directory,
+            "default_rules": self.default_rules,
+            "status": self.status,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+        }
+
+
+@dataclass
+class WorkArtifact:
+    """Work 模式任务交付物"""
+    id: str
+    task_id: str
+    title: str
+    artifact_type: str = "markdown"
+    content: str = ""
+    file_path: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+    created_at: datetime = field(default_factory=datetime.now)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "task_id": self.task_id,
+            "title": self.title,
+            "artifact_type": self.artifact_type,
+            "content": self.content,
+            "file_path": self.file_path,
+            "metadata": self.metadata,
+            "created_at": self.created_at.isoformat(),
+        }
 
 
 # ==================== 圆桌会议相关模型 ====================
