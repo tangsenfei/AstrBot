@@ -24,29 +24,11 @@ class InteractionRoute(Route):
             pending = mgr.get_pending_interactions()
             cards = []
             for state in pending:
-                cards.append({
-                    "interaction_id": state.interaction_id,
-                    "type": state.card.type,
-                    "title": state.card.title,
-                    "body": state.card.body,
-                    "fields": [
-                        {
-                            "key": f.key,
-                            "label": f.label,
-                            "field_type": f.field_type,
-                            "required": f.required,
-                            "default": f.default,
-                            "options": f.options,
-                        }
-                        for f in state.card.fields
-                    ],
-                    "actions": [
-                        {"key": a.key, "label": a.label, "style": a.style}
-                        for a in state.card.actions
-                    ],
-                    "timeout_seconds": state.card.timeout_seconds,
-                    "channel": state.channel,
-                })
+                card = state.card.to_dict()
+                card["thread_id"] = state.thread_id
+                card["task_id"] = card.get("meta", {}).get("task_id") or state.thread_id
+                card["channel"] = state.channel
+                cards.append(card)
             return Response().ok({"cards": cards}).__dict__
         except Exception as e:
             logger.error(f"Get pending interactions error: {e}", exc_info=True)
@@ -84,6 +66,28 @@ class InteractionRoute(Route):
             ok = mgr.respond(interaction_id, response)
 
             if ok:
+                try:
+                    state = mgr.get_pending_interaction(interaction_id)
+                    task_id = ""
+                    if state:
+                        task_id = state.card.meta.get("task_id") or state.thread_id
+                    if task_id:
+                        from datetime import datetime
+
+                        from astrbot.builtin_stars.agent_system.database import get_database
+
+                        get_database().update(
+                            "agent_tasks",
+                            {
+                                "status": "running",
+                                "interaction_id": "",
+                                "updated_at": datetime.now().isoformat(),
+                            },
+                            where="id = ?",
+                            where_params=(task_id,),
+                        )
+                except Exception:
+                    pass
                 return Response().ok(
                     {"interaction_id": interaction_id, "action": action_key}
                 ).__dict__

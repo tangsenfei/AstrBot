@@ -32,7 +32,15 @@
           </div>
         </div>
 
-        <div v-if="task.interaction_id" class="interaction-section mb-3 pa-2 rounded" style="border: 1px solid rgba(var(--v-theme-warning), 0.4); background: rgba(var(--v-theme-warning), 0.04);">
+        <InteractionCardComponent
+          v-if="task.hitl_cards?.length"
+          class="mb-3"
+          :card="task.hitl_cards[0]"
+          :is-dark="false"
+          @respond="emit('interaction-respond', $event)"
+        />
+
+        <div v-else-if="task.interaction_id" class="interaction-section mb-3 pa-2 rounded" style="border: 1px solid rgba(var(--v-theme-warning), 0.4); background: rgba(var(--v-theme-warning), 0.04);">
           <div class="text-caption font-weight-medium mb-1">
             <v-icon icon="mdi-hand-back-right" size="14" color="warning" class="mr-1" />
             等待你的操作
@@ -60,6 +68,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue';
+import InteractionCardComponent from '@/components/chat/InteractionCardComponent.vue';
 
 const props = defineProps<{ task: any }>();
 const emit = defineEmits<{
@@ -123,12 +132,22 @@ function submitInput() {
   inputText.value = '';
 }
 
-function respond(key: string) {
-  emit('interaction-respond', {
+async function respond(key: string) {
+  const payload = {
     interaction_id: props.task.interaction_id,
     action_key: key,
     field_values: {},
-  });
+  };
+  try {
+    const response = await fetch('/api/interaction/respond', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (response.ok) emit('interaction-respond', payload);
+  } catch (e) {
+    console.error('Interaction respond failed:', e);
+  }
 }
 </script>
 

@@ -1,4 +1,4 @@
-/* Auto-generated MDI subset – 412 icons */
+/* Auto-generated MDI subset – 413 icons */
 /* Do not edit manually. Run: pnpm run subset-icons */
 
 @font-face {
@@ -1294,6 +1294,10 @@
 
 .mdi-robot-happy::before {
   content: "\F1719";
+}
+
+.mdi-robot-happy-outline::before {
+  content: "\F171A";
 }
 
 .mdi-robot-industrial::before {

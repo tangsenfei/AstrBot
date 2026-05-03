@@ -55,6 +55,31 @@
         </v-btn>
 
         <v-btn
+          class="new-chat-btn nicebot-chat-btn"
+          :class="{ 'icon-only': isSidebarCollapsed }"
+          variant="text"
+          :icon="isSidebarCollapsed"
+          @click="openNiceBotChat"
+        >
+          <v-icon
+            size="20"
+            class="sidebar-action-icon"
+            :class="{ 'mr-2': !isSidebarCollapsed }"
+            >mdi-robot-happy-outline</v-icon
+          >
+          <span v-if="!isSidebarCollapsed" class="nicebot-label">NiceBot</span>
+          <v-chip
+            v-if="pendingWorkHitlCount && !isSidebarCollapsed"
+            color="warning"
+            size="x-small"
+            variant="flat"
+            class="ml-auto"
+          >
+            {{ pendingWorkHitlCount }}
+          </v-chip>
+        </v-btn>
+
+        <v-btn
           class="new-chat-btn"
           :class="{ 'icon-only': isSidebarCollapsed }"
           variant="text"
@@ -392,13 +417,23 @@
         <section class="composer-shell">
           <div class="composer-toolbar d-flex justify-end pa-1">
             <v-btn
-              icon="mdi-clipboard-list"
+              icon
               size="small"
               variant="text"
               :color="taskPanelOpen ? 'primary' : undefined"
               :title="'任务列表'"
               @click="taskPanelOpen = !taskPanelOpen"
-            />
+            >
+              <v-badge
+                v-if="pendingWorkHitlCount"
+                :content="pendingWorkHitlCount"
+                color="warning"
+                floating
+              >
+                <v-icon>mdi-clipboard-list</v-icon>
+              </v-badge>
+              <v-icon v-else>mdi-clipboard-list</v-icon>
+            </v-btn>
           </div>
           <ChatInput
             ref="inputRef"
@@ -500,9 +535,11 @@
     <RefsSidebar v-model="refsSidebarOpen" :refs="selectedRefs" />
     <v-navigation-drawer
       v-model="taskPanelOpen"
+      class="chat-task-drawer"
       location="right"
-      width="320"
-      temporary
+      width="360"
+      :temporary="!lgAndUp"
+      :permanent="lgAndUp"
     >
       <TaskPanel @close="taskPanelOpen = false" />
     </v-navigation-drawer>
@@ -557,6 +594,10 @@ import {
 import type { Locale } from "@/i18n/types";
 import { askForConfirmation, useConfirmDialog } from "@/utils/confirmDialog";
 import { useToast } from "@/utils/toast";
+import {
+  getStoredSelectedChatConfigId,
+  setStoredSelectedChatConfigId,
+} from "@/utils/chatConfigBinding";
 
 const props = withDefaults(defineProps<{ chatboxMode?: boolean; active?: boolean }>(), {
   chatboxMode: false,
@@ -624,6 +665,7 @@ const editingMessage = ref<ChatRecord | null>(null);
 const savingMessageEdit = ref(false);
 const projectSessions = ref<Session[]>([]);
 const loadingSessions = ref(false);
+const pendingWorkHitlCount = ref(0);
 const draft = ref("");
 const messagesContainer = ref<HTMLElement | null>(null);
 const inputRef = ref<InstanceType<typeof ChatInput> | null>(null);
@@ -656,6 +698,7 @@ const threadSelection = reactive<{
 const enableStreaming = ref(true);
 const isRecording = ref(false);
 const sendShortcut = ref<"enter" | "shift_enter">("enter");
+let workTaskPollTimer: ReturnType<typeof setInterval> | null = null;
 const chatSidebarDrawer = computed({
   get: () => lgAndUp.value || customizer.chatSidebarOpen,
   set: (value: boolean) => {
@@ -780,12 +823,18 @@ onMounted(async () => {
     } else if (routeSessionId) {
       await selectSession(routeSessionId, false);
     }
+    await loadPendingWorkHitlCount();
+    workTaskPollTimer = setInterval(loadPendingWorkHitlCount, 5000);
   } finally {
     loadingSessions.value = false;
   }
 });
 
 onBeforeUnmount(() => {
+  if (workTaskPollTimer) {
+    clearInterval(workTaskPollTimer);
+    workTaskPollTimer = null;
+  }
   cleanupMediaCache();
 });
 
@@ -863,6 +912,55 @@ async function startNewChat() {
   replyTarget.value = null;
   newChat();
   closeMobileSidebar();
+}
+
+async function openNiceBotChat() {
+  showChatWorkspace();
+  selectedProjectId.value = null;
+  replyTarget.value = null;
+  closeSecondaryPanels();
+
+  const existing = sessions.value.find(
+    (session) => (session.display_name || "").trim() === "NiceBot",
+  );
+  if (existing) {
+    await selectSession(existing.session_id);
+    return;
+  }
+
+  const previousConfigId = getStoredSelectedChatConfigId();
+  setStoredSelectedChatConfigId("default");
+  try {
+    const sessionId = await newSession();
+    await axios.post("/api/chat/update_session_display_name", {
+      session_id: sessionId,
+      display_name: "NiceBot",
+    });
+    updateSessionTitle(sessionId, "NiceBot");
+    await getSessions();
+    await selectSession(sessionId);
+  } finally {
+    setStoredSelectedChatConfigId(previousConfigId || "default");
+  }
+}
+
+async function loadPendingWorkHitlCount() {
+  try {
+    const response = await axios.get("/api/plug/work/tasks", {
+      params: { page_size: 80 },
+    });
+    if (response.data?.status === "ok") {
+      const tasks = response.data.data?.tasks || [];
+      pendingWorkHitlCount.value = tasks.filter(
+        (task: any) =>
+          task.status === "waiting_feedback" ||
+          task.has_hitl ||
+          Boolean(task.hitl_cards?.length),
+      ).length;
+    }
+  } catch {
+    pendingWorkHitlCount.value = 0;
+  }
 }
 
 function openCreateProjectDialog() {
@@ -1455,6 +1553,16 @@ function toggleTheme() {
   margin-bottom: 8px;
 }
 
+.nicebot-chat-btn {
+  margin-bottom: 8px;
+}
+
+.nicebot-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .new-chat-btn:not(.icon-only),
 .settings-btn:not(.icon-only) {
   padding-inline: 12px;
@@ -1606,6 +1714,10 @@ function toggleTheme() {
 .provider-workspace-page {
   height: 100%;
   min-height: 0;
+}
+
+.chat-task-drawer {
+  border-left: 1px solid var(--chat-border);
 }
 
 .messages-panel {

@@ -98,30 +98,15 @@
         </div>
       </div>
 
-      <div class="task-list">
-        <button
-          v-for="task in filteredTasks"
-          :key="task.id"
-          class="task-card"
-          :class="{ active: selectedTaskId === task.id }"
-          type="button"
-          @click="selectTask(task.id)"
-        >
-          <div class="task-card-top">
-            <v-icon :color="statusColor(task.status)" :icon="statusIcon(task.status)" size="18" />
-            <span class="task-name">{{ task.name }}</span>
-          </div>
-          <div class="task-desc">{{ task.description || taskKindLabel(task.work_task_kind || task.task_type) }}</div>
-          <v-progress-linear :model-value="task.progress || 0" :color="statusColor(task.status)" height="5" rounded />
-          <div class="task-meta">
-            <span>{{ statusLabel(task.status) }}</span>
-            <span>{{ formatTokens(task.total_tokens) }} tokens</span>
-          </div>
-        </button>
-        <div v-if="!filteredTasks.length && !loading" class="empty-state">
-          暂无任务
-        </div>
-      </div>
+      <WorkTaskList
+        class="task-list"
+        :tasks="filteredTasks"
+        :selected-task-id="selectedTaskId"
+        :loading="loading"
+        :is-dark="isDark"
+        @select="selectTask"
+        @interaction-respond="handleInteractionRespond"
+      />
     </aside>
 
     <main class="work-detail-pane">
@@ -352,6 +337,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import axios from 'axios';
 import ChatMessageList from '@/components/chat/ChatMessageList.vue';
+import WorkTaskList from '@/components/work/WorkTaskList.vue';
 import type { ChatRecord, MessagePart } from '@/composables/useMessages';
 import { useCustomizerStore } from '@/stores/customizer';
 
@@ -455,7 +441,6 @@ const progressMessages = computed<ChatRecord[]>(() => {
     } else if (event === 'tool_result') {
       parts = [{ type: 'tool_call', tool_calls: [{ ...data, finished_ts: Date.now() / 1000 }] } as any];
     } else if (event === 'interaction') {
-      interactionCards.value = mergeCard(interactionCards.value, data);
       continue;
     } else {
       const text = event === 'text_delta' ? data.text : log.message;
@@ -490,13 +475,6 @@ function defaultTaskForm() {
     plan_config: { enabled: false, effort: 'medium' },
     review_config: { enabled: false, max_rework: 1 },
   };
-}
-
-function mergeCard(cards: any[], card: any) {
-  if (!card?.interaction_id) return cards;
-  const map = new Map(cards.map((item) => [item.interaction_id, item]));
-  map.set(card.interaction_id, { ...(map.get(card.interaction_id) || {}), ...card });
-  return Array.from(map.values());
 }
 
 async function refreshAll() {
@@ -554,6 +532,7 @@ async function loadSelectedTask() {
     selectedTask.value = response.data.data;
     logs.value = selectedTask.value.logs || [];
     artifacts.value = selectedTask.value.artifacts || [];
+    interactionCards.value = selectedTask.value.hitl_cards || [];
     if (isCompleted(selectedTask.value) && detailTab.value === 'progress') detailTab.value = 'artifacts';
   }
 }
@@ -682,6 +661,10 @@ async function submitSupplement() {
   } finally {
     submittingInput.value = false;
   }
+}
+
+async function handleInteractionRespond() {
+  await Promise.all([loadTasks(), loadSelectedTask()]);
 }
 
 function isCompleted(task: any) {

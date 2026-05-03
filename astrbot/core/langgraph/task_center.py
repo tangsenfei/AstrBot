@@ -162,7 +162,11 @@ class TaskCenter:
             if event_type == "interaction" and isinstance(data, dict):
                 db.update(
                     "agent_tasks",
-                    {"interaction_id": data.get("interaction_id", ""), "updated_at": now},
+                    {
+                        "interaction_id": data.get("interaction_id", ""),
+                        "status": "waiting_feedback",
+                        "updated_at": now,
+                    },
                     where="id = ?",
                     where_params=(task_id,),
                 )

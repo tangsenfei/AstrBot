@@ -200,7 +200,10 @@ class WorkService:
             tuple(params + [page_size, (page - 1) * page_size]),
         ).fetchall()
         return {
-            "tasks": [self.task_service._row_to_agent_task(dict(row)).to_dict() for row in rows],
+            "tasks": [
+                self._enrich_task_dict(self.task_service._row_to_agent_task(dict(row)).to_dict())
+                for row in rows
+            ],
             "pagination": {
                 "page": page,
                 "page_size": page_size,
@@ -305,7 +308,7 @@ class WorkService:
         data["logs"] = self.get_task_logs(task_id)
         data["subtasks"] = [s.to_dict() for s in self.task_service.get_subtasks(task_id)]
         data["artifacts"] = self.list_artifacts(task_id)
-        return data
+        return self._enrich_task_dict(data)
 
     def submit_input(self, task_id: str, text: str) -> dict[str, Any]:
         task = self.task_service.get_task(task_id)
@@ -349,6 +352,16 @@ class WorkService:
         ok = get_interaction_manager().respond(interaction_id, response)
         if not ok:
             raise ValueError(f"交互 '{interaction_id}' 不存在或已处理")
+        self.db.update(
+            "agent_tasks",
+            {
+                "status": TaskStatus.RUNNING.value,
+                "interaction_id": "",
+                "updated_at": datetime.now().isoformat(),
+            },
+            where="id = ?",
+            where_params=(task_id,),
+        )
         self._append_log(task_id, "info", "HITL 响应已提交", response.field_values)
         return {"interaction_id": interaction_id, "action_key": response.action_key}
 
@@ -363,6 +376,35 @@ class WorkService:
             order_by="created_at ASC",
         )
         return [self._row_to_artifact(row).to_dict() for row in rows]
+
+    def _enrich_task_dict(self, task: dict[str, Any]) -> dict[str, Any]:
+        hitl_cards = self._pending_hitl_cards_for_task(task.get("id", ""))
+        task["hitl_cards"] = hitl_cards
+        task["has_hitl"] = bool(hitl_cards)
+        if hitl_cards:
+            task["interaction_id"] = hitl_cards[0].get("interaction_id", task.get("interaction_id", ""))
+            task["status"] = "waiting_feedback"
+        return task
+
+    def _pending_hitl_cards_for_task(self, task_id: str) -> list[dict[str, Any]]:
+        if not task_id:
+            return []
+        try:
+            from astrbot.core.langgraph.interaction_manager import get_interaction_manager
+
+            cards = []
+            for state in get_interaction_manager().get_pending_interactions():
+                card = state.card.to_dict()
+                card_task_id = card.get("meta", {}).get("task_id") or state.thread_id
+                if card_task_id != task_id:
+                    continue
+                card["thread_id"] = state.thread_id
+                card["task_id"] = task_id
+                card["channel"] = state.channel
+                cards.append(card)
+            return cards
+        except Exception:
+            return []
 
     # ------------------------------------------------------------------
     # Helpers
