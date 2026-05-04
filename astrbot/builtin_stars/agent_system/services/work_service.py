@@ -185,6 +185,7 @@ class WorkService:
 
         page = max(1, int(filters.get("page") or 1))
         page_size = max(1, min(100, int(filters.get("page_size") or 50)))
+        include_hitl_cards = str(filters.get("include_hitl_cards") or "").lower() in {"1", "true", "yes"}
         where = " AND ".join(conditions)
         total = self.db.execute(
             f"SELECT COUNT(*) AS count FROM agent_tasks WHERE {where}",
@@ -192,17 +193,28 @@ class WorkService:
         ).fetchone()["count"]
         rows = self.db.execute(
             f"""
-            SELECT * FROM agent_tasks
+            SELECT
+                id, name, description, task_type, status, progress, category,
+                work_scope, work_project_id, work_daily_dir_id, work_task_kind,
+                interaction_id, total_tokens, input_tokens, output_tokens,
+                created_at, updated_at, started_at, completed_at
+            FROM agent_tasks
             WHERE {where}
             ORDER BY created_at DESC
             LIMIT ? OFFSET ?
             """,
             tuple(params + [page_size, (page - 1) * page_size]),
         ).fetchall()
+        task_rows = [dict(row) for row in rows]
+        hitl_cards_by_task = self._pending_hitl_cards_by_task()
         return {
             "tasks": [
-                self._enrich_task_dict(self.task_service._row_to_agent_task(dict(row)).to_dict())
-                for row in rows
+                self._enrich_task_dict(
+                    self._row_to_task_summary(row),
+                    cards_by_task=hitl_cards_by_task,
+                    include_hitl_cards=include_hitl_cards,
+                )
+                for row in task_rows
             ],
             "pagination": {
                 "page": page,
@@ -396,14 +408,68 @@ class WorkService:
         )
         return [self._row_to_artifact(row).to_dict() for row in rows]
 
-    def _enrich_task_dict(self, task: dict[str, Any]) -> dict[str, Any]:
-        hitl_cards = self._pending_hitl_cards_for_task(task.get("id", ""))
-        task["hitl_cards"] = hitl_cards
+    def _enrich_task_dict(
+        self,
+        task: dict[str, Any],
+        *,
+        cards_by_task: dict[str, list[dict[str, Any]]] | None = None,
+        include_hitl_cards: bool = True,
+    ) -> dict[str, Any]:
+        task_id = task.get("id", "")
+        hitl_cards = (
+            (cards_by_task or {}).get(task_id, [])
+            if cards_by_task is not None
+            else self._pending_hitl_cards_for_task(task_id)
+        )
         task["has_hitl"] = bool(hitl_cards)
+        task["hitl_cards"] = hitl_cards if include_hitl_cards else []
         if hitl_cards:
             task["interaction_id"] = hitl_cards[0].get("interaction_id", task.get("interaction_id", ""))
+            task["interaction_title"] = hitl_cards[0].get("title", "")
+            task["interaction_type"] = hitl_cards[0].get("type", "")
             task["status"] = "waiting_feedback"
         return task
+
+    def _row_to_task_summary(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": row.get("id"),
+            "name": row.get("name", ""),
+            "description": row.get("description", ""),
+            "task_type": row.get("task_type", ""),
+            "status": row.get("status", "pending"),
+            "progress": row.get("progress", 0),
+            "category": row.get("category", ""),
+            "work_scope": row.get("work_scope", ""),
+            "work_project_id": row.get("work_project_id"),
+            "work_daily_dir_id": row.get("work_daily_dir_id"),
+            "work_task_kind": row.get("work_task_kind", ""),
+            "interaction_id": row.get("interaction_id", ""),
+            "total_tokens": row.get("total_tokens", 0),
+            "input_tokens": row.get("input_tokens", 0),
+            "output_tokens": row.get("output_tokens", 0),
+            "created_at": row.get("created_at"),
+            "updated_at": row.get("updated_at"),
+            "started_at": row.get("started_at"),
+            "completed_at": row.get("completed_at"),
+        }
+
+    def _pending_hitl_cards_by_task(self) -> dict[str, list[dict[str, Any]]]:
+        try:
+            from astrbot.core.langgraph.interaction_manager import get_interaction_manager
+
+            cards_by_task: dict[str, list[dict[str, Any]]] = {}
+            for state in get_interaction_manager().get_pending_interactions():
+                card = state.card.to_dict()
+                task_id = card.get("meta", {}).get("task_id") or state.thread_id
+                if not task_id:
+                    continue
+                card["thread_id"] = state.thread_id
+                card["task_id"] = task_id
+                card["channel"] = state.channel
+                cards_by_task.setdefault(task_id, []).append(card)
+            return cards_by_task
+        except Exception:
+            return {}
 
     def _pending_hitl_cards_for_task(self, task_id: str) -> list[dict[str, Any]]:
         if not task_id:

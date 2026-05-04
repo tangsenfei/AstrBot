@@ -50,7 +50,9 @@ async function selectTask(taskId: string) {
   const fallback = tasks.value.find((task) => task.id === taskId) || null;
   selectedTask.value = fallback;
   try {
-    const resp = await axios.get(`/api/plug/work/tasks/${encodeURIComponent(taskId)}`);
+    const resp = await axios.get(`/api/plug/work/tasks/${encodeURIComponent(taskId)}`, {
+      params: { logs_limit: 80 },
+    });
     if (resp.data?.status === 'ok') {
       selectedTask.value = resp.data.data;
     }
@@ -62,7 +64,9 @@ async function selectTask(taskId: string) {
 async function fetchTasks() {
   loading.value = true;
   try {
-    const resp = await axios.get('/api/plug/work/tasks', { params: { page_size: 80 } });
+    const resp = await axios.get('/api/plug/work/tasks', {
+      params: { page_size: 50, include_hitl_cards: false },
+    });
     if (resp.data?.status === 'ok') {
       tasks.value = resp.data.data?.tasks || [];
       if (selectedTask.value) {

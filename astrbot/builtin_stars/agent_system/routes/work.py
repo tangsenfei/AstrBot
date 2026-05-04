@@ -202,10 +202,10 @@ async def _task_events(task_id: str):
     async def event_generator():
         service = _get_work_service()
         try:
-            task = service.get_task(task_id, logs_limit=200)
-            existing_logs = task.get("logs", [])
+            task = _task_event_snapshot(service, task_id)
+            existing_logs = service.get_task_logs(task_id, logs_limit=200)
             seen_logs: set[str] = {log.get("id") for log in existing_logs if log.get("id")}
-            seen_artifacts: set[str] = {a.get("id") for a in task.get("artifacts", []) if a.get("id")}
+            seen_artifacts: set[str] = set(_artifact_ids(service, task_id))
             last_status = task.get("status", "")
             yield _sse("phase", {"status": last_status, "progress": task.get("progress", 0)})
         except Exception:
@@ -214,23 +214,26 @@ async def _task_events(task_id: str):
             last_status = ""
         for _ in range(3600):
             try:
-                task = service.get_task(task_id, logs_limit=200)
+                task = _task_event_snapshot(service, task_id)
                 if task.get("status") != last_status:
                     last_status = task.get("status", "")
                     yield _sse("phase", {"status": last_status, "progress": task.get("progress", 0)})
 
-                for log in task.get("logs", []):
+                for log in service.get_task_logs(task_id, logs_limit=200):
                     log_id = log.get("id")
                     if log_id and log_id not in seen_logs:
                         seen_logs.add(log_id)
                         event_name = log.get("data", {}).get("event") or "log"
                         yield _sse(event_name, log)
 
-                for artifact in task.get("artifacts", []):
-                    artifact_id = artifact.get("id")
-                    if artifact_id and artifact_id not in seen_artifacts:
+                new_artifact_ids = [artifact_id for artifact_id in _artifact_ids(service, task_id) if artifact_id not in seen_artifacts]
+                if new_artifact_ids:
+                    artifacts = {artifact.get("id"): artifact for artifact in service.list_artifacts(task_id)}
+                    for artifact_id in new_artifact_ids:
                         seen_artifacts.add(artifact_id)
-                        yield _sse("artifact", artifact)
+                        artifact = artifacts.get(artifact_id)
+                        if artifact:
+                            yield _sse("artifact", artifact)
 
                 if last_status in ("completed", "failed", "cancelled"):
                     yield _sse("done", {"status": last_status})
@@ -252,6 +255,25 @@ async def _task_events(task_id: str):
     )
     response.timeout = None
     return response
+
+
+def _task_event_snapshot(service, task_id: str) -> dict:
+    row = service.db.select_one(
+        "agent_tasks",
+        where="id = ?",
+        where_params=(task_id,),
+    )
+    if not row:
+        return {"status": "failed", "progress": 0}
+    return {"status": row.get("status", ""), "progress": row.get("progress", 0)}
+
+
+def _artifact_ids(service, task_id: str) -> list[str]:
+    rows = service.db.execute(
+        "SELECT id FROM work_artifacts WHERE task_id = ? ORDER BY created_at ASC",
+        (task_id,),
+    ).fetchall()
+    return [row["id"] for row in rows]
 
 
 def _sse(event: str, data: dict) -> str:

@@ -144,15 +144,13 @@
         </v-tabs>
 
         <section class="detail-body">
-          <ChatMessageList
+          <WorkProgressTimeline
             v-if="detailTab === 'progress'"
-            :messages="progressMessages"
-            :is-dark="isDark"
-            :is-streaming="selectedTask.status === 'running'"
+            :task="selectedTask"
+            :logs="logs"
             :active-cards="interactionCards"
-            :manage-refs-sidebar="false"
-            :poll-pending-cards="false"
-            variant="main"
+            :is-dark="isDark"
+            :max-items="MAX_VISIBLE_LOGS"
             @interaction-respond="handleInteractionRespond"
           />
 
@@ -338,9 +336,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import axios from 'axios';
-import ChatMessageList from '@/components/chat/ChatMessageList.vue';
 import WorkTaskList from '@/components/work/WorkTaskList.vue';
-import type { ChatRecord, MessagePart } from '@/composables/useMessages';
+import WorkProgressTimeline from '@/components/work/WorkProgressTimeline.vue';
 import { useCustomizerStore } from '@/stores/customizer';
 
 const customizer = useCustomizerStore();
@@ -368,7 +365,10 @@ let pollTimer: ReturnType<typeof setInterval> | null = null;
 let eventSource: EventSource | null = null;
 let sseDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let selectedTaskRequestId = 0;
-const MAX_VISIBLE_LOGS = 200;
+let taskListRequestId = 0;
+let selectedTaskLoading = false;
+let pendingSelectedReload = false;
+const MAX_VISIBLE_LOGS = 120;
 
 const agents = ref<any[]>([]);
 const crews = ref<any[]>([]);
@@ -425,50 +425,6 @@ const steps = computed(() => {
   return [];
 });
 
-const progressMessages = computed<ChatRecord[]>(() => {
-  const result: ChatRecord[] = [];
-  if (selectedTask.value) {
-    result.push({
-      id: `${selectedTask.value.id}-intro`,
-      content: {
-        type: 'bot',
-        message: [{ type: 'plain', text: selectedTask.value.description || selectedTask.value.name }],
-      },
-      created_at: selectedTask.value.created_at,
-    } as ChatRecord);
-  }
-  const visibleLogs = logs.value.slice(-MAX_VISIBLE_LOGS);
-  for (const log of visibleLogs) {
-    const data = log.data || {};
-    const event = data.event;
-    let parts: MessagePart[] = [];
-    if (event === 'tool_call') {
-      parts = [{ type: 'tool_call', tool_calls: [data] } as any];
-    } else if (event === 'tool_result') {
-      parts = [{ type: 'tool_call', tool_calls: [{ ...data, finished_ts: Date.now() / 1000 }] } as any];
-    } else if (event === 'interaction') {
-      continue;
-    } else {
-      const text = event === 'text_delta' ? data.text : log.message;
-      if (!text) continue;
-      parts = [{ type: 'plain', text }];
-    }
-    result.push({
-      id: log.id,
-      content: { type: 'bot', message: parts },
-      created_at: log.created_at,
-    } as ChatRecord);
-  }
-  if (selectedTask.value?.result && isCompleted(selectedTask.value)) {
-    result.push({
-      id: `${selectedTask.value.id}-result`,
-      content: { type: 'bot', message: [{ type: 'plain', text: selectedTask.value.result }] },
-      created_at: selectedTask.value.completed_at || selectedTask.value.updated_at,
-    } as ChatRecord);
-  }
-  return result;
-});
-
 function defaultTaskForm() {
   return {
     name: '',
@@ -521,30 +477,44 @@ async function loadResources() {
 }
 
 async function loadTasks() {
-  const params: any = { page_size: 100, work_scope: selectedScope.value };
+  const requestId = ++taskListRequestId;
+  const params: any = { page_size: 50, work_scope: selectedScope.value, include_hitl_cards: false };
   if (selectedScope.value === 'project' && selectedProjectId.value) params.project_id = selectedProjectId.value;
   if (selectedScope.value === 'daily' && selectedDailyDirId.value) params.daily_dir_id = selectedDailyDirId.value;
   const response = await axios.get('/api/plug/work/tasks', { params });
+  if (requestId !== taskListRequestId) return;
   if (response.data?.status === 'ok') {
     tasks.value = response.data.data?.tasks || [];
-    if (!selectedTaskId.value && tasks.value.length) selectTask(tasks.value[0].id);
   }
 }
 
 async function loadSelectedTask() {
   if (!selectedTaskId.value) return;
   const requestId = ++selectedTaskRequestId;
+  if (selectedTaskLoading) {
+    pendingSelectedReload = true;
+    return;
+  }
+  selectedTaskLoading = true;
   const taskId = selectedTaskId.value;
-  const response = await axios.get(`/api/plug/work/tasks/${taskId}`, {
-    params: { logs_limit: MAX_VISIBLE_LOGS },
-  });
-  if (requestId !== selectedTaskRequestId || taskId !== selectedTaskId.value) return;
-  if (response.data?.status === 'ok') {
-    selectedTask.value = response.data.data;
-    logs.value = selectedTask.value.logs || [];
-    artifacts.value = selectedTask.value.artifacts || [];
-    interactionCards.value = selectedTask.value.hitl_cards || [];
-    if (isCompleted(selectedTask.value) && detailTab.value === 'progress') detailTab.value = 'artifacts';
+  try {
+    const response = await axios.get(`/api/plug/work/tasks/${taskId}`, {
+      params: { logs_limit: MAX_VISIBLE_LOGS },
+    });
+    if (requestId !== selectedTaskRequestId || taskId !== selectedTaskId.value) return;
+    if (response.data?.status === 'ok') {
+      selectedTask.value = response.data.data;
+      logs.value = (selectedTask.value.logs || []).slice(-MAX_VISIBLE_LOGS);
+      artifacts.value = selectedTask.value.artifacts || [];
+      interactionCards.value = selectedTask.value.hitl_cards || [];
+      if (isCompleted(selectedTask.value) && detailTab.value === 'progress') detailTab.value = 'artifacts';
+    }
+  } finally {
+    selectedTaskLoading = false;
+    if (pendingSelectedReload && selectedTaskId.value) {
+      pendingSelectedReload = false;
+      loadSelectedTask();
+    }
   }
 }
 
@@ -566,6 +536,7 @@ function selectProject(id: string | null) {
 
 function clearSelection() {
   selectedTaskRequestId += 1;
+  pendingSelectedReload = false;
   selectedTaskId.value = null;
   selectedTask.value = null;
   logs.value = [];
@@ -576,6 +547,8 @@ function clearSelection() {
 
 function selectTask(taskId: string) {
   if (selectedTaskId.value === taskId) return;
+  selectedTaskRequestId += 1;
+  pendingSelectedReload = false;
   selectedTaskId.value = taskId;
   detailTab.value = 'progress';
   interactionCards.value = [];
@@ -767,6 +740,7 @@ function formatDate(value: string) {
 onMounted(() => {
   refreshAll();
   pollTimer = setInterval(() => {
+    if (document.hidden) return;
     loadTasks();
     if (!eventSource) loadSelectedTask();
   }, 5000);

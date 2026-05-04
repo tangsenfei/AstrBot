@@ -22,6 +22,17 @@
         </div>
       </button>
 
+      <button
+        v-if="needsHuman(task) && !showHitlInline"
+        class="hitl-entry"
+        type="button"
+        @click.stop="emit('select', task.id)"
+      >
+        <v-icon size="15" icon="mdi-hand-back-right-outline" />
+        <span>{{ task.interaction_title || '等待人工确认' }}</span>
+        <v-icon size="15" icon="mdi-chevron-right" />
+      </button>
+
       <div v-if="showHitlInline && task.hitl_cards?.length" class="hitl-inline">
         <InteractionCardComponent
           :card="task.hitl_cards[0]"
@@ -50,7 +61,7 @@ withDefaults(defineProps<{
   selectedTaskId: null,
   loading: false,
   compact: false,
-  showHitlInline: true,
+  showHitlInline: false,
   isDark: false,
 });
 
@@ -196,6 +207,30 @@ function formatTokens(value: number) {
 
 .hitl-inline {
   padding: 0 10px 10px;
+}
+
+.hitl-entry {
+  width: calc(100% - 20px);
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 10px 10px;
+  padding: 7px 9px;
+  border: 1px solid rgba(var(--v-theme-warning), 0.36);
+  border-radius: 8px;
+  background: rgba(var(--v-theme-warning), 0.08);
+  color: rgb(var(--v-theme-warning));
+  font-size: 12px;
+  text-align: left;
+}
+
+.hitl-entry span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .compact .task-main {

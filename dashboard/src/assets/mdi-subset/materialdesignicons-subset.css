@@ -1,4 +1,4 @@
-/* Auto-generated MDI subset – 413 icons */
+/* Auto-generated MDI subset – 417 icons */
 /* Do not edit manually. Run: pnpm run subset-icons */
 
 @font-face {
@@ -302,6 +302,10 @@
 
 .mdi-check-decagram::before {
   content: "\F0791";
+}
+
+.mdi-check-decagram-outline::before {
+  content: "\F1740";
 }
 
 .mdi-checkbox-blank-outline::before {
@@ -820,6 +824,10 @@
   content: "\F0E47";
 }
 
+.mdi-hand-back-right-outline::before {
+  content: "\F182D";
+}
+
 .mdi-hand-heart::before {
   content: "\F10F1";
 }
@@ -1066,6 +1074,10 @@
 
 .mdi-message-text::before {
   content: "\F0369";
+}
+
+.mdi-message-text-outline::before {
+  content: "\F036A";
 }
 
 .mdi-microphone::before {
@@ -1542,6 +1554,10 @@
 
 .mdi-timeline-clock::before {
   content: "\F11FB";
+}
+
+.mdi-timeline-clock-outline::before {
+  content: "\F11FC";
 }
 
 .mdi-timeline-text-outline::before {

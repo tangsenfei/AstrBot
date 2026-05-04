@@ -108,6 +108,12 @@ async def test_create_work_task_persists_scope_configs_and_input(work_db: Databa
     assert "风险清单" in updated["pending_input"]
     assert service.get_task(task["id"])["logs"]
 
+    listed = service.list_tasks({"page_size": 10})["tasks"][0]
+    assert listed["id"] == task["id"]
+    assert listed["hitl_cards"] == []
+    assert "logs" not in listed
+    assert "executor_config" not in listed
+
 
 @pytest.mark.asyncio
 async def test_plan_node_falls_back_and_emits_when_provider_unavailable():
