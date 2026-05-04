@@ -2,13 +2,27 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
+import traceback
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from .state import StreamEvent, TaskRecord, TaskStatus
+
+_DEBUG_LOG_PATH = Path(__file__).parent.parent.parent.parent / "data" / "task_center_debug.log"
+
+
+def _debug_log(msg: str) -> None:
+    try:
+        with open(str(_DEBUG_LOG_PATH), "a", encoding="utf-8") as f:
+            f.write(f"{datetime.now().isoformat()} {msg}\n")
+            f.flush()
+    except Exception:
+        pass
 
 
 class TaskCenter:
@@ -54,8 +68,8 @@ class TaskCenter:
                 task.thread_id,
                 updates,
             )
-        except Exception:
-            pass
+        except Exception as e2:
+            _debug_log(f"_persist_stream_event EXCEPTION: {e2}\n{traceback.format_exc()}")
 
     def _install_run_writer(self, task: TaskRecord) -> None:
         run_ctx = task.run_ctx
@@ -76,7 +90,8 @@ class TaskCenter:
         run_ctx.writer = writer
 
     def _handle_stream_event(self, task: TaskRecord, event: StreamEvent) -> None:
-        event_type = event.get("event", "")
+        event_type = event.get("event", "event")
+        _debug_log(f"_handle_stream_event ENTER: task_id={task.task_id} thread_id={task.thread_id} event_type={event_type}")
         data = event.get("data", {}) or {}
         if event_type == "text_delta":
             text = str(data.get("text") or "")
@@ -101,13 +116,18 @@ class TaskCenter:
 
     async def _persist_stream_event(self, task: TaskRecord, event: StreamEvent) -> None:
         try:
+            _debug_log(f"_persist_stream_event ENTER: task_id={task.task_id} thread_id={task.thread_id}")
             from astrbot.builtin_stars.agent_system.database import get_database
 
             db = get_database()
+            _debug_log(f"  db={db}")
             row = db.select_one("agent_tasks", where="thread_id = ?", where_params=(task.thread_id,))
+            _debug_log(f"  row by thread_id: {row is not None}")
             if not row:
                 row = db.select_one("agent_tasks", where="id = ?", where_params=(task.task_id,))
+                _debug_log(f"  row by task_id: {row is not None}")
             if not row:
+                _debug_log(f"_persist_stream_event: task not found! task_id={task.task_id} thread_id={task.thread_id}")
                 return
             task_id = row["id"]
             event_type = event.get("event", "event")
@@ -194,8 +214,8 @@ class TaskCenter:
                     where="id = ?",
                     where_params=(task_id,),
                 )
-        except Exception:
-            pass
+        except Exception as e3:
+            _debug_log(f"_persist_stream_event outer EXCEPTION: {e3}\n{traceback.format_exc()}")
 
     @staticmethod
     def _event_message(event_type: str, data: dict[str, Any]) -> str:
@@ -257,8 +277,25 @@ class TaskCenter:
         self._running_graphs[task_id] = runner
         return task
 
+    async def _get_or_create_checkpointer(self):
+        if self._checkpointer is not None:
+            return self._checkpointer
+
+        from astrbot.core.langgraph.checkpoint import get_checkpoint_db_path, set_checkpointer
+        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+        import aiosqlite
+
+        db_path = get_checkpoint_db_path()
+        conn = await aiosqlite.connect(db_path)
+        checkpointer = AsyncSqliteSaver(conn)
+        set_checkpointer(checkpointer)
+        self._checkpointer = checkpointer
+        return checkpointer
+
     async def _run_task(self, task: TaskRecord):
+        _debug_log(f"_run_task ENTER: task_id={task.task_id} thread_id={task.thread_id} task_type={task.task_type}")
         builder = self.EXECUTOR_REGISTRY.get(task.task_type)
+        _debug_log(f"  builder found: {builder is not None}")
         if not builder:
             task.status = TaskStatus.FAILED
             task.error = f"Unknown task_type: {task.task_type}"
@@ -266,11 +303,31 @@ class TaskCenter:
             await self._sync_to_db(task)
             return
 
-        graph = builder(config=task.config, checkpointer=self._checkpointer)
+        checkpointer = await self._get_or_create_checkpointer()
+        _debug_log(f"  checkpointer: {checkpointer}")
+
+        _debug_log(f"  building graph...")
+        try:
+            graph = builder(config=task.config, checkpointer=checkpointer)
+            _debug_log(f"  graph built: {graph}")
+        except Exception as e_g:
+            _debug_log(f"  graph build FAILED: {e_g}\n{traceback.format_exc()}")
+            raise
         task.status = TaskStatus.RUNNING
         task.updated_at = time.time()
         self._install_run_writer(task)
+        _debug_log(f"  run_writer installed, emitting started event...")
+        self._handle_stream_event(
+            task,
+            StreamEvent(
+                event="phase",
+                data={"phase": "started", "label": "任务执行器已启动", "progress": task.progress},
+                timestamp=time.time(),
+                node_id="task_center",
+            ),
+        )
         await self._sync_to_db(task)
+        _debug_log(f"  synced to db, starting astream_events...")
 
         try:
             async for event in graph.astream_events(
@@ -283,31 +340,53 @@ class TaskCenter:
                 },
                 version="v2",
             ):
+                _debug_log(f"  astream event: {event.get('event')} name={event.get('name')}")
                 if event["event"] == "on_custom_event":
                     stream_event = event["data"]
                     if task.stream_callback:
                         await task.stream_callback(stream_event)
 
                 elif event["event"] == "on_interrupt":
+                    _debug_log(f"  on_interrupt received!")
                     task.status = TaskStatus.PAUSED
                     task.hitl_context = event["data"]
                     task.updated_at = time.time()
                     await self._sync_to_db(task)
                     return
 
-            task.status = TaskStatus.DONE
+            _debug_log(f"  astream_events loop ended normally")
             task.result = {"output": "Task completed"}
             task.updated_at = time.time()
+            self._handle_stream_event(
+                task,
+                StreamEvent(
+                    event="phase",
+                    data={"phase": "done", "label": "任务执行器已结束", "progress": 100},
+                    timestamp=time.time(),
+                    node_id="task_center",
+                ),
+            )
             await self._sync_to_db(task)
         except asyncio.CancelledError:
+            _debug_log(f"  _run_task CANCELLED: {task.task_id}")
             task.status = TaskStatus.CANCELLED
             task.updated_at = time.time()
             await self._sync_to_db(task)
             raise
         except Exception as e:
+            _debug_log(f"  _run_task EXCEPTION: {task.task_id} error={e}\n{traceback.format_exc()}")
             task.status = TaskStatus.FAILED
             task.error = str(e)
             task.updated_at = time.time()
+            self._handle_stream_event(
+                task,
+                StreamEvent(
+                    event="error",
+                    data={"message": str(e)},
+                    timestamp=time.time(),
+                    node_id="task_center",
+                ),
+            )
             await self._sync_to_db(task)
 
     async def resume_task(self, task_id: str, resume_value: Any):
@@ -352,6 +431,15 @@ class TaskCenter:
             task.status = TaskStatus.DONE
             task.result = {"output": "Task completed"}
             task.updated_at = time.time()
+            self._handle_stream_event(
+                task,
+                StreamEvent(
+                    event="phase",
+                    data={"phase": "done", "label": "任务执行器已结束", "progress": 100},
+                    timestamp=time.time(),
+                    node_id="task_center",
+                ),
+            )
             await self._sync_to_db(task)
         except asyncio.CancelledError:
             task.status = TaskStatus.CANCELLED
@@ -362,6 +450,15 @@ class TaskCenter:
             task.status = TaskStatus.FAILED
             task.error = str(e)
             task.updated_at = time.time()
+            self._handle_stream_event(
+                task,
+                StreamEvent(
+                    event="error",
+                    data={"message": str(e)},
+                    timestamp=time.time(),
+                    node_id="task_center",
+                ),
+            )
             await self._sync_to_db(task)
 
     async def cancel_task(self, task_id: str):

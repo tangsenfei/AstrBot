@@ -369,6 +369,7 @@
         :card="card"
         :is-dark="isDark"
         :resolved="card._resolved"
+        @respond="onCardRespond"
       />
     </div>
 
@@ -444,6 +445,7 @@ const props = withDefaults(
     editDraft?: string;
     savingEdit?: boolean;
     activeCards?: any[];
+    pollPendingCards?: boolean;
   }>(),
   {
     isDark: false,
@@ -457,6 +459,7 @@ const props = withDefaults(
     editingMessageId: null,
     editDraft: "",
     savingEdit: false,
+    pollPendingCards: true,
   },
 );
 
@@ -474,6 +477,7 @@ const emit = defineEmits<{
   openThread: [thread: ChatThread];
   openReasoning: [payload: { message: ChatRecord; blockIndex: number }];
   openRefs: [refs: unknown];
+  interactionRespond: [payload: { interaction_id: string; action_key: string; field_values: Record<string, any> }];
 }>();
 
 setCustomComponents("chat-message", {
@@ -942,6 +946,7 @@ async function fetchPendingCards() {
     const resp = await axios.get("/api/interaction/pending");
     if (resp.data?.status === "ok" && resp.data?.data?.cards) {
       const fresh = resp.data.data.cards;
+      const freshIds = new Set(fresh.map((c: any) => c.interaction_id));
       const existing = polledCards.value;
       const existingIds = new Set(existing.map((c: any) => c.interaction_id));
       for (const card of fresh) {
@@ -949,11 +954,15 @@ async function fetchPendingCards() {
           existing.push({ ...card, _resolved: null });
         }
       }
-      for (const card of existing) {
-        const freshCard = fresh.find((c: any) => c.interaction_id === card.interaction_id);
-        if (!freshCard && !card._resolved) {
-          card._resolved = { status: "cancelled", message: "已过期" };
-        } else if (freshCard && card._resolved) {
+      for (let i = existing.length - 1; i >= 0; i--) {
+        const card = existing[i];
+        if (!freshIds.has(card.interaction_id)) {
+          if (!card._resolved) {
+            card._resolved = { status: "cancelled", message: "已过期" };
+          } else {
+            existing.splice(i, 1);
+          }
+        } else if (card._resolved) {
           card._resolved = null;
         }
       }
@@ -963,9 +972,15 @@ async function fetchPendingCards() {
   }
 }
 
+function onCardRespond(payload: { interaction_id: string; action_key: string; field_values: Record<string, any> }) {
+  emit('interactionRespond', payload);
+}
+
 onMounted(() => {
-  pollTimer = setInterval(fetchPendingCards, 2000);
-  fetchPendingCards();
+  if (props.pollPendingCards) {
+    pollTimer = setInterval(fetchPendingCards, 2000);
+    fetchPendingCards();
+  }
 });
 
 onBeforeUnmount(() => {

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 import uuid
+import asyncio
 from typing import Any
 
 from langgraph.config import RunnableConfig
@@ -85,19 +86,44 @@ async def plan_node(state: WorkTaskState, config: RunnableConfig) -> dict:
         f"规划深度：{effort}\n\n"
         "请输出 3-7 个步骤，每个步骤包含清晰交付物。"
     )
-    result = await _agent_operator.execute(
-        {
-            "system_prompt": "你是 NiceBot Work 的任务规划助手，擅长把目标拆成可审查的执行步骤。",
-            "user_prompt": prompt,
-            "messages": [],
-            "provider_id": state.get("provider_id"),
-            "session_id": state.get("session_id", "work"),
-        },
-        run_ctx,
-        write_stream=True,
-    )
+    plan_config = state.get("plan_config", {}) or {}
+    timeout_seconds = max(10, int(plan_config.get("timeout_seconds", 30) or 30))
+    result: dict[str, Any] = {}
+    try:
+        result = await asyncio.wait_for(
+            _agent_operator.execute(
+                {
+                    "system_prompt": "你是 NiceBot Work 的任务规划助手，擅长把目标拆成可审查的执行步骤。",
+                    "user_prompt": prompt,
+                    "messages": [],
+                    "provider_id": state.get("provider_id"),
+                    "session_id": state.get("session_id", "work"),
+                },
+                run_ctx,
+                write_stream=True,
+            ),
+            timeout=timeout_seconds,
+        )
+    except asyncio.TimeoutError:
+        _emit(
+            run_ctx,
+            "error",
+            {"message": f"计划生成超过 {timeout_seconds} 秒，已生成可人工调整的兜底计划。"},
+            "plan",
+        )
     text = result.get("final_text", "")
+    if result.get("error"):
+        _emit(
+            run_ctx,
+            "error",
+            {"message": f"计划生成失败：{result.get('error')}。已生成可人工调整的兜底计划。"},
+            "plan",
+        )
+    if not text.strip():
+        text = _fallback_plan_text(state)
     steps = _parse_steps(text)
+    plan_display = _format_plan_for_display(steps) if steps else text
+    _emit(run_ctx, "text_delta", {"text": plan_display}, "plan")
     _emit(run_ctx, "phase", {"phase": "plan_done", "label": "计划已生成", "steps": steps, "progress": 25}, "plan")
     return {"plan_steps": steps, "current_step_index": 0, "step_results": []}
 
@@ -354,6 +380,35 @@ def _parse_steps(text: str) -> list[dict[str, Any]]:
     if not steps:
         steps.append({"id": 1, "description": text.strip()[:500] or "完成任务交付", "status": "pending"})
     return steps[:7]
+
+
+def _fallback_plan_text(state: WorkTaskState) -> str:
+    goal = ((state.get("input", {}) or {}).get("goal") or state.get("task_desc") or state.get("task_name") or "完成任务").strip()
+    return "\n".join(
+        [
+            f"1. 明确任务目标和约束：{goal}",
+            "2. 收集并核对完成任务所需的上下文、资料和工具条件。",
+            "3. 执行核心工作，形成可检查的阶段结果。",
+            "4. 整理最终交付物，并标注关键结论、风险和后续建议。",
+        ]
+    )
+
+
+def _format_plan_for_display(steps: list[dict[str, Any]]) -> str:
+    lines = ["## 执行计划\n"]
+    for i, step in enumerate(steps, 1):
+        desc = step.get("description", str(step))
+        status_icon = {
+            "pending": "⬜",
+            "running": "🔄",
+            "done": "✅",
+            "completed": "✅",
+            "failed": "❌",
+            "skipped": "⏭️",
+        }.get(step.get("status", "pending"), "⬜")
+        lines.append(f"{i}. {status_icon} {desc}")
+    lines.append("\n请确认以上计划，或进行修改后确认执行。")
+    return "\n".join(lines)
 
 
 def build_work_task_graph(config: dict | None = None, checkpointer=None) -> StateGraph:

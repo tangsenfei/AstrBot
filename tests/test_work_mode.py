@@ -5,6 +5,8 @@ import pytest
 
 from astrbot.builtin_stars.agent_system.database import Database
 from astrbot.builtin_stars.agent_system.services.work_service import WorkService
+from astrbot.core.langgraph.graphs.work_task import plan_node
+from astrbot.core.langgraph.state import GraphRunContext
 
 
 @pytest.fixture
@@ -105,3 +107,34 @@ async def test_create_work_task_persists_scope_configs_and_input(work_db: Databa
     updated = work_db.select_one("agent_tasks", where="id = ?", where_params=(task["id"],))
     assert "风险清单" in updated["pending_input"]
     assert service.get_task(task["id"])["logs"]
+
+
+@pytest.mark.asyncio
+async def test_plan_node_falls_back_and_emits_when_provider_unavailable():
+    events = []
+    run_ctx = GraphRunContext(
+        provider=None,
+        tool_executor=None,
+        hooks=None,
+        astr_event=None,
+        config={"streaming_response": True},
+        writer=events.append,
+    )
+
+    result = await plan_node(
+        {
+            "task_id": "task_plan_test",
+            "task_name": "安排日程",
+            "task_desc": "为下周会议制定日程安排",
+            "plan_config": {"enabled": True, "timeout_seconds": 10},
+            "input": {"goal": "产出可确认的日程计划"},
+        },
+        {"configurable": {"run_ctx": run_ctx}},
+    )
+
+    assert result["plan_steps"]
+    assert any(event["event"] == "error" and "计划生成失败" in event["data"]["message"] for event in events)
+    assert any(
+        event["event"] == "phase" and event["data"].get("phase") == "plan_done"
+        for event in events
+    )

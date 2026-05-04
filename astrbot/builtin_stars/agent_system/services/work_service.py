@@ -282,12 +282,14 @@ class WorkService:
         start_result = await self._start_task_center_task(graph_type, graph_config)
         now = datetime.now().isoformat()
         if start_result.get("started"):
-            self.db.update(
-                "agent_tasks",
-                {"status": TaskStatus.RUNNING.value, "started_at": now, "updated_at": now},
-                where="id = ?",
-                where_params=(task_id,),
-            )
+            current = self.db.select_one("agent_tasks", where="id = ?", where_params=(task_id,))
+            if not current or current.get("status") != TaskStatus.WAITING_FEEDBACK.value:
+                self.db.update(
+                    "agent_tasks",
+                    {"status": TaskStatus.RUNNING.value, "started_at": now, "updated_at": now},
+                    where="id = ?",
+                    where_params=(task_id,),
+                )
             self._append_log(task_id, "info", "Work 任务已进入执行队列", start_result)
         else:
             error = start_result.get("error") or "TaskCenter 启动失败"
@@ -300,12 +302,12 @@ class WorkService:
             self._append_log(task_id, "error", "Work 任务启动失败", {"error": error})
         return self.get_task(task_id)
 
-    def get_task(self, task_id: str) -> dict[str, Any]:
+    def get_task(self, task_id: str, logs_limit: int | None = None) -> dict[str, Any]:
         task = self.task_service.get_task(task_id)
         if not task:
             raise ValueError(f"任务 '{task_id}' 不存在")
         data = task.to_dict()
-        data["logs"] = self.get_task_logs(task_id)
+        data["logs"] = self.get_task_logs(task_id, logs_limit=logs_limit)
         data["subtasks"] = [s.to_dict() for s in self.task_service.get_subtasks(task_id)]
         data["artifacts"] = self.list_artifacts(task_id)
         return self._enrich_task_dict(data)
@@ -365,8 +367,25 @@ class WorkService:
         self._append_log(task_id, "info", "HITL 响应已提交", response.field_values)
         return {"interaction_id": interaction_id, "action_key": response.action_key}
 
-    def get_task_logs(self, task_id: str) -> list[dict[str, Any]]:
-        return [log.to_dict() for log in self.task_service.get_task_logs(task_id)]
+    def get_task_logs(self, task_id: str, logs_limit: int | None = None) -> list[dict[str, Any]]:
+        if not logs_limit:
+            return [log.to_dict() for log in self.task_service.get_task_logs(task_id)]
+        limit = max(1, min(1000, int(logs_limit)))
+        rows = self.db.select_all(
+            "execution_logs",
+            where="task_id = ?",
+            where_params=(task_id,),
+            order_by="created_at DESC",
+            limit=limit,
+        )
+        rows = list(reversed(rows))
+        logs = []
+        for row in rows:
+            try:
+                logs.append(self.task_service._row_to_execution_log(dict(row)).to_dict())
+            except Exception:
+                continue
+        return logs
 
     def list_artifacts(self, task_id: str) -> list[dict[str, Any]]:
         rows = self.db.select_all(
@@ -428,7 +447,7 @@ class WorkService:
             record = await tc.create_task(
                 task_type=graph_type,
                 config=graph_config,
-                session_id=graph_config.get("session_id", "work"),
+                session_id=graph_config.get("thread_id", "work"),
                 run_ctx=run_ctx,
             )
             return {"started": True, "task_id": record.task_id, "thread_id": record.thread_id}

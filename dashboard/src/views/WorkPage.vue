@@ -151,7 +151,9 @@
             :is-streaming="selectedTask.status === 'running'"
             :active-cards="interactionCards"
             :manage-refs-sidebar="false"
+            :poll-pending-cards="false"
             variant="main"
+            @interaction-respond="handleInteractionRespond"
           />
 
           <div v-else-if="detailTab === 'artifacts'" class="artifact-list">
@@ -334,7 +336,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import axios from 'axios';
 import ChatMessageList from '@/components/chat/ChatMessageList.vue';
 import WorkTaskList from '@/components/work/WorkTaskList.vue';
@@ -364,6 +366,9 @@ const supplementText = ref('');
 const submittingInput = ref(false);
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let eventSource: EventSource | null = null;
+let sseDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let selectedTaskRequestId = 0;
+const MAX_VISIBLE_LOGS = 200;
 
 const agents = ref<any[]>([]);
 const crews = ref<any[]>([]);
@@ -432,7 +437,8 @@ const progressMessages = computed<ChatRecord[]>(() => {
       created_at: selectedTask.value.created_at,
     } as ChatRecord);
   }
-  for (const log of logs.value) {
+  const visibleLogs = logs.value.slice(-MAX_VISIBLE_LOGS);
+  for (const log of visibleLogs) {
     const data = log.data || {};
     const event = data.event;
     let parts: MessagePart[] = [];
@@ -527,7 +533,12 @@ async function loadTasks() {
 
 async function loadSelectedTask() {
   if (!selectedTaskId.value) return;
-  const response = await axios.get(`/api/plug/work/tasks/${selectedTaskId.value}`);
+  const requestId = ++selectedTaskRequestId;
+  const taskId = selectedTaskId.value;
+  const response = await axios.get(`/api/plug/work/tasks/${taskId}`, {
+    params: { logs_limit: MAX_VISIBLE_LOGS },
+  });
+  if (requestId !== selectedTaskRequestId || taskId !== selectedTaskId.value) return;
   if (response.data?.status === 'ok') {
     selectedTask.value = response.data.data;
     logs.value = selectedTask.value.logs || [];
@@ -554,6 +565,7 @@ function selectProject(id: string | null) {
 }
 
 function clearSelection() {
+  selectedTaskRequestId += 1;
   selectedTaskId.value = null;
   selectedTask.value = null;
   logs.value = [];
@@ -563,6 +575,7 @@ function clearSelection() {
 }
 
 function selectTask(taskId: string) {
+  if (selectedTaskId.value === taskId) return;
   selectedTaskId.value = taskId;
   detailTab.value = 'progress';
   interactionCards.value = [];
@@ -575,7 +588,10 @@ function openEventSource(taskId: string) {
   closeEventSource();
   try {
     eventSource = new EventSource(`/api/plug/work/tasks/${encodeURIComponent(taskId)}/events`);
-    const reload = () => loadSelectedTask();
+    const reload = () => {
+      if (sseDebounceTimer) clearTimeout(sseDebounceTimer);
+      sseDebounceTimer = setTimeout(() => loadSelectedTask(), 500);
+    };
     for (const name of ['phase', 'text_delta', 'tool_call', 'tool_result', 'reasoning', 'token', 'artifact', 'interaction', 'done']) {
       eventSource.addEventListener(name, reload);
     }
@@ -586,6 +602,10 @@ function openEventSource(taskId: string) {
 }
 
 function closeEventSource() {
+  if (sseDebounceTimer) {
+    clearTimeout(sseDebounceTimer);
+    sseDebounceTimer = null;
+  }
   if (eventSource) {
     eventSource.close();
     eventSource = null;
@@ -744,18 +764,17 @@ function formatDate(value: string) {
   return new Date(value).toLocaleString();
 }
 
-watch([statusFilter, kindFilter, searchQuery], () => undefined);
-
 onMounted(() => {
   refreshAll();
   pollTimer = setInterval(() => {
     loadTasks();
-    loadSelectedTask();
+    if (!eventSource) loadSelectedTask();
   }, 5000);
 });
 
 onBeforeUnmount(() => {
   if (pollTimer) clearInterval(pollTimer);
+  if (sseDebounceTimer) clearTimeout(sseDebounceTimer);
   closeEventSource();
 });
 </script>

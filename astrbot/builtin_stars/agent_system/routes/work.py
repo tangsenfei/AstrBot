@@ -156,7 +156,8 @@ async def _create_task():
 
 async def _get_task(task_id: str):
     try:
-        return Response().ok(_get_work_service().get_task(task_id)).__dict__
+        logs_limit = request.args.get("logs_limit", type=int)
+        return Response().ok(_get_work_service().get_task(task_id, logs_limit=logs_limit)).__dict__
     except ValueError as e:
         return Response().error(str(e)).__dict__
     except Exception as e:
@@ -200,12 +201,20 @@ async def _list_artifacts(task_id: str):
 async def _task_events(task_id: str):
     async def event_generator():
         service = _get_work_service()
-        seen_logs: set[str] = set()
-        seen_artifacts: set[str] = set()
-        last_status = ""
+        try:
+            task = service.get_task(task_id, logs_limit=200)
+            existing_logs = task.get("logs", [])
+            seen_logs: set[str] = {log.get("id") for log in existing_logs if log.get("id")}
+            seen_artifacts: set[str] = {a.get("id") for a in task.get("artifacts", []) if a.get("id")}
+            last_status = task.get("status", "")
+            yield _sse("phase", {"status": last_status, "progress": task.get("progress", 0)})
+        except Exception:
+            seen_logs = set()
+            seen_artifacts = set()
+            last_status = ""
         for _ in range(3600):
             try:
-                task = service.get_task(task_id)
+                task = service.get_task(task_id, logs_limit=200)
                 if task.get("status") != last_status:
                     last_status = task.get("status", "")
                     yield _sse("phase", {"status": last_status, "progress": task.get("progress", 0)})
