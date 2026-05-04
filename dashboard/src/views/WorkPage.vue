@@ -575,7 +575,7 @@ async function loadTasks() {
   }
 }
 
-async function loadSelectedTask() {
+async function loadSelectedTask(mergeLogs = false) {
   if (!selectedTaskId.value) return;
   const requestId = ++selectedTaskRequestId;
   if (selectedTaskLoading) {
@@ -592,7 +592,9 @@ async function loadSelectedTask() {
     if (requestId !== selectedTaskRequestId || taskId !== selectedTaskId.value) return;
     if (response.data?.status === 'ok') {
       selectedTask.value = response.data.data;
-      logs.value = (selectedTask.value.logs || []).slice(-MAX_VISIBLE_LOGS);
+      if (!mergeLogs || !eventSource) {
+        logs.value = (selectedTask.value.logs || []).slice(-MAX_VISIBLE_LOGS);
+      }
       artifacts.value = selectedTask.value.artifacts || [];
       interactionCards.value = selectedTask.value.hitl_cards || [];
     }
@@ -601,7 +603,7 @@ async function loadSelectedTask() {
     detailLoading.value = false;
     if (pendingSelectedReload && selectedTaskId.value) {
       pendingSelectedReload = false;
-      loadSelectedTask();
+      loadSelectedTask(mergeLogs);
     }
   }
 }
@@ -653,7 +655,7 @@ function openEventSource(taskId: string) {
     eventSource = new EventSource(`/api/plug/work/tasks/${encodeURIComponent(taskId)}/events`);
     const reload = () => {
       if (sseDebounceTimer) clearTimeout(sseDebounceTimer);
-      sseDebounceTimer = setTimeout(() => loadSelectedTask(), 500);
+      sseDebounceTimer = setTimeout(() => loadSelectedTask(true), 500);
     };
 
     const appendLog = (event: MessageEvent) => {
@@ -765,7 +767,7 @@ async function submitSupplement() {
 }
 
 async function handleInteractionRespond() {
-  await Promise.all([loadTasks(), loadSelectedTask()]);
+  await Promise.all([loadTasks(), loadSelectedTask(true)]);
 }
 
 function isCompleted(task: any) {

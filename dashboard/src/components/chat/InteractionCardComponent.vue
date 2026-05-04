@@ -78,7 +78,8 @@ const emit = defineEmits<{
 
 const loadingAction = ref<string | null>(null);
 const fieldValues = ref<Record<string, any>>({});
-const resolvedStatus = computed(() => props.resolved?.status || null);
+const resolvedLocally = ref<string | null>(null);
+const resolvedStatus = computed(() => resolvedLocally.value || props.resolved?.status || null);
 
 const typeIcon = computed(() => {
   const map: Record<string, string> = {
@@ -135,6 +136,7 @@ async function handleAction(action: { key: string; label: string }) {
       }),
     });
     if (response.ok) {
+      resolvedLocally.value = action.key === 'confirm' ? 'confirmed' : action.key === 'cancel' ? 'cancelled' : 'rejected';
       emit('respond', {
         interaction_id: props.card.interaction_id,
         action_key: action.key,

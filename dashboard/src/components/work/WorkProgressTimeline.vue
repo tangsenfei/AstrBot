@@ -1,6 +1,17 @@
 <template>
   <div class="progress-timeline" :class="{ 'theme-dark': isDark }">
-    <div v-if="!items.length && !loading" class="empty-hint">暂无执行进展</div>
+    <div v-if="activeCards && activeCards.length" class="active-cards-section">
+      <InteractionCardComponent
+        v-for="card in activeCards"
+        :key="card.interaction_id"
+        :card="card"
+        :is-dark="isDark"
+        :resolved="card._resolved"
+        @respond="onRespond"
+      />
+    </div>
+
+    <div v-if="!items.length && !activeCards.length && !loading" class="empty-hint">暂无执行进展</div>
 
     <div v-for="item in items" :key="item.id" class="tl-entry" :class="`kind-${item.kind}`">
       <div class="tl-node">
@@ -117,6 +128,14 @@ function isCollapsed(id: string) {
 }
 
 function onRespond(payload: { interaction_id: string; action_key: string; field_values: Record<string, any> }) {
+  for (const card of (props.activeCards || [])) {
+    if (card.interaction_id === payload.interaction_id) {
+      card._resolved = {
+        status: payload.action_key === 'confirm' ? 'confirmed' : payload.action_key === 'cancel' ? 'cancelled' : 'rejected',
+        message: `已完成 — ${payload.action_key}`,
+      };
+    }
+  }
   emit('interaction-respond', payload);
 }
 
@@ -490,6 +509,13 @@ function phaseTitle(data: any) {
   font-size: 12px;
   text-align: center;
   padding: 24px;
+}
+
+.active-cards-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 16px;
 }
 
 .kind-tool_call .tl-node { color: rgb(var(--v-theme-info)); background: rgba(var(--v-theme-info), 0.1); }

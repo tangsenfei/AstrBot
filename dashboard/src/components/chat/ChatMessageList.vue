@@ -973,6 +973,14 @@ async function fetchPendingCards() {
 }
 
 function onCardRespond(payload: { interaction_id: string; action_key: string; field_values: Record<string, any> }) {
+  for (const card of polledCards.value) {
+    if (card.interaction_id === payload.interaction_id) {
+      card._resolved = {
+        status: payload.action_key === 'confirm' ? 'confirmed' : payload.action_key === 'cancel' ? 'cancelled' : 'rejected',
+        message: `已完成 — ${payload.action_key}`,
+      };
+    }
+  }
   emit('interactionRespond', payload);
 }
 
