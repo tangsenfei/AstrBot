@@ -145,6 +145,9 @@ class TaskRecord:
     progress: int = 0
     result_text: str = ""
     steps: list[dict] = field(default_factory=list)
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
 
 
 @dataclass

@@ -64,9 +64,33 @@ const emit = defineEmits<{
 
 const items = computed(() => {
   const visible = props.logs.slice(-props.maxItems);
-  return visible
-    .map((log) => toTimelineItem(log))
-    .filter((item): item is TimelineItem => Boolean(item));
+  const merged: TimelineItem[] = [];
+  let textBuffer: TimelineItem | null = null;
+
+  const flushText = () => {
+    if (textBuffer) {
+      merged.push(textBuffer);
+      textBuffer = null;
+    }
+  };
+
+  for (const log of visible) {
+    const item = toTimelineItem(log);
+    if (!item) continue;
+    if (item.kind === 'text') {
+      if (!textBuffer) {
+        textBuffer = { ...item };
+      } else {
+        textBuffer.text = joinDeltaText(textBuffer.text, item.text);
+        textBuffer.created_at = item.created_at || textBuffer.created_at;
+      }
+      continue;
+    }
+    flushText();
+    merged.push(item);
+  }
+  flushText();
+  return merged;
 });
 
 type TimelineItem = {
@@ -97,10 +121,11 @@ function toTimelineItem(log: any): TimelineItem | null {
     return baseItem(log, 'tool', 'mdi-check-decagram-outline', `工具结果：${data.name || data.tool || 'tool'}`, stringifyToolResult(data));
   }
   if (event === 'token') {
+    const counts = tokenCounts(data);
     const text = [
-      `输入 ${formatTokens(data.input_tokens || data.input || 0)}`,
-      `输出 ${formatTokens(data.output_tokens || data.output || 0)}`,
-      `总计 ${formatTokens(data.total_tokens || data.total || 0)}`,
+      `输入 ${formatTokens(counts.input)}`,
+      `输出 ${formatTokens(counts.output)}`,
+      `总计 ${formatTokens(counts.total)}`,
     ].join(' · ');
     return baseItem(log, 'token', 'mdi-counter', 'Token 统计', text);
   }
@@ -156,6 +181,15 @@ function stringifyToolResult(data: any) {
   return typeof result === 'string' ? result : formatJson(result);
 }
 
+function joinDeltaText(current: string, next: string) {
+  if (!current) return next;
+  if (!next) return current;
+  if (/^[，。！？；：、,.!?;:)\]}]/.test(next)) return `${current}${next}`;
+  if (/[\s([{（【]$/.test(current) || /^[\s]/.test(next)) return `${current}${next}`;
+  if (/^[A-Za-z0-9_]/.test(next) && /[A-Za-z0-9_]$/.test(current)) return `${current} ${next}`;
+  return `${current}${next}`;
+}
+
 function formatJson(value: unknown) {
   try {
     return JSON.stringify(value, null, 2);
@@ -169,6 +203,15 @@ function formatTokens(value: number) {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
   return `${n}`;
+}
+
+function tokenCounts(data: any) {
+  const stats = data.stats || {};
+  const usage = stats.token_usage || {};
+  const input = Number(data.input_tokens ?? data.input ?? usage.input_other ?? usage.input ?? 0);
+  const output = Number(data.output_tokens ?? data.output ?? usage.output ?? 0);
+  const total = Number(data.total_tokens ?? data.total ?? usage.total ?? input + output);
+  return { input, output, total };
 }
 
 function formatDate(value: string) {
@@ -203,7 +246,7 @@ function formatDate(value: string) {
   display: grid;
   grid-template-columns: 28px 1fr;
   gap: 10px;
-  max-width: 880px;
+  width: 100%;
 }
 
 .item-icon {
@@ -248,7 +291,8 @@ function formatDate(value: string) {
 .item-payload {
   margin: 0;
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
+  word-break: normal;
   font: inherit;
   line-height: 1.58;
 }

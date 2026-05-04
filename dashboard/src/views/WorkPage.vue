@@ -119,6 +119,11 @@
               · {{ statusLabel(selectedTask.status) }}
               · {{ selectedTask.progress || 0 }}%
             </div>
+            <div class="token-inline">
+              <v-icon size="15" icon="mdi-counter" />
+              <strong>{{ formatTokens(selectedTask.total_tokens) }}</strong>
+              <span>输入 {{ formatTokens(selectedTask.input_tokens) }} · 输出 {{ formatTokens(selectedTask.output_tokens) }}</span>
+            </div>
           </div>
           <div class="detail-actions">
             <v-chip :color="statusColor(selectedTask.status)" size="small" variant="tonal">
@@ -155,20 +160,20 @@
           />
 
           <div v-else-if="detailTab === 'artifacts'" class="artifact-list">
-            <article v-for="artifact in artifacts" :key="artifact.id" class="artifact-item">
+            <article v-for="artifact in displayArtifacts" :key="artifact.id" class="artifact-item">
               <div class="artifact-title">
                 <v-icon size="18">mdi-file-document-outline</v-icon>
-                <span>{{ artifact.title }}</span>
+                <span>{{ artifactTitle(artifact) }}</span>
               </div>
-              <pre>{{ artifact.content || artifact.file_path || '暂无内容' }}</pre>
+              <pre>{{ artifactText(artifact) }}</pre>
             </article>
-            <div v-if="!artifacts.length" class="empty-state">任务完成后会在这里显示交付结果</div>
+            <div v-if="!displayArtifacts.length" class="empty-state">任务完成后会在这里显示交付结果</div>
           </div>
 
           <div v-else class="raw-log-list">
-            <div v-for="log in logs" :key="log.id" class="raw-log-row">
+            <div v-for="log in displayLogs" :key="log.id" class="raw-log-row" :class="{ wide: log.kind === 'text' }">
               <span>{{ formatDate(log.created_at) }}</span>
-              <strong>{{ log.level }}</strong>
+              <strong>{{ log.label }}</strong>
               <p>{{ log.message }}</p>
             </div>
           </div>
@@ -201,21 +206,44 @@
     <aside class="work-progress-pane">
       <div class="pane-title small">子任务进度</div>
       <div v-if="selectedTask" class="step-list">
-        <div v-for="step in steps" :key="step.id || step.description" class="step-row">
+        <button
+          v-for="step in steps"
+          :key="step.id || step.description"
+          class="step-row"
+          type="button"
+          @click="selectedStep = step"
+        >
           <v-icon :color="stepColor(step.status)" :icon="stepIcon(step.status)" size="18" />
           <div>
             <div class="step-title">{{ step.description || step.name }}</div>
             <div v-if="step.result" class="step-result">{{ step.result }}</div>
           </div>
-        </div>
+        </button>
         <div v-if="!steps.length" class="empty-state compact">暂无步骤</div>
       </div>
-      <div v-if="selectedTask" class="token-box">
-        <div>Token 消耗</div>
-        <strong>{{ formatTokens(selectedTask.total_tokens) }}</strong>
-        <span>输入 {{ formatTokens(selectedTask.input_tokens) }} · 输出 {{ formatTokens(selectedTask.output_tokens) }}</span>
-      </div>
     </aside>
+
+    <v-dialog v-model="stepDialog" max-width="760">
+      <v-card v-if="selectedStep">
+        <v-card-title class="step-dialog-title">
+          <v-icon :color="stepColor(selectedStep.status)" :icon="stepIcon(selectedStep.status)" size="20" />
+          <span>{{ selectedStep.description || selectedStep.name || '步骤详情' }}</span>
+        </v-card-title>
+        <v-card-text>
+          <div class="step-detail-meta">
+            <v-chip size="small" :color="stepColor(selectedStep.status)" variant="tonal">
+              {{ stepStatusLabel(selectedStep.status) }}
+            </v-chip>
+            <span v-if="selectedStep.agent">执行者：{{ selectedStep.agent }}</span>
+          </div>
+          <pre class="step-detail-text">{{ stepDetailText(selectedStep) }}</pre>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="stepDialog = false">关闭</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
 
     <v-dialog v-model="projectDialog" max-width="640">
       <v-card>
@@ -355,6 +383,7 @@ const selectedTask = ref<any | null>(null);
 const logs = ref<any[]>([]);
 const artifacts = ref<any[]>([]);
 const interactionCards = ref<any[]>([]);
+const selectedStep = ref<any | null>(null);
 const detailTab = ref('progress');
 const searchQuery = ref('');
 const statusFilter = ref<string | null>(null);
@@ -424,6 +453,27 @@ const steps = computed(() => {
   }
   return [];
 });
+
+const stepDialog = computed({
+  get: () => Boolean(selectedStep.value),
+  set: (value: boolean) => {
+    if (!value) selectedStep.value = null;
+  },
+});
+
+const displayArtifacts = computed(() => {
+  if (artifacts.value.length) return artifacts.value;
+  const result = selectedTask.value?.result || selectedTask.value?.output?.result || selectedTask.value?.final_summary;
+  if (!result) return [];
+  return [{
+    id: `${selectedTask.value.id}-result`,
+    title: selectedTask.value.name || '任务交付物',
+    artifact_type: 'markdown',
+    content: typeof result === 'string' ? result : JSON.stringify(result, null, 2),
+  }];
+});
+
+const displayLogs = computed(() => aggregateLogs(logs.value));
 
 function defaultTaskForm() {
   return {
@@ -542,6 +592,7 @@ function clearSelection() {
   logs.value = [];
   artifacts.value = [];
   interactionCards.value = [];
+  selectedStep.value = null;
   closeEventSource();
 }
 
@@ -552,6 +603,7 @@ function selectTask(taskId: string) {
   selectedTaskId.value = taskId;
   detailTab.value = 'progress';
   interactionCards.value = [];
+  selectedStep.value = null;
   closeEventSource();
   loadSelectedTask();
   openEventSource(taskId);
@@ -677,6 +729,17 @@ function statusLabel(status: string) {
   return map[status] || status || '-';
 }
 
+function stepStatusLabel(status: string) {
+  const map: Record<string, string> = {
+    pending: '待执行',
+    running: '执行中',
+    done: '已完成',
+    completed: '已完成',
+    failed: '失败',
+  };
+  return map[status] || status || '-';
+}
+
 function statusColor(status: string) {
   const map: Record<string, string> = {
     pending: 'grey',
@@ -735,6 +798,119 @@ function formatTokens(value: number) {
 function formatDate(value: string) {
   if (!value) return '-';
   return new Date(value).toLocaleString();
+}
+
+function aggregateLogs(rawLogs: any[]) {
+  const result: Array<{ id: string; created_at: string; label: string; message: string; kind: string }> = [];
+  let buffer: { id: string; created_at: string; label: string; message: string; kind: string } | null = null;
+  const flush = () => {
+    if (buffer) {
+      result.push(buffer);
+      buffer = null;
+    }
+  };
+
+  for (const log of rawLogs) {
+    const data = log?.data || {};
+    const event = data.event || 'log';
+    if (event === 'text_delta') {
+      const text = String(data.text || log.message || '');
+      if (!buffer) {
+        buffer = {
+          id: `${log.id}-group`,
+          created_at: log.created_at,
+          label: '输出',
+          message: text,
+          kind: 'text',
+        };
+      } else {
+        buffer.message = joinDeltaText(buffer.message, text);
+        buffer.created_at = log.created_at || buffer.created_at;
+      }
+      continue;
+    }
+    flush();
+    if (event === 'interaction') continue;
+    result.push({
+      id: log.id,
+      created_at: log.created_at,
+      label: eventLabel(event, log.level),
+      message: logMessage(log),
+      kind: event,
+    });
+  }
+  flush();
+  return result;
+}
+
+function logMessage(log: any) {
+  const data = log?.data || {};
+  const event = data.event || 'log';
+  if (event === 'tool_call') return data.name ? `调用工具：${data.name}` : JSON.stringify(data, null, 2);
+  if (event === 'tool_result') return data.result || data.output || data.message || '工具调用完成';
+  if (event === 'token') return tokenText(data);
+  if (event === 'phase') return data.message || data.label || data.phase || log.message || '';
+  return data.message || log.message || '';
+}
+
+function eventLabel(event: string, level: string) {
+  const map: Record<string, string> = {
+    phase: '阶段',
+    tool_call: '工具',
+    tool_result: '工具结果',
+    token: 'Token',
+    artifact: '交付物',
+    error: '错误',
+    log: level || '日志',
+  };
+  return map[event] || level || event;
+}
+
+function tokenText(data: any) {
+  const stats = data.stats || {};
+  const usage = stats.token_usage || {};
+  const input = data.input_tokens ?? data.input ?? usage.input_other ?? usage.input ?? 0;
+  const output = data.output_tokens ?? data.output ?? usage.output ?? 0;
+  const total = data.total_tokens ?? data.total ?? Number(input || 0) + Number(output || 0);
+  return `输入 ${formatTokens(input)} · 输出 ${formatTokens(output)} · 总计 ${formatTokens(total)}`;
+}
+
+function joinDeltaText(current: string, next: string) {
+  if (!current) return next;
+  if (!next) return current;
+  if (/^[，。！？；：、,.!?;:)\]}]/.test(next)) return `${current}${next}`;
+  if (/[\s([{（【]$/.test(current) || /^[\s]/.test(next)) return `${current}${next}`;
+  if (/^[A-Za-z0-9_]/.test(next) && /[A-Za-z0-9_]$/.test(current)) return `${current} ${next}`;
+  return `${current}${next}`;
+}
+
+function artifactTitle(artifact: any) {
+  return artifact.title || artifact.metadata?.title || '任务交付物';
+}
+
+function artifactText(artifact: any) {
+  const metadata = artifact.metadata || {};
+  const value =
+    artifact.content ||
+    metadata.content ||
+    metadata.body ||
+    metadata.result ||
+    metadata.summary ||
+    selectedTask.value?.result ||
+    selectedTask.value?.output?.result ||
+    selectedTask.value?.final_summary ||
+    artifact.file_path ||
+    '暂无内容';
+  return typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+}
+
+function stepDetailText(step: any) {
+  const parts = [];
+  if (step.description || step.name) parts.push(step.description || step.name);
+  if (step.result) parts.push(`结果：\n${step.result}`);
+  if (step.error) parts.push(`错误：\n${step.error}`);
+  if (step.stats) parts.push(`统计：\n${JSON.stringify(step.stats, null, 2)}`);
+  return parts.join('\n\n') || '暂无详情';
 }
 
 onMounted(() => {
@@ -960,6 +1136,20 @@ onBeforeUnmount(() => {
   font-weight: 800;
 }
 
+.token-inline {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 6px;
+  color: var(--work-muted);
+  font-size: 12px;
+}
+
+.token-inline strong {
+  color: rgb(var(--v-theme-on-surface));
+  font-size: 13px;
+}
+
 .detail-actions {
   display: flex;
   align-items: center;
@@ -1020,10 +1210,19 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: 22px 1fr;
   gap: 8px;
+  width: 100%;
   padding: 10px;
+  color: inherit;
+  text-align: left;
   border: 1px solid var(--work-border);
   border-radius: 8px;
   background: var(--work-panel-soft);
+  cursor: pointer;
+}
+
+.step-row:hover {
+  border-color: rgba(var(--v-theme-primary), 0.45);
+  background: rgba(var(--v-theme-primary), 0.08);
 }
 
 .step-title {
@@ -1084,7 +1283,8 @@ onBeforeUnmount(() => {
 
 .artifact-item pre {
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
+  word-break: normal;
   margin: 0;
   font: inherit;
   line-height: 1.6;
@@ -1101,7 +1301,51 @@ onBeforeUnmount(() => {
 }
 
 .raw-log-row p {
+  min-width: 0;
   margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.raw-log-row.wide {
+  grid-template-columns: 160px 70px minmax(0, 1fr);
+}
+
+.step-dialog-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.step-dialog-title span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.step-detail-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  color: var(--work-muted);
+  font-size: 13px;
+}
+
+.step-detail-text {
+  max-height: 58vh;
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--work-border);
+  border-radius: 8px;
+  background: var(--work-panel-soft);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  font: inherit;
+  line-height: 1.6;
 }
 
 @media (max-width: 1180px) {

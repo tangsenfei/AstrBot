@@ -114,6 +114,16 @@ async def test_create_work_task_persists_scope_configs_and_input(work_db: Databa
     assert "logs" not in listed
     assert "executor_config" not in listed
 
+    work_db.update(
+        "agent_tasks",
+        {"status": "running", "progress": 100},
+        where="id = ?",
+        where_params=(task["id"],),
+    )
+    repaired = service.get_task(task["id"])
+    assert repaired["status"] == "completed"
+    assert work_db.select_one("agent_tasks", where="id = ?", where_params=(task["id"],))["status"] == "completed"
+
 
 @pytest.mark.asyncio
 async def test_plan_node_falls_back_and_emits_when_provider_unavailable():

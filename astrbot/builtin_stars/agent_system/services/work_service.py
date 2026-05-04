@@ -322,6 +322,7 @@ class WorkService:
         data["logs"] = self.get_task_logs(task_id, logs_limit=logs_limit)
         data["subtasks"] = [s.to_dict() for s in self.task_service.get_subtasks(task_id)]
         data["artifacts"] = self.list_artifacts(task_id)
+        self._repair_completed_status(data)
         return self._enrich_task_dict(data)
 
     def submit_input(self, task_id: str, text: str) -> dict[str, Any]:
@@ -436,7 +437,7 @@ class WorkService:
             "name": row.get("name", ""),
             "description": row.get("description", ""),
             "task_type": row.get("task_type", ""),
-            "status": row.get("status", "pending"),
+            "status": self._display_status(row),
             "progress": row.get("progress", 0),
             "category": row.get("category", ""),
             "work_scope": row.get("work_scope", ""),
@@ -452,6 +453,28 @@ class WorkService:
             "started_at": row.get("started_at"),
             "completed_at": row.get("completed_at"),
         }
+
+    def _display_status(self, task: dict[str, Any]) -> str:
+        status = task.get("status", "pending")
+        if status == TaskStatus.RUNNING.value and int(task.get("progress") or 0) >= 100:
+            return TaskStatus.COMPLETED.value
+        return status
+
+    def _repair_completed_status(self, task: dict[str, Any]) -> None:
+        if task.get("status") != TaskStatus.RUNNING.value or int(task.get("progress") or 0) < 100:
+            return
+        task["status"] = TaskStatus.COMPLETED.value
+        now = datetime.now().isoformat()
+        task["completed_at"] = task.get("completed_at") or now
+        try:
+            self.db.update(
+                "agent_tasks",
+                {"status": TaskStatus.COMPLETED.value, "completed_at": task["completed_at"], "updated_at": now},
+                where="id = ?",
+                where_params=(task.get("id"),),
+            )
+        except Exception:
+            pass
 
     def _pending_hitl_cards_by_task(self) -> dict[str, list[dict[str, Any]]]:
         try:

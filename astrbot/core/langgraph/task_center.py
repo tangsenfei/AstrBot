@@ -56,6 +56,9 @@ class TaskCenter:
                 "progress": 100 if task.status == TaskStatus.DONE else task.progress,
                 "result": task.result_text,
                 "steps": json.dumps(task.steps, ensure_ascii=False),
+                "input_tokens": task.input_tokens,
+                "output_tokens": task.output_tokens,
+                "total_tokens": task.total_tokens,
                 "updated_at": datetime.now().isoformat(),
             }
             if task.status in (TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.CANCELLED):
@@ -108,6 +111,11 @@ class TaskCenter:
             content = str(data.get("content") or "")
             if content:
                 task.result_text = content
+        elif event_type == "token":
+            input_tokens, output_tokens, total_tokens = self._extract_token_counts(data)
+            task.input_tokens += input_tokens
+            task.output_tokens += output_tokens
+            task.total_tokens += total_tokens or input_tokens + output_tokens
         elif event_type == "error":
             task.error = str(data.get("message") or data)
 
@@ -237,6 +245,29 @@ class TaskCenter:
             return str(data.get("message") or "任务错误")
         return event_type
 
+    @staticmethod
+    def _extract_token_counts(data: dict[str, Any]) -> tuple[int, int, int]:
+        stats = data.get("stats") if isinstance(data, dict) else {}
+        usage = stats.get("token_usage", {}) if isinstance(stats, dict) else {}
+
+        def read_number(*keys: str) -> int:
+            for key in keys:
+                source = usage if key.startswith("usage.") else data
+                name = key.replace("usage.", "", 1)
+                value = source.get(name) if isinstance(source, dict) else None
+                try:
+                    number = int(value or 0)
+                except (TypeError, ValueError):
+                    number = 0
+                if number:
+                    return number
+            return 0
+
+        input_tokens = read_number("input_tokens", "input", "usage.input_other", "usage.input")
+        output_tokens = read_number("output_tokens", "output", "usage.output")
+        total_tokens = read_number("total_tokens", "total", "usage.total")
+        return input_tokens, output_tokens, total_tokens
+
     @classmethod
     def register_executor(cls, task_type: str, builder: Callable):
         cls.EXECUTOR_REGISTRY[task_type] = builder
@@ -355,6 +386,7 @@ class TaskCenter:
                     return
 
             _debug_log(f"  astream_events loop ended normally")
+            task.status = TaskStatus.DONE
             task.result = {"output": "Task completed"}
             task.updated_at = time.time()
             self._handle_stream_event(
