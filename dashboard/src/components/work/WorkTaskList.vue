@@ -8,8 +8,12 @@
     >
       <button class="task-main" type="button" @click="emit('select', task.id)">
         <div class="task-card-top">
-          <v-icon :color="statusColor(task.status)" :icon="statusIcon(task.status)" size="18" />
+          <span class="task-status-badge" :class="`status-${task.status || 'pending'}`">
+            <v-icon :icon="statusIcon(task.status)" size="15" />
+            <span>{{ statusLabel(task.status) }}</span>
+          </span>
           <span class="task-name">{{ task.name }}</span>
+          <span class="task-top-time">{{ formatCreatedTime(task.created_at) }}</span>
           <v-chip v-if="needsHuman(task)" color="warning" size="x-small" variant="flat">
             HITL
           </v-chip>
@@ -17,8 +21,13 @@
         <div class="task-desc">{{ task.description || taskKindLabel(task.work_task_kind || task.task_type) }}</div>
         <v-progress-linear :model-value="task.progress || 0" :color="statusColor(task.status)" height="5" rounded />
         <div class="task-meta">
-          <span>{{ statusLabel(task.status) }}</span>
-          <span v-if="!compact">{{ formatTokens(task.total_tokens) }} tokens</span>
+          <span class="meta-icon-text">
+            <v-icon size="14" icon="mdi-clock-outline" />
+            {{ formatDuration(task.started_at, task.completed_at) }}
+          </span>
+          <span v-if="!compact" class="meta-icon-text meta-tokens">
+            tokens {{ formatTokens(task.total_tokens) }}
+          </span>
         </div>
       </button>
 
@@ -131,16 +140,49 @@ function formatTokens(value: number) {
   if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
   return `${n}`;
 }
+
+function formatCreatedTime(value: string) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  const now = new Date();
+  const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (date.toDateString() === now.toDateString()) return time;
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) return `昨天 ${time}`;
+  return `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${time}`;
+}
+
+function formatDuration(started_at: string, completed_at: string) {
+  if (!started_at) return '-';
+  const start = new Date(started_at);
+  if (Number.isNaN(start.getTime())) return '-';
+  if (!completed_at) return '进行中';
+  const end = new Date(completed_at);
+  const diff = end.getTime() - start.getTime();
+  if (diff < 0) return '-';
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  if (minutes < 60) return remainingSeconds > 0 ? `${minutes}m${remainingSeconds}s` : `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes > 0 ? `${hours}h${remainingMinutes}m` : `${hours}h`;
+}
 </script>
 
 <style scoped>
 .work-task-list {
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .work-task-card {
+  flex: 0 0 auto;
   border: 1px solid rgba(var(--v-border-color), 0.14);
   border-radius: 8px;
   background: rgba(var(--v-theme-surface), 0.92);
@@ -160,8 +202,8 @@ function formatTokens(value: number) {
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px;
+  gap: 7px;
+  padding: 10px 12px;
   text-align: left;
   color: inherit;
 }
@@ -175,6 +217,56 @@ function formatTokens(value: number) {
   align-items: center;
   gap: 8px;
   min-width: 0;
+}
+
+.task-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.task-status-badge.status-pending {
+  color: rgba(var(--v-theme-on-surface), 0.55);
+  background: rgba(var(--v-theme-on-surface), 0.08);
+}
+
+.task-status-badge.status-running {
+  color: rgb(var(--v-theme-primary));
+  background: rgba(var(--v-theme-primary), 0.1);
+}
+
+.task-status-badge.status-waiting_feedback {
+  color: rgb(var(--v-theme-warning));
+  background: rgba(var(--v-theme-warning), 0.12);
+}
+
+.task-status-badge.status-completed {
+  color: rgb(var(--v-theme-success));
+  background: rgba(var(--v-theme-success), 0.1);
+}
+
+.task-status-badge.status-failed {
+  color: rgb(var(--v-theme-error));
+  background: rgba(var(--v-theme-error), 0.1);
+}
+
+.task-status-badge.status-cancelled {
+  color: rgba(var(--v-theme-on-surface), 0.45);
+  background: rgba(var(--v-theme-on-surface), 0.06);
+}
+
+.task-top-time {
+  flex-shrink: 0;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  color: rgba(var(--v-theme-on-surface), 0.48);
+  margin-left: auto;
 }
 
 .task-name {
@@ -192,7 +284,7 @@ function formatTokens(value: number) {
   font-size: 12px;
   line-height: 1.4;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -200,9 +292,25 @@ function formatTokens(value: number) {
 .task-meta {
   display: flex;
   justify-content: space-between;
-  gap: 8px;
-  color: rgba(var(--v-theme-on-surface), 0.58);
+  align-items: center;
+  gap: 10px;
+  color: rgba(var(--v-theme-on-surface), 0.55);
   font-size: 12px;
+  white-space: nowrap;
+}
+
+.meta-icon-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.meta-icon-text .v-icon {
+  opacity: 0.65;
+}
+
+.meta-tokens {
+  color: rgba(var(--v-theme-on-surface), 0.52);
 }
 
 .hitl-inline {
@@ -234,7 +342,7 @@ function formatTokens(value: number) {
 }
 
 .compact .task-main {
-  padding: 10px;
+  padding: 9px 10px;
 }
 
 .compact .hitl-inline :deep(.card-body) {

@@ -112,17 +112,21 @@
     <main class="work-detail-pane">
       <template v-if="selectedTask">
         <header class="detail-header">
-          <div>
-            <div class="detail-title">{{ selectedTask.name }}</div>
-            <div class="detail-subtitle">
-              {{ taskKindLabel(selectedTask.work_task_kind || selectedTask.task_type) }}
-              · {{ statusLabel(selectedTask.status) }}
-              · {{ selectedTask.progress || 0 }}%
+          <div class="detail-main">
+            <div class="detail-title-row">
+              <div class="detail-title">{{ selectedTask.name }}</div>
+              <div class="detail-subtitle inline">
+                <span>{{ taskKindLabel(selectedTask.work_task_kind || selectedTask.task_type) }}</span>
+                <span v-if="selectedExecutorLabel">{{ selectedExecutorLabel }}</span>
+                <span>{{ statusLabel(selectedTask.status) }}</span>
+                <span>{{ selectedTask.progress || 0 }}%</span>
+              </div>
             </div>
             <div class="token-inline">
               <v-icon size="15" icon="mdi-counter" />
               <strong>{{ formatTokens(selectedTask.total_tokens) }}</strong>
-              <span>输入 {{ formatTokens(selectedTask.input_tokens) }} · 输出 {{ formatTokens(selectedTask.output_tokens) }}</span>
+              <span>输入 {{ formatTokens(selectedTask.input_tokens) }}</span>
+              <span>输出 {{ formatTokens(selectedTask.output_tokens) }}</span>
             </div>
           </div>
           <div class="detail-actions">
@@ -156,6 +160,7 @@
             :active-cards="interactionCards"
             :is-dark="isDark"
             :max-items="MAX_VISIBLE_LOGS"
+            :loading="detailLoading"
             @interaction-respond="handleInteractionRespond"
           />
 
@@ -204,23 +209,28 @@
     </main>
 
     <aside class="work-progress-pane">
-      <div class="pane-title small">子任务进度</div>
-      <div v-if="selectedTask" class="step-list">
-        <button
-          v-for="step in steps"
-          :key="step.id || step.description"
-          class="step-row"
-          type="button"
-          @click="selectedStep = step"
-        >
-          <v-icon :color="stepColor(step.status)" :icon="stepIcon(step.status)" size="18" />
-          <div>
-            <div class="step-title">{{ step.description || step.name }}</div>
-            <div v-if="step.result" class="step-result">{{ step.result }}</div>
-          </div>
-        </button>
-        <div v-if="!steps.length" class="empty-state compact">暂无步骤</div>
+      <div class="progress-pane-header">
+        <div class="pane-title small">子任务进度</div>
       </div>
+      <div v-if="selectedTask" class="step-list-wrap">
+        <div class="step-list">
+          <button
+            v-for="step in steps"
+            :key="step.id || step.description"
+            class="step-row"
+            type="button"
+            @click="selectedStep = step"
+          >
+            <v-icon :color="stepColor(step.status)" :icon="stepIcon(step.status)" size="18" />
+            <div>
+              <div class="step-title">{{ stepPreviewText(step.description || step.name) }}</div>
+              <div v-if="step.result" class="step-result">{{ stepPreviewText(step.result) }}</div>
+            </div>
+          </button>
+          <div v-if="!steps.length" class="empty-state compact">暂无步骤</div>
+        </div>
+      </div>
+      <div v-else class="empty-state compact progress-empty">选择任务后查看步骤</div>
     </aside>
 
     <v-dialog v-model="stepDialog" max-width="760">
@@ -372,6 +382,7 @@ const customizer = useCustomizerStore();
 const isDark = computed(() => customizer.uiTheme === 'PurpleThemeDark');
 
 const loading = ref(false);
+const detailLoading = ref(false);
 const projects = ref<any[]>([]);
 const dailyDirs = ref<any[]>([]);
 const tasks = ref<any[]>([]);
@@ -454,6 +465,8 @@ const steps = computed(() => {
   return [];
 });
 
+const selectedExecutorLabel = computed(() => executorLabel(selectedTask.value));
+
 const stepDialog = computed({
   get: () => Boolean(selectedStep.value),
   set: (value: boolean) => {
@@ -462,15 +475,39 @@ const stepDialog = computed({
 });
 
 const displayArtifacts = computed(() => {
-  if (artifacts.value.length) return artifacts.value;
-  const result = selectedTask.value?.result || selectedTask.value?.output?.result || selectedTask.value?.final_summary;
-  if (!result) return [];
-  return [{
-    id: `${selectedTask.value.id}-result`,
-    title: selectedTask.value.name || '任务交付物',
-    artifact_type: 'markdown',
-    content: typeof result === 'string' ? result : JSON.stringify(result, null, 2),
-  }];
+  const items: any[] = [...artifacts.value];
+
+  const deliverables = selectedTask.value?.deliverables;
+  if (Array.isArray(deliverables)) {
+    for (const d of deliverables) {
+      if (!items.find(a => a.id === d.id)) {
+        items.push({
+          id: d.id || `del-${items.length}`,
+          title: d.title || '交付物',
+          artifact_type: d.type || 'markdown',
+          content: d.content || '',
+          file_path: d.file_path || d.path || '',
+          created_at: d.created_at || selectedTask.value?.completed_at,
+        });
+      }
+    }
+  }
+
+  const resultText = selectedTask.value?.result_text || selectedTask.value?.result || selectedTask.value?.output?.result || selectedTask.value?.final_summary;
+  if (resultText && typeof resultText === 'string' && resultText.trim()) {
+    const alreadyExists = items.some(a => a.content === resultText);
+    if (!alreadyExists) {
+      items.push({
+        id: `${selectedTask.value?.id || 'task'}-summary`,
+        title: '最终交付摘要',
+        artifact_type: 'markdown',
+        content: resultText,
+        created_at: selectedTask.value?.completed_at,
+      });
+    }
+  }
+
+  return items;
 });
 
 const displayLogs = computed(() => aggregateLogs(logs.value));
@@ -546,6 +583,7 @@ async function loadSelectedTask() {
     return;
   }
   selectedTaskLoading = true;
+  detailLoading.value = true;
   const taskId = selectedTaskId.value;
   try {
     const response = await axios.get(`/api/plug/work/tasks/${taskId}`, {
@@ -557,10 +595,10 @@ async function loadSelectedTask() {
       logs.value = (selectedTask.value.logs || []).slice(-MAX_VISIBLE_LOGS);
       artifacts.value = selectedTask.value.artifacts || [];
       interactionCards.value = selectedTask.value.hitl_cards || [];
-      if (isCompleted(selectedTask.value) && detailTab.value === 'progress') detailTab.value = 'artifacts';
     }
   } finally {
     selectedTaskLoading = false;
+    detailLoading.value = false;
     if (pendingSelectedReload && selectedTaskId.value) {
       pendingSelectedReload = false;
       loadSelectedTask();
@@ -617,8 +655,26 @@ function openEventSource(taskId: string) {
       if (sseDebounceTimer) clearTimeout(sseDebounceTimer);
       sseDebounceTimer = setTimeout(() => loadSelectedTask(), 500);
     };
-    for (const name of ['phase', 'text_delta', 'tool_call', 'tool_result', 'reasoning', 'token', 'artifact', 'interaction', 'done']) {
-      eventSource.addEventListener(name, reload);
+
+    const appendLog = (event: MessageEvent) => {
+      try {
+        const log = JSON.parse(event.data);
+        if (!log || !log.id) { reload(); return; }
+        if (logs.value.find(l => l.id === log.id)) return;
+        logs.value = [...logs.value, log].slice(-MAX_VISIBLE_LOGS);
+      } catch { reload(); }
+    };
+
+    eventSource.addEventListener('done', reload);
+    eventSource.addEventListener('phase', (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data?.status) selectedTask.value = { ...selectedTask.value, status: data.status, progress: data.progress || selectedTask.value?.progress };
+      } catch {}
+      reload();
+    });
+    for (const name of ['text_delta', 'tool_call', 'tool_result', 'reasoning', 'token', 'artifact', 'interaction']) {
+      eventSource.addEventListener(name, appendLog);
     }
     eventSource.onerror = () => closeEventSource();
   } catch {
@@ -774,6 +830,45 @@ function taskKindLabel(kind: string) {
   return map[kind] || kind || '任务';
 }
 
+function executorLabel(task: any) {
+  if (!task) return '';
+  const taskSteps = parseSteps(task?.steps);
+  const activeStepAgent = taskSteps.find((step: any) => step?.status === 'running' && step?.agent)?.agent;
+  if (activeStepAgent) return `执行者：${activeStepAgent}`;
+
+  const config = task?.executor_config || {};
+  const kind = task?.work_task_kind || task?.task_type;
+  if (kind === 'multi_agent') {
+    const name = resourceNameById(crews.value, config.crew_id || task?.crew_id);
+    return name ? `执行团队：${name}` : '执行团队：任务助手自动选择';
+  }
+  if (kind === 'workflow') {
+    const name = resourceNameById(flows.value, config.flow_id || task?.flow_id);
+    return name ? `执行流程：${name}` : '执行流程：已配置';
+  }
+  const name = resourceNameById(agents.value, config.agent_id || task?.agent_id);
+  return name ? `执行智能体：${name}` : '执行智能体：任务助手自动选择';
+}
+
+function resourceNameById(items: any[], id: string) {
+  const key = String(id || '').trim();
+  if (!key) return '';
+  return items.find((item) => item?.id === key)?.name || '';
+}
+
+function parseSteps(raw: unknown) {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 function stepIcon(status: string) {
   if (status === 'done' || status === 'completed') return 'mdi-check-circle-outline';
   if (status === 'running') return 'mdi-progress-clock';
@@ -913,6 +1008,27 @@ function stepDetailText(step: any) {
   return parts.join('\n\n') || '暂无详情';
 }
 
+function stepPreviewText(value: unknown) {
+  return cleanPreviewText(value, 180);
+}
+
+function cleanPreviewText(value: unknown, maxLength = 180) {
+  if (value == null) return '';
+  let text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+  text = text
+    .replace(/\r\n/g, '\n')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/__(.*?)__/g, '$1')
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/^#+\s*/gm, '')
+    .replace(/^[-*+]\s+/gm, '')
+    .replace(/\n+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1)}…`;
+}
+
 onMounted(() => {
   refreshAll();
   pollTimer = setInterval(() => {
@@ -956,9 +1072,12 @@ onBeforeUnmount(() => {
 .work-task-pane,
 .work-progress-pane {
   min-height: 0;
-  overflow: auto;
   border-right: 1px solid var(--work-border);
   background: var(--work-panel);
+}
+
+.work-category-pane {
+  overflow: auto;
 }
 
 .work-category-pane,
@@ -967,6 +1086,9 @@ onBeforeUnmount(() => {
 }
 
 .work-progress-pane {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   border-right: 0;
   border-left: 1px solid var(--work-border);
 }
@@ -1045,6 +1167,7 @@ onBeforeUnmount(() => {
 .work-task-pane {
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .task-toolbar {
@@ -1052,7 +1175,11 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 10px;
   padding: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
   border-bottom: 1px solid var(--work-border);
+  background: var(--work-panel);
 }
 
 .filter-row,
@@ -1068,6 +1195,7 @@ onBeforeUnmount(() => {
 }
 
 .task-list {
+  flex: 1;
   min-height: 0;
   overflow: auto;
   padding: 10px;
@@ -1125,10 +1253,21 @@ onBeforeUnmount(() => {
 }
 
 .detail-header {
-  min-height: 66px;
-  padding: 12px 18px;
+  min-height: 62px;
+  padding: 10px 18px;
   border-bottom: 1px solid var(--work-border);
   background: var(--work-panel);
+}
+
+.detail-main {
+  min-width: 0;
+}
+
+.detail-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 10px;
 }
 
 .detail-title {
@@ -1136,11 +1275,25 @@ onBeforeUnmount(() => {
   font-weight: 800;
 }
 
+.detail-subtitle.inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.detail-subtitle.inline span:not(:last-child)::after {
+  content: "·";
+  margin-left: 6px;
+  color: var(--work-muted);
+}
+
 .token-inline {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 7px;
-  margin-top: 6px;
+  gap: 6px 8px;
+  margin-top: 4px;
   color: var(--work-muted);
   font-size: 12px;
 }
@@ -1201,9 +1354,26 @@ onBeforeUnmount(() => {
 }
 
 .step-list {
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-height: 0;
+}
+
+.progress-pane-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding-bottom: 8px;
+  background: var(--work-panel);
+}
+
+.step-list-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
 }
 
 .step-row {
@@ -1228,13 +1398,15 @@ onBeforeUnmount(() => {
 .step-title {
   font-size: 13px;
   font-weight: 650;
+  line-height: 1.45;
 }
 
 .step-result {
-  max-height: 70px;
+  max-height: 72px;
   overflow: hidden;
   margin-top: 4px;
   font-size: 12px;
+  line-height: 1.45;
 }
 
 .token-box {
@@ -1346,6 +1518,10 @@ onBeforeUnmount(() => {
   word-break: normal;
   font: inherit;
   line-height: 1.6;
+}
+
+.progress-empty {
+  flex: 1;
 }
 
 @media (max-width: 1180px) {

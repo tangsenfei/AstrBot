@@ -1,47 +1,80 @@
 <template>
-  <div class="work-progress-timeline" :class="{ 'is-dark': isDark }">
-    <div v-if="activeCards.length" class="hitl-section">
-      <InteractionCardComponent
-        v-for="card in activeCards"
-        :key="card.interaction_id"
-        :card="card"
-        :is-dark="isDark"
-        @respond="emit('interaction-respond', $event)"
-      />
-    </div>
+  <div class="progress-timeline" :class="{ 'theme-dark': isDark }">
+    <div v-if="!items.length && !loading" class="empty-hint">暂无执行进展</div>
 
-    <div v-if="task" class="timeline-item intro">
-      <div class="item-icon">
-        <v-icon size="17" icon="mdi-clipboard-text-outline" />
+    <div v-for="item in items" :key="item.id" class="tl-entry" :class="`kind-${item.kind}`">
+      <div class="tl-node">
+        <v-icon size="16" :icon="item.icon" />
       </div>
-      <div class="item-body">
-        <div class="item-title">{{ task.name }}</div>
-        <div class="item-text">{{ task.description || '任务已创建，等待执行进展。' }}</div>
-      </div>
-    </div>
 
-    <div v-for="item in items" :key="item.id" class="timeline-item" :class="`event-${item.kind}`">
-      <div class="item-icon">
-        <v-icon size="17" :icon="item.icon" />
-      </div>
-      <div class="item-body">
-        <div class="item-meta">
-          <span>{{ item.title }}</span>
-          <time v-if="item.created_at">{{ formatDate(item.created_at) }}</time>
+      <div class="tl-body">
+        <div class="tl-header" @click="item.collapsible ? toggleCollapse(item.id) : undefined" :class="{ clickable: item.collapsible }">
+          <span class="tl-title">
+            <span class="tl-kind-badge" :class="`badge-${item.kind}`">{{ kindLabel(item.kind) }}</span>
+            {{ item.title }}
+            <span v-if="item.subtitle" class="tl-subtitle">· {{ item.subtitle }}</span>
+          </span>
+          <span class="tl-right">
+            <time v-if="item.created_at" class="tl-time">{{ formatTime(item.created_at) }}</time>
+            <span v-if="item.duration_ms" class="tl-dur">{{ formatDur(item.duration_ms) }}</span>
+            <v-icon v-if="item.collapsible" size="14" :icon="isCollapsed(item.id) ? 'mdi-chevron-down' : 'mdi-chevron-up'" />
+          </span>
         </div>
-        <pre v-if="item.text" class="item-text">{{ item.text }}</pre>
-        <pre v-if="item.payload" class="item-payload">{{ item.payload }}</pre>
+
+        <div v-if="!isCollapsed(item.id)" class="tl-content">
+          <template v-if="item.kind === 'tool_call' && item.args">
+            <div class="tl-section">
+              <div class="tl-section-title">Args</div>
+              <pre class="tl-json">{{ item.args }}</pre>
+            </div>
+          </template>
+
+          <template v-if="item.kind === 'tool_result' && item.result">
+            <div class="tl-section">
+              <div class="tl-section-title">Result</div>
+              <pre class="tl-json">{{ item.result }}</pre>
+            </div>
+          </template>
+
+          <template v-if="item.kind === 'reasoning'">
+            <pre class="tl-text reasoning-text">{{ item.text }}</pre>
+          </template>
+
+          <template v-if="item.kind === 'text_delta'">
+            <pre class="tl-text output-text">{{ item.text }}</pre>
+          </template>
+
+          <template v-if="item.kind === 'error'">
+            <pre class="tl-text error-text">{{ item.text }}</pre>
+          </template>
+
+          <pre v-if="item.kind === 'token'" class="tl-text token-text">{{ item.text }}</pre>
+
+          <div v-if="item.kind === 'artifact' && item.content" class="tl-artifact">
+            <div class="tl-section-title">交付内容</div>
+            <pre class="tl-text">{{ item.content }}</pre>
+          </div>
+
+          <div v-if="item.kind === 'interaction' && item.card" class="tl-interaction">
+            <InteractionCardComponent
+              :card="item.card"
+              :is-dark="isDark"
+              @respond="onRespond"
+            />
+          </div>
+        </div>
       </div>
     </div>
 
-    <div v-if="!items.length && !activeCards.length" class="empty-state">
-      暂无执行输出
+    <div v-if="loading" class="tl-loading">
+      <v-progress-circular indeterminate size="16" width="2" />
+      <span>执行中...</span>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import InteractionCardComponent from '@/components/chat/InteractionCardComponent.vue';
 
 const props = withDefaults(defineProps<{
@@ -50,280 +83,420 @@ const props = withDefaults(defineProps<{
   activeCards?: any[];
   isDark?: boolean;
   maxItems?: number;
+  loading?: boolean;
 }>(), {
   task: null,
   logs: () => [],
   activeCards: () => [],
   isDark: false,
-  maxItems: 120,
+  maxItems: 200,
+  loading: false,
 });
 
 const emit = defineEmits<{
   (e: 'interaction-respond', payload: { interaction_id: string; action_key: string; field_values: Record<string, any> }): void;
 }>();
 
-const items = computed(() => {
-  const visible = props.logs.slice(-props.maxItems);
-  const merged: TimelineItem[] = [];
-  let textBuffer: TimelineItem | null = null;
+const collapsedIds = ref<Set<string>>(new Set());
+let prevLogCount = 0;
 
-  const flushText = () => {
-    if (textBuffer) {
-      merged.push(textBuffer);
-      textBuffer = null;
-    }
-  };
-
-  for (const log of visible) {
-    const item = toTimelineItem(log);
-    if (!item) continue;
-    if (item.kind === 'text') {
-      if (!textBuffer) {
-        textBuffer = { ...item };
-      } else {
-        textBuffer.text = joinDeltaText(textBuffer.text, item.text);
-        textBuffer.created_at = item.created_at || textBuffer.created_at;
-      }
-      continue;
-    }
-    flushText();
-    merged.push(item);
+watch(() => props.logs, (newLogs) => {
+  if (newLogs.length < prevLogCount) {
+    prevLogCount = newLogs.length;
   }
-  flushText();
-  return merged;
-});
+}, { immediate: false });
 
-type TimelineItem = {
+function toggleCollapse(id: string) {
+  const next = new Set(collapsedIds.value);
+  if (next.has(id)) next.delete(id); else next.add(id);
+  collapsedIds.value = next;
+}
+
+function isCollapsed(id: string) {
+  return collapsedIds.value.has(id);
+}
+
+function onRespond(payload: { interaction_id: string; action_key: string; field_values: Record<string, any> }) {
+  emit('interaction-respond', payload);
+}
+
+interface TimelineItem {
   id: string;
   kind: string;
   icon: string;
   title: string;
+  subtitle?: string;
   text: string;
-  payload: string;
-  created_at?: string;
-};
-
-function toTimelineItem(log: any): TimelineItem | null {
-  const data = log?.data || {};
-  const event = data.event || 'log';
-  if (event === 'interaction') return null;
-
-  if (event === 'text_delta') {
-    return baseItem(log, 'text', 'mdi-message-text-outline', '智能体输出', String(data.text || log.message || ''));
-  }
-  if (event === 'reasoning') {
-    return baseItem(log, 'reasoning', 'mdi-brain', '推理过程', String(data.text || log.message || ''));
-  }
-  if (event === 'tool_call') {
-    return baseItem(log, 'tool', 'mdi-tools', `工具调用：${data.name || data.tool || 'tool'}`, '', compactPayload(data));
-  }
-  if (event === 'tool_result') {
-    return baseItem(log, 'tool', 'mdi-check-decagram-outline', `工具结果：${data.name || data.tool || 'tool'}`, stringifyToolResult(data));
-  }
-  if (event === 'token') {
-    const counts = tokenCounts(data);
-    const text = [
-      `输入 ${formatTokens(counts.input)}`,
-      `输出 ${formatTokens(counts.output)}`,
-      `总计 ${formatTokens(counts.total)}`,
-    ].join(' · ');
-    return baseItem(log, 'token', 'mdi-counter', 'Token 统计', text);
-  }
-  if (event === 'phase') {
-    return baseItem(log, 'phase', 'mdi-timeline-clock-outline', phaseTitle(data), data.message || log.message || '');
-  }
-  if (event === 'error' || log.level === 'error') {
-    return baseItem(log, 'error', 'mdi-alert-circle-outline', '错误', data.message || log.message || '');
-  }
-
-  const text = data.message || log.message || '';
-  return text ? baseItem(log, 'log', 'mdi-text-box-outline', '日志', text) : null;
+  args?: string;
+  result?: string;
+  content?: string;
+  card?: any;
+  created_at: string;
+  duration_ms?: number;
+  collapsible: boolean;
 }
 
-function baseItem(log: any, kind: string, icon: string, title: string, text: string, payload = ''): TimelineItem {
+function kindLabel(kind: string) {
+  const map: Record<string, string> = {
+    text_delta: '输出', reasoning: '推理', tool_call: '工具调用',
+    tool_result: '工具结果', token: 'Token', phase: '阶段',
+    error: '错误', artifact: '交付物', interaction: '交互',
+  };
+  return map[kind] || kind;
+}
+
+function formatTime(v: string) {
+  if (!v) return '';
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function formatDur(ms: number) {
+  if (!ms || ms < 0) return '';
+  if (ms < 1000) return `${ms}ms`;
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rs = s % 60;
+  return rs > 0 ? `${m}m${rs}s` : `${m}m`;
+}
+
+function formatTokens(n: number) {
+  const v = Number(n || 0);
+  if (v >= 1000000) return `${(v / 1000000).toFixed(1)}M`;
+  if (v >= 1000) return `${(v / 1000).toFixed(1)}K`;
+  return `${v}`;
+}
+
+const items = computed<TimelineItem[]>(() => {
+  const logs = props.logs || [];
+  const result: TimelineItem[] = [];
+  let prevTs: number | null = null;
+
+  for (let i = 0; i < logs.length; i++) {
+    const log = logs[i];
+    const data = log?.data || {};
+    const event = data.event || 'log';
+    if (event === 'interaction') continue;
+
+    const ts = log.created_at ? Date.parse(log.created_at) : 0;
+    const dur = prevTs && ts ? Math.max(0, ts - prevTs) : undefined;
+
+    if (event === 'text_delta') {
+      const text = String(data.text || log.message || '');
+      if (!text) continue;
+      const prev = result[result.length - 1];
+      if (prev && prev.kind === 'text_delta') {
+        prev.text += text;
+        prev.created_at = log.created_at;
+      } else {
+        result.push({
+          id: log.id || `log-${i}`, kind: 'text_delta', icon: 'mdi-message-text-outline',
+          title: '智能体输出', text, created_at: log.created_at, duration_ms: dur ? Math.min(dur, 30000) : undefined, collapsible: false,
+        });
+      }
+    } else if (event === 'reasoning') {
+      const text = String(data.text || log.message || '');
+      const prev = result[result.length - 1];
+      if (prev && prev.kind === 'reasoning') {
+        prev.text += text;
+        prev.created_at = log.created_at;
+      } else {
+        const item: TimelineItem = {
+          id: log.id || `log-${i}`, kind: 'reasoning', icon: 'mdi-brain',
+          title: '推理过程', text, created_at: log.created_at,
+          duration_ms: dur ? Math.min(dur, 30000) : undefined, collapsible: true,
+        };
+        collapsedIds.value.add(item.id);
+        result.push(item);
+      }
+    } else if (event === 'tool_call') {
+      const name = data.name || data.tool || 'tool';
+      const argsObj = { ...data };
+      delete argsObj.event; delete argsObj.name; delete argsObj.tool; delete argsObj.ts; delete argsObj.id;
+      result.push({
+        id: log.id || `log-${i}`, kind: 'tool_call', icon: 'mdi-wrench-outline',
+        title: `调用工具：${name}`, args: JSON.stringify(argsObj, null, 2),
+        text: '', created_at: log.created_at, duration_ms: dur ? Math.min(dur, 30000) : undefined, collapsible: true,
+      });
+    } else if (event === 'tool_result') {
+      const name = data.name || data.tool || 'tool';
+      let resultStr = '';
+      if (data.result !== undefined) {
+        resultStr = typeof data.result === 'string' ? data.result : JSON.stringify(data.result, null, 2);
+      } else {
+        resultStr = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+      }
+      const bytes = new TextEncoder().encode(resultStr).length;
+      const lines = resultStr.split('\n').length;
+      result.push({
+        id: log.id || `log-${i}`, kind: 'tool_result', icon: 'mdi-check-circle-outline',
+        title: `工具结果：${name}`, subtitle: `${formatDur(dur || 0)} · ${lines}行 · ${bytes >= 1024 ? (bytes / 1024).toFixed(1) + 'KB' : bytes + 'B'}`,
+        result: resultStr, text: '', created_at: log.created_at,
+        duration_ms: dur ? Math.min(dur, 30000) : undefined, collapsible: true,
+      });
+    } else if (event === 'token') {
+      const counts = tokenCounts(data);
+      result.push({
+        id: log.id || `log-${i}`, kind: 'token', icon: 'mdi-cash-multiple',
+        title: 'Token 统计',
+        text: [`入 ${formatTokens(counts.input)}`, `出 ${formatTokens(counts.output)}`, `共 ${formatTokens(counts.total)}`].join(' · '),
+        created_at: log.created_at, collapsible: false,
+      });
+    } else if (event === 'phase') {
+      result.push({
+        id: log.id || `log-${i}`, kind: 'phase', icon: 'mdi-timeline-clock-outline',
+        title: phaseTitle(data), text: data.message || log.message || '',
+        created_at: log.created_at, collapsible: false,
+      });
+    } else if (event === 'error' || log.level === 'error') {
+      result.push({
+        id: log.id || `log-${i}`, kind: 'error', icon: 'mdi-alert-circle-outline',
+        title: '错误', text: data.message || log.message || '',
+        created_at: log.created_at, collapsible: false,
+      });
+    } else if (event === 'artifact') {
+      result.push({
+        id: log.id || `log-${i}`, kind: 'artifact', icon: 'mdi-file-document-outline',
+        title: data.title || '交付物', content: data.content || log.message || '',
+        text: '', created_at: log.created_at, collapsible: false,
+      });
+    } else {
+      const text = data.message || log.message || '';
+      if (text) {
+        result.push({
+          id: log.id || `log-${i}`, kind: 'log', icon: 'mdi-text-box-outline',
+          title: '日志', text, created_at: log.created_at, collapsible: false,
+        });
+      }
+    }
+    prevTs = ts;
+  }
+
+  return result.slice(-props.maxItems);
+});
+
+function tokenCounts(data: any) {
   return {
-    id: String(log.id || `${kind}-${log.created_at || Math.random()}`),
-    kind,
-    icon,
-    title,
-    text,
-    payload,
-    created_at: log.created_at,
+    input: Number(data.input_tokens || data.prompt_tokens || 0),
+    output: Number(data.output_tokens || data.completion_tokens || 0),
+    total: Number(data.total_tokens || (data.input_tokens || 0) + (data.output_tokens || 0)),
   };
 }
 
 function phaseTitle(data: any) {
-  const phase = data.phase || data.status || '';
   const map: Record<string, string> = {
-    started: '任务已启动',
-    plan_done: '规划完成',
-    execute_done: '实施完成',
-    review_done: '审查完成',
-    done: '任务结束',
-    running: '执行中',
-    waiting_feedback: '等待人工确认',
-    completed: '已完成',
-    failed: '失败',
+    prepare: '准备阶段', plan: '规划阶段', execute: '执行阶段',
+    review: '审查阶段', finalize: '交付', done: '已完成',
+    approval: '等待审批', rework: '返工',
   };
-  return map[phase] || '阶段更新';
-}
-
-function compactPayload(data: any) {
-  const payload = { ...data };
-  delete payload.event;
-  delete payload.text;
-  return formatJson(payload);
-}
-
-function stringifyToolResult(data: any) {
-  const result = data.result ?? data.output ?? data.content ?? data.message;
-  if (result == null) return '';
-  return typeof result === 'string' ? result : formatJson(result);
-}
-
-function joinDeltaText(current: string, next: string) {
-  if (!current) return next;
-  if (!next) return current;
-  if (/^[，。！？；：、,.!?;:)\]}]/.test(next)) return `${current}${next}`;
-  if (/[\s([{（【]$/.test(current) || /^[\s]/.test(next)) return `${current}${next}`;
-  if (/^[A-Za-z0-9_]/.test(next) && /[A-Za-z0-9_]$/.test(current)) return `${current} ${next}`;
-  return `${current}${next}`;
-}
-
-function formatJson(value: unknown) {
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value ?? '');
-  }
-}
-
-function formatTokens(value: number) {
-  const n = Number(value || 0);
-  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
-  return `${n}`;
-}
-
-function tokenCounts(data: any) {
-  const stats = data.stats || {};
-  const usage = stats.token_usage || {};
-  const input = Number(data.input_tokens ?? data.input ?? usage.input_other ?? usage.input ?? 0);
-  const output = Number(data.output_tokens ?? data.output ?? usage.output ?? 0);
-  const total = Number(data.total_tokens ?? data.total ?? usage.total ?? input + output);
-  return { input, output, total };
-}
-
-function formatDate(value: string) {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const phase = data.phase || data.stage || '';
+  return map[phase] || phase || '阶段更新';
 }
 </script>
 
 <style scoped>
-.work-progress-timeline {
-  --timeline-border: rgba(var(--v-border-color), 0.16);
-  --timeline-muted: rgba(var(--v-theme-on-surface), 0.58);
+.progress-timeline {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 0;
+  padding: 4px 0;
+  min-height: 0;
+  overflow: auto;
 }
 
-.work-progress-timeline.is-dark {
-  --timeline-border: rgba(255, 255, 255, 0.1);
-}
-
-.hitl-section {
+.tl-entry {
   display: flex;
-  flex-direction: column;
   gap: 10px;
+  padding: 8px 12px 8px 8px;
+  border-left: 2px solid transparent;
+  transition: background 0.12s;
+}
+
+.tl-entry:hover {
+  background: rgba(var(--v-theme-on-surface), 0.025);
+}
+
+.tl-node {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(var(--v-theme-on-surface), 0.06);
+  color: rgba(var(--v-theme-on-surface), 0.48);
+}
+
+.tl-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.tl-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 24px;
+  cursor: default;
+}
+
+.tl-header.clickable {
+  cursor: pointer;
+}
+
+.tl-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 550;
+  color: rgba(var(--v-theme-on-surface), 0.82);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.tl-kind-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.badge-text_delta { color: rgba(var(--v-theme-on-surface), 0.55); background: rgba(var(--v-theme-on-surface), 0.08); }
+.badge-reasoning { color: rgb(var(--v-theme-secondary)); background: rgba(var(--v-theme-secondary), 0.1); }
+.badge-tool_call { color: rgb(var(--v-theme-info)); background: rgba(var(--v-theme-info), 0.12); }
+.badge-tool_result { color: rgb(var(--v-theme-success)); background: rgba(var(--v-theme-success), 0.12); }
+.badge-token { color: rgb(var(--v-theme-primary)); background: rgba(var(--v-theme-primary), 0.1); }
+.badge-phase { color: rgb(var(--v-theme-primary)); background: rgba(var(--v-theme-primary), 0.08); }
+.badge-error { color: rgb(var(--v-theme-error)); background: rgba(var(--v-theme-error), 0.1); }
+.badge-artifact { color: rgb(var(--v-theme-success)); background: rgba(var(--v-theme-success), 0.1); }
+.badge-interaction { color: rgb(var(--v-theme-warning)); background: rgba(var(--v-theme-warning), 0.12); }
+.badge-log { color: rgba(var(--v-theme-on-surface), 0.5); background: rgba(var(--v-theme-on-surface), 0.06); }
+
+.tl-subtitle {
+  font-size: 11px;
+  font-weight: 400;
+  color: rgba(var(--v-theme-on-surface), 0.4);
+}
+
+.tl-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.tl-time {
+  font-size: 10px;
+  font-family: 'Courier New', monospace;
+  color: rgba(var(--v-theme-on-surface), 0.38);
+}
+
+.tl-dur {
+  font-size: 10px;
+  font-family: 'Courier New', monospace;
+  color: rgba(var(--v-theme-on-surface), 0.42);
+}
+
+.tl-content {
+  margin-top: 6px;
+}
+
+.tl-section {
+  margin-bottom: 8px;
+}
+
+.tl-section-title {
+  font-size: 10px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: rgba(var(--v-theme-on-surface), 0.38);
   margin-bottom: 4px;
 }
 
-.timeline-item {
-  display: grid;
-  grid-template-columns: 28px 1fr;
-  gap: 10px;
-  width: 100%;
-}
-
-.item-icon {
-  width: 28px;
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--timeline-border);
-  border-radius: 50%;
-  color: rgb(var(--v-theme-primary));
-  background: rgba(var(--v-theme-primary), 0.08);
-}
-
-.item-body {
-  min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--timeline-border);
-  border-radius: 8px;
-  background: rgba(var(--v-theme-surface), 0.86);
-}
-
-.item-title {
-  font-weight: 750;
-}
-
-.item-meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 6px;
-  color: var(--timeline-muted);
-  font-size: 12px;
-}
-
-.item-meta span {
-  color: rgb(var(--v-theme-on-surface));
-  font-weight: 650;
-}
-
-.item-text,
-.item-payload {
+.tl-json {
   margin: 0;
+  padding: 8px 10px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+  border-radius: 6px;
+  border: 1px solid rgba(var(--v-border-color), 0.12);
+  font-size: 11px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+  color: rgba(var(--v-theme-on-surface), 0.72);
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  word-break: normal;
-  font: inherit;
-  line-height: 1.58;
+  word-break: break-all;
+  max-height: 360px;
+  overflow: auto;
+  line-height: 1.5;
 }
 
-.item-payload {
+.tl-text {
+  margin: 0;
+  padding: 6px 8px;
+  background: rgba(var(--v-theme-on-surface), 0.03);
+  border-radius: 6px;
+  font-size: 12px;
+  color: rgba(var(--v-theme-on-surface), 0.68);
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
   max-height: 280px;
   overflow: auto;
-  padding: 8px;
-  border-radius: 8px;
-  background: rgba(var(--v-theme-on-surface), 0.055);
-  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
-  font-size: 12px;
 }
 
-.event-error .item-icon {
+.reasoning-text {
+  border-left: 3px solid rgba(var(--v-theme-secondary), 0.35);
+  background: rgba(var(--v-theme-secondary), 0.04);
+}
+
+.output-text {
+  border-left: 3px solid rgba(var(--v-theme-primary), 0.22);
+}
+
+.error-text {
   color: rgb(var(--v-theme-error));
-  background: rgba(var(--v-theme-error), 0.08);
+  font-weight: 550;
 }
 
-.event-token .item-icon,
-.event-phase .item-icon {
-  color: rgb(var(--v-theme-info));
-  background: rgba(var(--v-theme-info), 0.08);
+.token-text {
+  text-align: center;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
 }
 
-.empty-state {
-  min-height: 120px;
+.tl-interaction {
+  padding: 4px 0;
+}
+
+.tl-loading {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--timeline-muted);
-  font-size: 13px;
+  gap: 8px;
+  padding: 12px;
+  font-size: 12px;
+  color: rgba(var(--v-theme-on-surface), 0.5);
 }
+
+.empty-hint {
+  color: rgba(var(--v-theme-on-surface), 0.38);
+  font-size: 12px;
+  text-align: center;
+  padding: 24px;
+}
+
+.kind-tool_call .tl-node { color: rgb(var(--v-theme-info)); background: rgba(var(--v-theme-info), 0.1); }
+.kind-tool_result .tl-node { color: rgb(var(--v-theme-success)); background: rgba(var(--v-theme-success), 0.1); }
+.kind-reasoning .tl-node { color: rgb(var(--v-theme-secondary)); background: rgba(var(--v-theme-secondary), 0.1); }
+.kind-error .tl-node { color: rgb(var(--v-theme-error)); background: rgba(var(--v-theme-error), 0.1); }
+.kind-token .tl-node { color: rgb(var(--v-theme-primary)); background: rgba(var(--v-theme-primary), 0.08); }
+.kind-phase .tl-node { color: rgb(var(--v-theme-primary)); background: rgba(var(--v-theme-primary), 0.08); }
+.kind-artifact .tl-node { color: rgb(var(--v-theme-success)); background: rgba(var(--v-theme-success), 0.1); }
 </style>

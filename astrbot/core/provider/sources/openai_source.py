@@ -523,8 +523,19 @@ class ProviderOpenAIOfficial(Provider):
             for model in models:
                 models_str.append(model.id)
             return models_str
-        except NotFoundError as e:
-            raise Exception(f"获取模型列表失败：{e}")
+        except NotFoundError:
+            configured_model = self.provider_config.get("model", "")
+            if configured_model:
+                logger.warning(
+                    f"/v1/models endpoint not available for this provider, "
+                    f"falling back to configured model: {configured_model}"
+                )
+                return [configured_model]
+            logger.warning(
+                "/v1/models endpoint not available and no model configured, "
+                "returning empty list."
+            )
+            return []
 
     @staticmethod
     def _sanitize_assistant_messages(payloads: dict) -> None:

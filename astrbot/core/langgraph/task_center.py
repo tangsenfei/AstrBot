@@ -63,8 +63,9 @@ class TaskCenter:
             }
             if task.status in (TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.CANCELLED):
                 updates["completed_at"] = datetime.now().isoformat()
-            if task.status == TaskStatus.RUNNING:
+            if task.status == TaskStatus.RUNNING and not task._started_at_db_set:
                 updates["started_at"] = datetime.now().isoformat()
+                task._started_at_db_set = True
             if task.error:
                 updates["error"] = task.error
             await self._db_callback(
@@ -118,6 +119,10 @@ class TaskCenter:
             task.total_tokens += total_tokens or input_tokens + output_tokens
         elif event_type == "error":
             task.error = str(data.get("message") or data)
+        elif event_type == "tool_call":
+            pass
+        elif event_type == "tool_result":
+            pass
 
         asyncio.create_task(self._sync_to_db(task))
         asyncio.create_task(self._persist_stream_event(task, event))

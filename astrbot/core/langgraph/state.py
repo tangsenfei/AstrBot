@@ -148,6 +148,7 @@ class TaskRecord:
     input_tokens: int = 0
     output_tokens: int = 0
     total_tokens: int = 0
+    _started_at_db_set: bool = field(default=False, repr=False)
 
 
 @dataclass

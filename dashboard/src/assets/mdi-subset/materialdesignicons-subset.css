@@ -248,6 +248,10 @@
   content: "\F05D2";
 }
 
+.mdi-cash-multiple::before {
+  content: "\F0116";
+}
+
 .mdi-cellphone::before {
   content: "\F011C";
 }
@@ -302,10 +306,6 @@
 
 .mdi-check-decagram::before {
   content: "\F0791";
-}
-
-.mdi-check-decagram-outline::before {
-  content: "\F1740";
 }
 
 .mdi-checkbox-blank-outline::before {
