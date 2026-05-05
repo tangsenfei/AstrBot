@@ -54,6 +54,21 @@
       <template #node-human="nodeProps">
         <HumanNode :data="nodeProps.data" :selected="nodeProps.selected" />
       </template>
+      <template #node-agent_task="nodeProps">
+        <CrewNode :data="nodeProps.data" :selected="nodeProps.selected" />
+      </template>
+      <template #node-sub_flow="nodeProps">
+        <RouterNode :data="nodeProps.data" :selected="nodeProps.selected" />
+      </template>
+      <template #node-hitl="nodeProps">
+        <HumanNode :data="nodeProps.data" :selected="nodeProps.selected" />
+      </template>
+      <template #node-review="nodeProps">
+        <HumanNode :data="nodeProps.data" :selected="nodeProps.selected" />
+      </template>
+      <template #node-deliverable="nodeProps">
+        <HumanNode :data="nodeProps.data" :selected="nodeProps.selected" />
+      </template>
     </VueFlow>
 
     <div v-if="isDraggingNode" class="drag-indicator">
@@ -232,6 +247,11 @@ function getNodeLabel(type: string): string {
     or: '并行(OR)',
     crew: '团队',
     human: '人工',
+    agent_task: 'Agent 任务',
+    sub_flow: '子流程',
+    hitl: 'HITL',
+    review: '审查',
+    deliverable: '交付物',
   };
   return labels[type] || type;
 }
@@ -245,6 +265,11 @@ function getDefaultConfig(type: string): any {
     or: {},
     crew: { crewName: '', inputMapping: {} },
     human: { prompt: '', options: [], timeout: 300 },
+    agent_task: { assignment_mode: 'assistant', agent_id: '', crew_id: '', subtask_mode: 'shallow' },
+    sub_flow: { flow_id: '', inputMapping: {} },
+    hitl: { template_id: '', prompt: '', repeat_until_clear: false },
+    review: { reviewer_id: '', max_rework: 3, enabled: true },
+    deliverable: { reporter_id: '', artifact_type: 'markdown' },
   };
   return configs[type] || {};
 }

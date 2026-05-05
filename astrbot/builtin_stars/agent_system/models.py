@@ -63,6 +63,11 @@ class FlowNodeType(Enum):
     OR = "or"
     CREW = "crew"
     HUMAN = "human"
+    AGENT_TASK = "agent_task"
+    SUB_FLOW = "sub_flow"
+    HITL = "hitl"
+    REVIEW = "review"
+    DELIVERABLE = "deliverable"
 
 
 class TaskStatus(Enum):

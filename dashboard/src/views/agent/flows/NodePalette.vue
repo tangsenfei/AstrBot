@@ -174,6 +174,32 @@
             </div>
           </v-expansion-panel-text>
         </v-expansion-panel>
+
+        <v-expansion-panel value="work">
+          <v-expansion-panel-title>
+            <v-icon icon="mdi-briefcase-outline" color="primary" class="mr-2" />
+            Work
+          </v-expansion-panel-title>
+          <v-expansion-panel-text>
+            <div
+              v-for="node in filteredWorkNodes"
+              :key="node.type"
+              class="node-item mb-2"
+              draggable="true"
+              @dragstart="handleDragStart($event, node)"
+              @dragend="handleDragEnd"
+            >
+              <div class="node-card" :style="{ borderLeftColor: node.colorHex }">
+                <v-icon :icon="node.icon" :color="node.color" class="mr-2" size="20" />
+                <div class="flex-grow-1">
+                  <div class="text-subtitle-2 font-weight-medium">{{ node.label }}</div>
+                  <div class="text-caption text-grey">{{ node.description }}</div>
+                </div>
+                <v-icon icon="mdi-drag" size="16" color="grey-lighten-1" />
+              </div>
+            </div>
+          </v-expansion-panel-text>
+        </v-expansion-panel>
       </v-expansion-panels>
     </v-card-text>
 
@@ -196,7 +222,7 @@ const emit = defineEmits<{
 const { t } = useI18n();
 
 const searchQuery = ref('');
-const expandedPanels = ref(['start', 'listen', 'router', 'parallel', 'crew', 'human']);
+const expandedPanels = ref(['start', 'listen', 'router', 'parallel', 'crew', 'human', 'work']);
 
 const startNodes = computed(() => [
   { type: 'start', label: t('agent.flows.palette.nodes.start.label'), description: t('agent.flows.palette.nodes.start.description'), icon: 'mdi-play-circle', color: 'success', colorHex: '#4caf50' },
@@ -223,6 +249,14 @@ const humanNodes = computed(() => [
   { type: 'human', label: t('agent.flows.palette.nodes.human.label'), description: t('agent.flows.palette.nodes.human.description'), icon: 'mdi-account', color: 'error', colorHex: '#ef4444' },
 ]);
 
+const workNodes = computed(() => [
+  { type: 'agent_task', label: 'Agent 任务', description: '配置单 Agent、团队或任务助手分配执行', icon: 'mdi-account-cog-outline', color: 'primary', colorHex: '#2196f3' },
+  { type: 'sub_flow', label: '子流程', description: '引用其他流程作为子流程执行', icon: 'mdi-subdirectory-arrow-right', color: 'indigo', colorHex: '#4f46e5' },
+  { type: 'hitl', label: 'HITL 交互', description: '选择人工确认/补充/审批模板', icon: 'mdi-account-question-outline', color: 'warning', colorHex: '#f59e0b' },
+  { type: 'review', label: '审查', description: '配置审查 Agent 和返工策略', icon: 'mdi-clipboard-check-outline', color: 'teal', colorHex: '#14b8a6' },
+  { type: 'deliverable', label: '交付物', description: '整理最终交付文件或交付记录', icon: 'mdi-package-variant-closed', color: 'success', colorHex: '#22c55e' },
+]);
+
 function filterNodes(nodes: any[]) {
   if (!searchQuery.value) return nodes;
   const query = searchQuery.value.toLowerCase();
@@ -237,6 +271,7 @@ const filteredRouterNodes = computed(() => filterNodes(routerNodes.value));
 const filteredParallelNodes = computed(() => filterNodes(parallelNodes.value));
 const filteredCrewNodes = computed(() => filterNodes(crewNodes.value));
 const filteredHumanNodes = computed(() => filterNodes(humanNodes.value));
+const filteredWorkNodes = computed(() => filterNodes(workNodes.value));
 
 function handleDragStart(event: DragEvent, node: any) {
   if (event.dataTransfer) {

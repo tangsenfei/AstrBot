@@ -231,16 +231,21 @@ class TaskCenter:
                     )
                 except Exception as e_hitl:
                     _debug_log(f"hitl upsert failed: {e_hitl}")
-                db.update(
-                    "agent_tasks",
-                    {
-                        "interaction_id": data.get("interaction_id", ""),
-                        "status": "waiting_feedback",
-                        "updated_at": now,
-                    },
-                    where="id = ?",
-                    where_params=(task_id,),
-                )
+                current_status = row.get("status", "")
+                if current_status not in ("cancelled", "completed", "failed"):
+                    db.update(
+                        "agent_tasks",
+                        {
+                            "interaction_id": data.get("interaction_id", ""),
+                            "status": "waiting_feedback",
+                            "updated_at": now,
+                        },
+                        where="id = ?",
+                        where_params=(task_id,),
+                    )
+
+            if event_type == "phase" and isinstance(data, dict) and isinstance(data.get("steps"), list):
+                self._persist_work_steps(db, task_id, data["steps"], now)
 
             if event_type == "artifact" and isinstance(data, dict):
                 artifact_id = f"art_{uuid.uuid4().hex[:12]}"
@@ -267,6 +272,57 @@ class TaskCenter:
                 )
         except Exception as e3:
             _debug_log(f"_persist_stream_event outer EXCEPTION: {e3}\n{traceback.format_exc()}")
+
+    @staticmethod
+    def _persist_work_steps(db, task_id: str, steps: list[dict[str, Any]], now: str) -> None:
+        for index, step in enumerate(steps):
+            if not isinstance(step, dict):
+                continue
+            raw_step_id = str(step.get("id") or f"step_{index + 1}")
+            step_id = raw_step_id if raw_step_id.startswith(f"{task_id}:") else f"{task_id}:{raw_step_id}"
+            dependencies = step.get("dependencies")
+            if dependencies is None:
+                dependencies = step.get("depends_on") or []
+            if not isinstance(dependencies, list):
+                dependencies = [dependencies] if dependencies else []
+            row = {
+                "id": step_id,
+                "task_id": task_id,
+                "parent_id": (
+                    f"{task_id}:{step.get('parent_id') or step.get('parent')}"
+                    if (step.get("parent_id") or step.get("parent")) and not str(step.get("parent_id") or step.get("parent")).startswith(f"{task_id}:")
+                    else (step.get("parent_id") or step.get("parent") or None)
+                ),
+                "title": step.get("title") or step.get("name") or step.get("description") or f"步骤 {index + 1}",
+                "description": step.get("description") or step.get("title") or "",
+                "status": step.get("status", "pending"),
+                "dependencies": [
+                    str(dep) if str(dep).startswith(f"{task_id}:") else f"{task_id}:{dep}"
+                    for dep in dependencies
+                    if dep
+                ],
+                "executor": step.get("executor") or step.get("agent") or "",
+                "executor_type": step.get("executor_type") or "",
+                "executor_id": step.get("executor_id") or "",
+                "reviewer_id": step.get("reviewer_id") or "",
+                "result": step.get("result", ""),
+                "result_ref": step.get("result_ref", ""),
+                "depth": min(2, int(step.get("depth") or (2 if step.get("parent_id") else 1))),
+                "sort_order": int(step.get("sort_order") or index),
+                "updated_at": now,
+            }
+            existing = db.select_one("work_task_steps", where="id = ? AND task_id = ?", where_params=(step_id, task_id))
+            if existing:
+                updates = {k: v for k, v in row.items() if k not in {"id", "task_id"}}
+                if row["status"] in {"running"} and not existing.get("started_at"):
+                    updates["started_at"] = now
+                if row["status"] in {"done", "completed", "failed", "cancelled"} and not existing.get("completed_at"):
+                    updates["completed_at"] = now
+                db.update("work_task_steps", updates, where="id = ? AND task_id = ?", where_params=(step_id, task_id))
+            else:
+                row["started_at"] = now if row["status"] == "running" else None
+                row["completed_at"] = now if row["status"] in {"done", "completed", "failed", "cancelled"} else None
+                db.insert("work_task_steps", row)
 
     @staticmethod
     def _event_message(event_type: str, data: dict[str, Any]) -> str:

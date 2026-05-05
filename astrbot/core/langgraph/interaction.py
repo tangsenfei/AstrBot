@@ -13,6 +13,10 @@ class CardField:
     required: bool = False
     default: str | None = None
     options: list[str] | None = None
+    description: str | None = None
+    recommended: str | None = None
+    allow_custom: bool = False
+    custom_placeholder: str | None = None
 
 
 @dataclass
@@ -45,7 +49,7 @@ class InteractionCard:
         def _field_dict(f):
             if isinstance(f, dict):
                 return f
-            return {
+            d = {
                 "key": f.key,
                 "label": f.label,
                 "field_type": f.field_type,
@@ -53,6 +57,15 @@ class InteractionCard:
                 "default": f.default,
                 "options": f.options,
             }
+            if f.description is not None:
+                d["description"] = f.description
+            if f.recommended is not None:
+                d["recommended"] = f.recommended
+            if f.allow_custom:
+                d["allow_custom"] = f.allow_custom
+            if f.custom_placeholder is not None:
+                d["custom_placeholder"] = f.custom_placeholder
+            return d
 
         def _action_dict(a):
             if isinstance(a, dict):

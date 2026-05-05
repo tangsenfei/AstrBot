@@ -29,28 +29,42 @@
             <label class="text-caption d-block mb-1">
               {{ field.label }}{{ field.required ? ' *' : '' }}
             </label>
+            <div v-if="field.description" class="text-caption text-medium-emphasis mb-1" style="line-height: 1.4;">
+              {{ field.description }}
+            </div>
             <v-textarea
               v-if="field.field_type === 'textarea'"
               v-model="fieldValues[field.key]"
-              :placeholder="fieldPlaceholder(field)"
+              :placeholder="field.custom_placeholder || fieldPlaceholder(field)"
               rows="3"
               density="compact"
               variant="outlined"
               hide-details
               auto-grow
             />
-            <v-select
-              v-else-if="field.field_type === 'select'"
-              v-model="fieldValues[field.key]"
-              :items="field.options || []"
-              density="compact"
-              variant="outlined"
-              hide-details
-            />
+            <div v-else-if="field.field_type === 'select'" class="d-flex align-center ga-2">
+              <v-select
+                v-model="fieldValues[field.key]"
+                :items="fieldOptions(field)"
+                density="compact"
+                variant="outlined"
+                hide-details
+                class="flex-grow-1"
+              />
+              <v-text-field
+                v-if="field.allow_custom && fieldValues[field.key] === '__custom__'"
+                v-model="customFieldValues[field.key]"
+                :placeholder="field.custom_placeholder || '请输入自定义内容'"
+                density="compact"
+                variant="outlined"
+                hide-details
+                class="flex-grow-1"
+              />
+            </div>
             <v-select
               v-else-if="field.field_type === 'multiselect'"
               v-model="fieldValues[field.key]"
-              :items="field.options || []"
+              :items="fieldOptions(field)"
               density="compact"
               variant="outlined"
               hide-details
@@ -59,11 +73,14 @@
             <v-text-field
               v-else
               v-model="fieldValues[field.key]"
-              :placeholder="fieldPlaceholder(field)"
+              :placeholder="field.custom_placeholder || fieldPlaceholder(field)"
               density="compact"
               variant="outlined"
               hide-details
             />
+            <div v-if="field.recommended && !fieldValues[field.key]" class="text-caption text-primary mt-1" style="cursor: pointer;" @click="fieldValues[field.key] = field.recommended">
+              💡 推荐：{{ field.recommended }}
+            </div>
           </div>
         </div>
 
@@ -86,7 +103,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 
 const props = defineProps<{
   card: {
@@ -94,7 +111,18 @@ const props = defineProps<{
     type: string;
     title: string;
     body: string;
-    fields: Array<{ key: string; label: string; field_type: string; required: boolean; default?: string; options?: string[] }>;
+    fields: Array<{
+      key: string;
+      label: string;
+      field_type: string;
+      required: boolean;
+      default?: string;
+      options?: string[];
+      description?: string;
+      recommended?: string;
+      allow_custom?: boolean;
+      custom_placeholder?: string;
+    }>;
     actions: Array<{ key: string; label: string; style: string }>;
     timeout_seconds?: number;
   };
@@ -108,6 +136,7 @@ const emit = defineEmits<{
 
 const loadingAction = ref<string | null>(null);
 const fieldValues = ref<Record<string, any>>({});
+const customFieldValues = ref<Record<string, any>>({});
 const revealFields = ref(false);
 const resolvedStatus = computed(() => props.resolved?.status || null);
 const visibleFields = computed(() => {
@@ -116,6 +145,22 @@ const visibleFields = computed(() => {
   if (revealFields.value) return fields;
   return fields.filter((field) => field.required);
 });
+
+watch(() => props.card?.interaction_id, () => {
+  const next: Record<string, any> = {};
+  const customNext: Record<string, any> = {};
+  for (const field of props.card?.fields || []) {
+    if (field.field_type === 'multiselect') {
+      next[field.key] = Array.isArray(field.default) ? field.default : (field.default ? [field.default] : []);
+    } else {
+      next[field.key] = field.default ?? field.recommended ?? '';
+    }
+    customNext[field.key] = '';
+  }
+  fieldValues.value = next;
+  customFieldValues.value = customNext;
+  revealFields.value = false;
+}, { immediate: true });
 
 const typeIcon = computed(() => {
   const map: Record<string, string> = {
@@ -168,6 +213,7 @@ async function handleAction(action: { key: string; label: string }) {
   const shouldRevealFields = fields.length > 0 && (
     action.key === 'modify' ||
     action.key === 'retry' ||
+    action.key === 'clarify_more' ||
     fields.some((field) => field.required && !fieldValues.value[field.key])
   );
   if (shouldRevealFields && !revealFields.value) {
@@ -181,19 +227,29 @@ async function handleAction(action: { key: string; label: string }) {
   }
   loadingAction.value = action.key;
   try {
+    const submitValues: Record<string, any> = {};
+    for (const [key, val] of Object.entries(fieldValues.value)) {
+      if (val === '__custom__' && customFieldValues.value[key]) {
+        submitValues[key] = customFieldValues.value[key];
+      } else if (val === '自定义' && customFieldValues.value[key]) {
+        submitValues[key] = customFieldValues.value[key];
+      } else {
+        submitValues[key] = val;
+      }
+    }
     const response = await fetch(`/api/plug/hitl/${encodeURIComponent(props.card.interaction_id)}/respond`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action_key: action.key,
-        field_values: fieldValues.value,
+        field_values: submitValues,
       }),
     });
     if (response.ok) {
       emit('respond', {
         interaction_id: props.card.interaction_id,
         action_key: action.key,
-        field_values: fieldValues.value,
+        field_values: submitValues,
       });
     }
   } catch (e) {
@@ -201,6 +257,14 @@ async function handleAction(action: { key: string; label: string }) {
   } finally {
     loadingAction.value = null;
   }
+}
+
+function fieldOptions(field: { options?: string[]; allow_custom?: boolean }) {
+  const opts = [...(field.options || [])];
+  if (field.allow_custom && !opts.includes('自定义')) {
+    opts.push('自定义');
+  }
+  return opts;
 }
 
 function fieldPlaceholder(field: { label: string; field_type: string }) {

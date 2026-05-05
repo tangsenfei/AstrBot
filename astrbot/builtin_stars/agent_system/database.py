@@ -414,7 +414,11 @@ class Database:
                 status TEXT DEFAULT 'pending',
                 dependencies TEXT DEFAULT '[]',
                 executor TEXT DEFAULT '',
+                executor_type TEXT DEFAULT '',
+                executor_id TEXT DEFAULT '',
+                reviewer_id TEXT DEFAULT '',
                 result TEXT DEFAULT '',
+                result_ref TEXT DEFAULT '',
                 depth INTEGER DEFAULT 1,
                 sort_order INTEGER DEFAULT 0,
                 started_at TEXT DEFAULT NULL,
@@ -422,6 +426,23 @@ class Database:
                 updated_at TEXT NOT NULL,
                 FOREIGN KEY (task_id) REFERENCES agent_tasks(id) ON DELETE CASCADE,
                 FOREIGN KEY (parent_id) REFERENCES work_task_steps(id) ON DELETE CASCADE
+            )
+        """)
+
+        # 通用 HITL 模板表，用于流程节点和 Work/Chat 统一人工交互
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS hitl_templates (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                template_type TEXT DEFAULT 'clarification',
+                title TEXT NOT NULL,
+                body TEXT DEFAULT '',
+                fields TEXT DEFAULT '[]',
+                actions TEXT DEFAULT '[]',
+                metadata TEXT DEFAULT '{}',
+                is_builtin INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             )
         """)
 
@@ -629,6 +650,10 @@ class Database:
             ("agent_memories", "scope", "TEXT DEFAULT 'default'"),
             ("agent_memories", "importance", "REAL DEFAULT 0.5"),
             ("agent_memories", "created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            ("work_task_steps", "executor_type", "TEXT DEFAULT ''"),
+            ("work_task_steps", "executor_id", "TEXT DEFAULT ''"),
+            ("work_task_steps", "reviewer_id", "TEXT DEFAULT ''"),
+            ("work_task_steps", "result_ref", "TEXT DEFAULT ''"),
         ]
 
         for table, column, col_type in migrations:
@@ -691,6 +716,7 @@ class Database:
             "CREATE INDEX IF NOT EXISTS idx_work_artifacts_task ON work_artifacts(task_id)",
             "CREATE INDEX IF NOT EXISTS idx_hitl_requests_task ON hitl_requests(task_id)",
             "CREATE INDEX IF NOT EXISTS idx_hitl_requests_status ON hitl_requests(status)",
+            "CREATE INDEX IF NOT EXISTS idx_hitl_templates_type ON hitl_templates(template_type)",
             "CREATE INDEX IF NOT EXISTS idx_work_task_steps_task ON work_task_steps(task_id)",
             "CREATE INDEX IF NOT EXISTS idx_work_task_steps_parent ON work_task_steps(parent_id)",
             "CREATE INDEX IF NOT EXISTS idx_cli_agent_clients_kind ON cli_agent_clients(agent_kind)",

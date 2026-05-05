@@ -4,7 +4,9 @@ from pathlib import Path
 import pytest
 
 from astrbot.builtin_stars.agent_system.database import Database
+from astrbot.builtin_stars.agent_system.services.agent_service import AgentService
 from astrbot.builtin_stars.agent_system.services.flow_service import BUILTIN_DAILY_WORK_FLOW_ID, FlowService
+from astrbot.builtin_stars.agent_system.services.hitl_template_service import HITLTemplateService
 from astrbot.builtin_stars.agent_system.services.hitl_service import HITLService
 from astrbot.builtin_stars.agent_system.services.work_service import WorkService
 from astrbot.core.langgraph.graphs.work_task import plan_node
@@ -98,10 +100,14 @@ async def test_create_work_task_persists_scope_configs_and_input(work_db: Databa
     assert row["work_scope"] == "daily"
     assert row["work_daily_dir_id"] == daily["id"]
     assert row["work_task_kind"] == "single_agent"
-    assert json.loads(row["executor_config"]) == {"agent_id": "assistant", "crew_id": "", "flow_id": ""}
+    executor_config = json.loads(row["executor_config"])
+    assert executor_config["agent_id"] == "assistant"
+    assert executor_config["crew_id"] == ""
+    assert executor_config["flow_id"] == BUILTIN_DAILY_WORK_FLOW_ID
+    assert executor_config["default_agents"]["executor"] == "agent_nicebot_work_executor"
     assert row["crew_id"] is None
-    assert row["flow_id"] is None
-    assert json.loads(row["plan_config"]) == {"enabled": False}
+    assert row["flow_id"] == BUILTIN_DAILY_WORK_FLOW_ID
+    assert json.loads(row["plan_config"]) == {"enabled": False, "effort": "medium"}
     assert json.loads(row["review_config"]) == {"enabled": True, "max_rework": 2}
     assert json.loads(row["input"])["work_context"]["rules"] == "保留执行记录。"
 
@@ -190,14 +196,59 @@ def test_hitl_service_persists_and_resolves_task_status(work_db: Database):
     assert service.list_pending("task_hitl") == []
 
 
-def test_builtin_daily_work_flow_is_seeded_and_locked(work_db: Database):
+def test_builtin_daily_work_flow_is_seeded_editable_and_resettable(work_db: Database):
     service = FlowService(work_db)
     flows = [flow.to_dict() for flow in service.get_flows()]
     builtin = next(flow for flow in flows if flow["id"] == BUILTIN_DAILY_WORK_FLOW_ID)
     assert builtin["metadata"]["is_builtin"] is True
+    assert any(node["type"] == "hitl" and node["id"] == "daily_clarify" for node in builtin["nodes"])
+
+    updated = service.update_flow(
+        BUILTIN_DAILY_WORK_FLOW_ID,
+        {
+            "description": "用户编辑后的说明",
+            "enabled": False,
+            "nodes": [
+                *builtin["nodes"],
+                {
+                    "id": "custom_check",
+                    "name": "自定义检查",
+                    "type": "review",
+                    "config": {"reviewer_id": "agent_nicebot_work_reviewer"},
+                    "position": {"x": 1800, "y": 180},
+                },
+            ],
+            "edges": builtin["edges"],
+        },
+    )
+    assert updated.description == "用户编辑后的说明"
+    assert updated.enabled is True
+    assert any(node.id == "custom_check" for node in updated.nodes)
+
+    reset = service.reset_builtin_daily_work_flow()
+    assert reset.description != "用户编辑后的说明"
+    assert not any(node.id == "custom_check" for node in reset.nodes)
 
     with pytest.raises(ValueError):
         service.delete_flow(BUILTIN_DAILY_WORK_FLOW_ID)
+
+
+def test_work_builtin_agents_and_hitl_templates_are_resettable(work_db: Database):
+    agent_service = AgentService(work_db)
+    agents = agent_service.ensure_work_builtin_agents()
+    assert "agent_nicebot_work_executor" in agents
+    assert "agent_nicebot_work_reviewer" in agents
+
+    agent_service.update_agent("agent_nicebot_work_executor", {"name": "用户改名"}, skip_skill_validation=True)
+    assert agent_service.get_agent("agent_nicebot_work_executor").name == "用户改名"
+    reset_agent = agent_service.reset_builtin_agent("agent_nicebot_work_executor")
+    assert reset_agent.name == "通用任务执行智能体"
+
+    template_service = HITLTemplateService(work_db)
+    templates = template_service.list_templates()
+    requirement = next(t for t in templates if t["id"] == "builtin_work_requirement_clarification")
+    assert len(requirement["fields"]) >= 4
+    assert requirement["fields"][0]["default"].startswith("推荐")
 
 
 @pytest.mark.asyncio

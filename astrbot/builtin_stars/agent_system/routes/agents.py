@@ -144,6 +144,13 @@ def register_agent_routes(plugin: "AgentSystemPlugin") -> None:
     )
 
     plugin.context.register_web_api(
+        "/agent/agents/<agent_id>/reset-builtin",
+        _reset_builtin_agent_by_id,
+        ["POST"],
+        "重置指定内置智能体到初始状态"
+    )
+
+    plugin.context.register_web_api(
         "/agent/experts/categories",
         _get_expert_categories,
         ["GET"],
@@ -204,6 +211,7 @@ async def _list_agents():
     """
     try:
         service = _get_agent_service()
+        service.ensure_work_builtin_agents()
 
         category = request.args.get("category")
         agents = service.get_agents(category)
@@ -223,6 +231,7 @@ async def _get_agent(agent_id: str):
     """
     try:
         service = _get_agent_service()
+        service.ensure_work_builtin_agents()
 
         agent = service.get_agent(agent_id)
         if not agent:
@@ -276,6 +285,9 @@ async def _create_agent():
         return Response().ok(agent.to_dict(), "智能体创建成功").__dict__
 
     except ValueError as e:
+        return Response().error(str(e)).__dict__
+    except Exception as e:
+        logger.error(f"Failed to reset builtin agent: {e}")
         return Response().error(str(e)).__dict__
     except Exception as e:
         logger.error(f"Failed to create agent: {e}")
@@ -589,8 +601,19 @@ async def _reset_builtin_agent():
 
     except ValueError as e:
         return Response().error(str(e)).__dict__
+
+
+async def _reset_builtin_agent_by_id(agent_id: str):
+    """重置指定内置智能体。"""
+    try:
+        service = _get_agent_service()
+        service.ensure_work_builtin_agents()
+        agent = service.reset_builtin_agent(agent_id)
+        if not agent:
+            return Response().error(f"内置智能体 '{agent_id}' 不存在或不可重置").__dict__
+        return Response().ok(agent.to_dict(), "内置智能体已初始化").__dict__
     except Exception as e:
-        logger.error(f"Failed to reset builtin agent: {e}")
+        logger.error(f"Failed to reset builtin agent {agent_id}: {e}")
         return Response().error(str(e)).__dict__
 
 

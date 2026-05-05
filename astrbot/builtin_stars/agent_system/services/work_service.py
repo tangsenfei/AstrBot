@@ -227,9 +227,9 @@ class WorkService:
         name = str(data.get("name") or "").strip()
         if not name:
             raise ValueError("任务名称不能为空")
-        kind = data.get("work_task_kind") or data.get("task_kind") or "single_agent"
+        kind = data.get("work_task_kind") or data.get("task_kind") or "workflow"
         if kind not in ("single_agent", "multi_agent", "workflow"):
-            raise ValueError("work_task_kind 必须是 single_agent/multi_agent/workflow")
+            kind = "workflow"
 
         scope = data.get("work_scope") or ("project" if data.get("work_project_id") else "daily")
         project = self._get_project_row(data.get("work_project_id")) if scope == "project" else None
@@ -241,24 +241,43 @@ class WorkService:
 
         executor_config = dict(data.get("executor_config") or {})
         builtin_flow_id = ""
+        flow_id = executor_config.get("flow_id") or data.get("flow_id")
+        default_agents: dict[str, str] = {}
         if scope == "daily":
             try:
                 from .flow_service import BUILTIN_DAILY_WORK_FLOW_ID, FlowService
+                from .agent_service import AgentService
+                from .hitl_template_service import HITLTemplateService
 
+                agent_service = AgentService(self.db, self.context)
+                agent_service.ensure_work_builtin_agents()
+                default_agents = agent_service.get_work_builtin_agent_ids()
+                HITLTemplateService(self.db).ensure_builtin_templates()
                 FlowService(self.db, self.context).ensure_builtin_daily_work_flow()
                 builtin_flow_id = BUILTIN_DAILY_WORK_FLOW_ID
+                flow_id = flow_id or BUILTIN_DAILY_WORK_FLOW_ID
             except Exception:
                 pass
-        plan_config = {"enabled": False, **dict(data.get("plan_config") or {})}
-        review_config = {"enabled": False, "max_rework": 1, **dict(data.get("review_config") or {})}
+        plan_config = {"enabled": scope == "daily", "effort": "medium", **dict(data.get("plan_config") or {})}
+        review_config = {"enabled": False, "max_rework": 3, **dict(data.get("review_config") or {})}
         input_data = dict(data.get("input") or {})
         input_data.setdefault("goal", data.get("goal") or data.get("description") or name)
         input_data["work_context"] = context_pack
+        executor_config["flow_id"] = flow_id or executor_config.get("flow_id") or ""
+        executor_config.setdefault("default_agents", default_agents)
+        clarification_config = {"enabled": scope == "daily", **dict(data.get("clarification_config") or {})}
 
-        graph_type = "workflow" if kind == "workflow" else "work_task"
+        graph_type = "work_task"
         task_id = data.get("id") or f"task_{uuid.uuid4().hex[:12]}"
         session_id = data.get("session_id", "work")
         thread_id = data.get("thread_id") or f"{session_id}:{task_id}"
+        flow_definition = self._get_flow_definition(flow_id) if flow_id else {}
+
+        if not clarification_config.get("content_provider_type") and flow_definition:
+            clarification_config.update(self._extract_hitl_node_config(flow_definition, "clarification"))
+
+        if not clarification_config.get("template_id"):
+            clarification_config["template_id"] = "builtin_work_requirement_clarification"
         graph_config = {
             "task_id": task_id,
             "thread_id": thread_id,
@@ -268,20 +287,15 @@ class WorkService:
             "work_task_kind": kind,
             "executor_config": executor_config,
             "builtin_flow_id": builtin_flow_id,
+            "flow_id": flow_id,
+            "flow_definition": flow_definition,
             "plan_config": plan_config,
             "review_config": review_config,
+            "clarification_config": clarification_config,
             "input": input_data,
             "provider_id": data.get("provider_id") or executor_config.get("provider_id"),
             "session_id": session_id,
         }
-        if kind == "workflow":
-            flow_id = executor_config.get("flow_id") or data.get("flow_id")
-            if not flow_id:
-                raise ValueError("workflow 任务需要 flow_id")
-            flow_definition = self._get_flow_definition(flow_id)
-            graph_config["flow_definition"] = flow_definition
-            graph_config["current_node_id"] = ""
-            graph_config["node_results"] = {}
 
         task = self.task_service.create_task(
             task_id=task_id,
@@ -289,7 +303,7 @@ class WorkService:
             description=data.get("description", ""),
             task_type=graph_type,
             crew_id=self._clean_fk(executor_config.get("crew_id")) if kind == "multi_agent" else None,
-            flow_id=self._clean_fk(executor_config.get("flow_id") or data.get("flow_id")) if kind == "workflow" else None,
+            flow_id=self._clean_fk(flow_id),
             input_data=input_data,
             category="work",
             thread_id=thread_id,
@@ -332,7 +346,10 @@ class WorkService:
         data["logs"] = self.get_task_logs(task_id, logs_limit=logs_limit)
         data["subtasks"] = [s.to_dict() for s in self.task_service.get_subtasks(task_id)]
         data["artifacts"] = self.list_artifacts(task_id)
-        data["steps_tree"] = self._build_steps_tree(data.get("steps", []))
+        persisted_steps = self._get_persisted_steps(task_id)
+        data["steps"] = persisted_steps or data.get("steps", [])
+        data["steps_tree"] = self._build_steps_tree(data["steps"])
+        data["dependency_edges"] = self._dependency_edges(data["steps"])
         self._repair_completed_status(data)
         return self._enrich_task_dict(data)
 
@@ -579,6 +596,49 @@ class WorkService:
             step["children"] = sorted(children, key=lambda item: item.get("sort_order", 0))[:20]
         return sorted(by_parent.get(None, []), key=lambda item: item.get("sort_order", 0))
 
+    def _get_persisted_steps(self, task_id: str) -> list[dict[str, Any]]:
+        rows = self.db.select_all(
+            "work_task_steps",
+            where="task_id = ?",
+            where_params=(task_id,),
+            order_by="depth ASC, sort_order ASC",
+        )
+        steps = []
+        for index, row in enumerate(rows):
+            step = {
+                "id": row.get("id"),
+                "parent_id": row.get("parent_id"),
+                "title": row.get("title", ""),
+                "description": row.get("description", ""),
+                "status": row.get("status", "pending"),
+                "dependencies": self._parse_json(row.get("dependencies", "[]"), []),
+                "executor": row.get("executor", ""),
+                "executor_type": row.get("executor_type", ""),
+                "executor_id": row.get("executor_id", ""),
+                "reviewer_id": row.get("reviewer_id", ""),
+                "result": row.get("result", ""),
+                "result_ref": row.get("result_ref", ""),
+                "depth": row.get("depth", 1),
+                "sort_order": row.get("sort_order", index),
+                "started_at": row.get("started_at"),
+                "completed_at": row.get("completed_at"),
+                "updated_at": row.get("updated_at"),
+            }
+            steps.append(self._normalize_step(step, index))
+        return steps
+
+    def _dependency_edges(self, raw_steps: Any) -> list[dict[str, str]]:
+        steps = raw_steps if isinstance(raw_steps, list) else []
+        edges = []
+        for step in steps:
+            if not isinstance(step, dict):
+                continue
+            target = str(step.get("id") or "")
+            for source in step.get("dependencies") or step.get("depends_on") or []:
+                if source and target:
+                    edges.append({"source": str(source), "target": target})
+        return edges
+
     @staticmethod
     def _normalize_step(step: Any, index: int) -> dict[str, Any]:
         source = step if isinstance(step, dict) else {"description": str(step)}
@@ -597,7 +657,11 @@ class WorkService:
             "status": source.get("status", "pending"),
             "dependencies": [str(dep) for dep in dependencies if dep],
             "executor": source.get("executor") or source.get("agent") or "",
+            "executor_type": source.get("executor_type", ""),
+            "executor_id": source.get("executor_id", ""),
+            "reviewer_id": source.get("reviewer_id", ""),
             "result": source.get("result", ""),
+            "result_ref": source.get("result_ref", ""),
             "depth": min(2, int(source.get("depth") or (2 if source.get("parent_id") else 1))),
             "sort_order": int(source.get("sort_order") or index),
             "stats": source.get("stats", {}),
@@ -650,6 +714,17 @@ class WorkService:
         value = str(value or "").strip()
         return value or None
 
+    @staticmethod
+    def _parse_json(value: Any, fallback: Any) -> Any:
+        if value in (None, ""):
+            return fallback
+        if isinstance(value, (dict, list)):
+            return value
+        try:
+            return json.loads(value)
+        except (TypeError, json.JSONDecodeError):
+            return fallback
+
     def _get_project_row(self, project_id: str | None) -> dict[str, Any] | None:
         if not project_id:
             return None
@@ -693,6 +768,18 @@ class WorkService:
         if not flow:
             raise ValueError(f"流程 '{flow_id}' 不存在")
         return service._flow_to_definition(flow)
+
+    def _extract_hitl_node_config(self, flow_definition: dict[str, Any], builtin_stage: str) -> dict[str, Any]:
+        nodes = flow_definition.get("nodes", [])
+        for node in nodes:
+            config = node.get("config", {}) or {}
+            if config.get("builtin_stage") == builtin_stage and node.get("type") == "hitl":
+                result = {}
+                for key in ("content_provider_type", "content_provider_agent_id", "template_id", "repeat_until_clear", "content_payload"):
+                    if key in config:
+                        result[key] = config[key]
+                return result
+        return {}
 
     def _append_log(
         self,

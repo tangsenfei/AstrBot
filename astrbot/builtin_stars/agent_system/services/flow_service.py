@@ -178,8 +178,7 @@ class FlowService:
         row = self.db.select_one("flows", where="id = ?", where_params=(flow_id,))
         if not row:
             return None
-        if self._is_builtin_row(row):
-            raise ValueError("内置 Flow 不允许直接编辑，请复制为自定义流程后修改")
+        is_builtin = self._is_builtin_row(row)
 
         # 准备更新数据
         update_data = {
@@ -192,6 +191,21 @@ class FlowService:
         for field in updatable_fields:
             if field in data:
                 update_data[field] = data[field]
+        if is_builtin:
+            update_data["enabled"] = 1
+            current_metadata = self._parse_json(row.get("metadata", "{}"))
+            next_metadata = data.get("metadata") if "metadata" in data else current_metadata
+            if not isinstance(next_metadata, dict):
+                next_metadata = {}
+            update_data["metadata"] = {
+                **current_metadata,
+                **next_metadata,
+                "is_builtin": True,
+                "locked": True,
+                "non_deletable": True,
+                "resettable": True,
+                "editable": True,
+            }
 
         # 更新节点
         if "nodes" in data:
@@ -284,38 +298,153 @@ class FlowService:
     def ensure_builtin_daily_work_flow(self) -> None:
         existing = self.db.select_one("flows", where="id = ?", where_params=(BUILTIN_DAILY_WORK_FLOW_ID,))
         if existing:
+            metadata = self._parse_json(existing.get("metadata", "{}"))
+            if not isinstance(metadata, dict):
+                metadata = {}
+            upgraded = {
+                **metadata,
+                "is_builtin": True,
+                "locked": True,
+                "non_deletable": True,
+                "resettable": True,
+                "editable": True,
+                "kind": "work_daily_task",
+            }
+            if upgraded != metadata or not existing.get("enabled"):
+                self.db.update(
+                    "flows",
+                    {"enabled": 1, "metadata": upgraded, "updated_at": datetime.now().isoformat()},
+                    where="id = ?",
+                    where_params=(BUILTIN_DAILY_WORK_FLOW_ID,),
+                )
+            node_count = self.db.execute(
+                "SELECT COUNT(*) AS count FROM flow_nodes WHERE flow_id = ?",
+                (BUILTIN_DAILY_WORK_FLOW_ID,),
+            ).fetchone()["count"]
+            if node_count == 0:
+                self.reset_builtin_daily_work_flow()
             return
+        self.reset_builtin_daily_work_flow(create_if_missing=True)
+
+    def reset_builtin_daily_work_flow(self, create_if_missing: bool = False) -> Flow:
+        existing = self.db.select_one("flows", where="id = ?", where_params=(BUILTIN_DAILY_WORK_FLOW_ID,))
         now = datetime.now()
         flow_data = {
             "id": BUILTIN_DAILY_WORK_FLOW_ID,
             "name": "NiceBot 日常任务执行流程",
-            "description": "Work 日常任务内置流程：准备上下文、可选规划与 HITL、按依赖执行任务、可选审查、生成交付物。",
+            "description": "Work 日常任务内置流程：需求明确、任务规划、计划审批、依赖执行、可选审查、验收与交付。",
             "enabled": 1,
             "metadata": {
                 "is_builtin": True,
                 "locked": True,
                 "non_deletable": True,
+                "resettable": True,
+                "editable": True,
                 "kind": "work_daily_task",
+                "schema_version": 2,
             },
             "created_at": now.isoformat(),
             "updated_at": now.isoformat(),
         }
         nodes = [
-            {"id": "daily_start", "name": "开始", "type": "start", "position": {"x": 80, "y": 160}, "config": {}},
-            {"id": "daily_prepare", "name": "准备任务上下文", "type": "human", "position": {"x": 320, "y": 160}, "config": {"builtin_stage": "prepare"}},
-            {"id": "daily_plan", "name": "规划与人工审批", "type": "human", "position": {"x": 560, "y": 160}, "config": {"builtin_stage": "plan_hitl", "optional": True}},
-            {"id": "daily_execute", "name": "按依赖执行任务", "type": "human", "position": {"x": 800, "y": 160}, "config": {"builtin_stage": "execute_dag"}},
-            {"id": "daily_review", "name": "审查与返工确认", "type": "human", "position": {"x": 1040, "y": 160}, "config": {"builtin_stage": "review_hitl", "optional": True}},
-            {"id": "daily_deliver", "name": "生成最终交付物", "type": "human", "position": {"x": 1280, "y": 160}, "config": {"builtin_stage": "deliverable"}},
+            {"id": "daily_start", "name": "开始", "type": "start", "position": {"x": 80, "y": 180}, "config": {}},
+            {
+                "id": "daily_clarify",
+                "name": "需求明确",
+                "type": "hitl",
+                "position": {"x": 320, "y": 180},
+                "config": {
+                    "builtin_stage": "clarification",
+                    "agent_id": "agent_nicebot_work_assistant",
+                    "template_id": "builtin_work_requirement_clarification",
+                    "repeat_until_clear": True,
+                    "content_provider_type": "agent",
+                    "content_provider_agent_id": "agent_nicebot_work_assistant",
+                },
+            },
+            {
+                "id": "daily_plan",
+                "name": "任务规划",
+                "type": "agent_task",
+                "position": {"x": 560, "y": 180},
+                "config": {
+                    "builtin_stage": "plan",
+                    "agent_id": "agent_nicebot_work_assistant",
+                    "max_depth": 2,
+                    "output": "task_tree_with_dependencies",
+                },
+            },
+            {
+                "id": "daily_plan_approval",
+                "name": "计划审批",
+                "type": "hitl",
+                "position": {"x": 800, "y": 180},
+                "config": {
+                    "builtin_stage": "plan_hitl",
+                    "template_id": "builtin_work_plan_approval",
+                    "optional_config_key": "plan_config.enabled",
+                    "default_enabled": True,
+                },
+            },
+            {
+                "id": "daily_execute",
+                "name": "依赖执行",
+                "type": "agent_task",
+                "position": {"x": 1040, "y": 180},
+                "config": {
+                    "builtin_stage": "execute_dag",
+                    "default_agent_id": "agent_nicebot_work_executor",
+                    "deep_mode_assigner_id": "agent_nicebot_work_assistant",
+                    "research_agent_id": "agent_nicebot_research_expert",
+                },
+            },
+            {
+                "id": "daily_review",
+                "name": "执行审查",
+                "type": "review",
+                "position": {"x": 1280, "y": 180},
+                "config": {
+                    "builtin_stage": "review",
+                    "reviewer_id": "agent_nicebot_work_reviewer",
+                    "optional_config_key": "review_config.enabled",
+                    "default_enabled": False,
+                    "max_rework_config_key": "review_config.max_rework",
+                    "default_max_rework": 3,
+                },
+            },
+            {
+                "id": "daily_deliver",
+                "name": "验收与交付",
+                "type": "deliverable",
+                "position": {"x": 1520, "y": 180},
+                "config": {
+                    "builtin_stage": "deliverable",
+                    "assistant_id": "agent_nicebot_work_assistant",
+                    "reporter_id": "agent_nicebot_report_expert",
+                    "artifact_type": "markdown",
+                },
+            },
         ]
         edges = [
-            {"id": "edge_daily_start_prepare", "source": "daily_start", "target": "daily_prepare", "condition": {}},
-            {"id": "edge_daily_prepare_plan", "source": "daily_prepare", "target": "daily_plan", "condition": {}},
-            {"id": "edge_daily_plan_execute", "source": "daily_plan", "target": "daily_execute", "condition": {}},
+            {"id": "edge_daily_start_clarify", "source": "daily_start", "target": "daily_clarify", "condition": {}},
+            {"id": "edge_daily_clarify_plan", "source": "daily_clarify", "target": "daily_plan", "condition": {}},
+            {"id": "edge_daily_plan_approval", "source": "daily_plan", "target": "daily_plan_approval", "condition": {}},
+            {"id": "edge_daily_approval_execute", "source": "daily_plan_approval", "target": "daily_execute", "condition": {}},
             {"id": "edge_daily_execute_review", "source": "daily_execute", "target": "daily_review", "condition": {}},
             {"id": "edge_daily_review_deliver", "source": "daily_review", "target": "daily_deliver", "condition": {}},
         ]
-        self.db.insert("flows", flow_data)
+        if existing:
+            self.db.delete("flow_edges", where="flow_id = ?", where_params=(BUILTIN_DAILY_WORK_FLOW_ID,))
+            self.db.delete("flow_nodes", where="flow_id = ?", where_params=(BUILTIN_DAILY_WORK_FLOW_ID,))
+            flow_data["created_at"] = existing.get("created_at") or flow_data["created_at"]
+            self.db.update(
+                "flows",
+                {k: v for k, v in flow_data.items() if k != "id"},
+                where="id = ?",
+                where_params=(BUILTIN_DAILY_WORK_FLOW_ID,),
+            )
+        else:
+            self.db.insert("flows", flow_data)
         for node in nodes:
             self.db.insert(
                 "flow_nodes",
@@ -340,6 +469,10 @@ class FlowService:
                 },
             )
         logger.info("Ensured builtin NiceBot daily work flow")
+        flow = self.get_flow(BUILTIN_DAILY_WORK_FLOW_ID)
+        if not flow:
+            raise ValueError("内置日常任务流程初始化失败")
+        return flow
 
     def _is_builtin_row(self, row: dict[str, Any]) -> bool:
         metadata = self._parse_json(row.get("metadata", "{}"))
@@ -508,11 +641,26 @@ class FlowService:
         # 检查 Crew 节点引用的 Crew 是否存在
         for node in flow.nodes:
             if node.type == FlowNodeType.CREW:
-                crew_id = node.config.get("crew_id")
+                crew_id = node.config.get("crew_id") or node.config.get("crewName")
                 if crew_id:
                     crew = self.db.select_one("crews", where="id = ?", where_params=(crew_id,))
                     if not crew:
                         result["warnings"].append(f"节点 '{node.name}' 引用的 Crew '{crew_id}' 不存在")
+            elif node.type == FlowNodeType.AGENT_TASK:
+                agent_id = node.config.get("agent_id") or node.config.get("default_agent_id")
+                crew_id = node.config.get("crew_id")
+                if agent_id:
+                    agent = self.db.select_one("agents", where="id = ?", where_params=(agent_id,))
+                    if not agent:
+                        result["warnings"].append(f"节点 '{node.name}' 引用的 Agent '{agent_id}' 不存在")
+                if crew_id:
+                    crew = self.db.select_one("crews", where="id = ?", where_params=(crew_id,))
+                    if not crew:
+                        result["warnings"].append(f"节点 '{node.name}' 引用的 Crew '{crew_id}' 不存在")
+            elif node.type == FlowNodeType.SUB_FLOW:
+                sub_flow_id = node.config.get("flow_id")
+                if sub_flow_id and not self.db.select_one("flows", where="id = ?", where_params=(sub_flow_id,)):
+                    result["warnings"].append(f"节点 '{node.name}' 引用的子流程 '{sub_flow_id}' 不存在")
 
         return result
 
@@ -939,19 +1087,25 @@ class FlowService:
 
         for node in flow.nodes:
             if node.type == FlowNodeType.CREW:
-                crew_id = node.config.get("crew_id")
+                crew_id = node.config.get("crew_id") or node.config.get("crewName")
                 if not crew_id:
                     errors.append(f"Crew 节点 '{node.name}' 缺少 crew_id 配置")
 
             elif node.type == FlowNodeType.ROUTER:
-                conditions = node.config.get("conditions", [])
+                conditions = node.config.get("conditions") or node.config.get("branches") or []
                 if not conditions:
                     errors.append(f"Router 节点 '{node.name}' 缺少条件配置")
 
             elif node.type == FlowNodeType.LISTEN:
-                event_type = node.config.get("event_type")
+                event_type = node.config.get("event_type") or node.config.get("eventType")
                 if not event_type:
                     errors.append(f"Listen 节点 '{node.name}' 缺少 event_type 配置")
+            elif node.type == FlowNodeType.SUB_FLOW:
+                if not node.config.get("flow_id"):
+                    errors.append(f"子流程节点 '{node.name}' 缺少 flow_id 配置")
+            elif node.type == FlowNodeType.HITL:
+                if not (node.config.get("template_id") or node.config.get("prompt")):
+                    errors.append(f"HITL 节点 '{node.name}' 缺少 template_id 或 prompt 配置")
 
         return errors
 

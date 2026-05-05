@@ -378,6 +378,129 @@
 
         </template>
 
+        <template v-else-if="['agent_task', 'sub_flow', 'hitl', 'review', 'deliverable'].includes(node.type)">
+          <div class="text-subtitle-1 font-weight-medium mb-3 mt-4">Work 节点配置</div>
+
+          <template v-if="node.type === 'agent_task'">
+            <v-select
+              v-model="localNode.data.config.assignment_mode"
+              :items="assignmentModeOptions"
+              label="执行分配"
+              variant="outlined"
+              density="compact"
+              class="mb-3"
+              @update:model-value="handleUpdate"
+            />
+            <v-select
+              v-model="localNode.data.config.agent_id"
+              :items="agentOptions"
+              label="指定 Agent（可选）"
+              variant="outlined"
+              density="compact"
+              clearable
+              class="mb-3"
+              @update:model-value="handleUpdate"
+            />
+            <v-select
+              v-model="localNode.data.config.crew_id"
+              :items="crewOptions"
+              label="指定团队（可选）"
+              variant="outlined"
+              density="compact"
+              clearable
+              class="mb-3"
+              @update:model-value="handleUpdate"
+            />
+          </template>
+
+          <template v-else-if="node.type === 'sub_flow'">
+            <v-select
+              v-model="localNode.data.config.flow_id"
+              :items="flowOptions"
+              label="子流程"
+              variant="outlined"
+              density="compact"
+              class="mb-3"
+              @update:model-value="handleUpdate"
+            />
+          </template>
+
+          <template v-else-if="node.type === 'hitl'">
+            <v-select
+              v-model="localNode.data.config.template_id"
+              :items="hitlTemplateOptions"
+              label="HITL 模板"
+              variant="outlined"
+              density="compact"
+              clearable
+              class="mb-3"
+              @update:model-value="handleUpdate"
+            />
+            <v-textarea
+              v-model="localNode.data.config.prompt"
+              label="补充说明"
+              variant="outlined"
+              rows="3"
+              auto-grow
+              class="mb-3"
+              @update:model-value="handleUpdate"
+            />
+            <v-checkbox
+              v-model="localNode.data.config.repeat_until_clear"
+              label="允许多轮直到明确"
+              density="compact"
+              hide-details
+              class="mb-3"
+              @update:model-value="handleUpdate"
+            />
+          </template>
+
+          <template v-else-if="node.type === 'review'">
+            <v-select
+              v-model="localNode.data.config.reviewer_id"
+              :items="agentOptions"
+              label="审查 Agent"
+              variant="outlined"
+              density="compact"
+              clearable
+              class="mb-3"
+              @update:model-value="handleUpdate"
+            />
+            <v-text-field
+              v-model.number="localNode.data.config.max_rework"
+              type="number"
+              min="0"
+              label="最大返工次数"
+              variant="outlined"
+              density="compact"
+              class="mb-3"
+              @update:model-value="handleUpdate"
+            />
+          </template>
+
+          <template v-else-if="node.type === 'deliverable'">
+            <v-select
+              v-model="localNode.data.config.reporter_id"
+              :items="agentOptions"
+              label="汇报 Agent"
+              variant="outlined"
+              density="compact"
+              clearable
+              class="mb-3"
+              @update:model-value="handleUpdate"
+            />
+            <v-select
+              v-model="localNode.data.config.artifact_type"
+              :items="artifactTypeOptions"
+              label="交付物类型"
+              variant="outlined"
+              density="compact"
+              class="mb-3"
+              @update:model-value="handleUpdate"
+            />
+          </template>
+        </template>
+
       </v-form>
 
     </v-card-text>
@@ -461,6 +584,21 @@ const loadingCrews = ref(false);
 // Crew 选项
 
 const crewOptions = ref<any[]>([]);
+const agentOptions = ref<any[]>([]);
+const flowOptions = ref<any[]>([]);
+const hitlTemplateOptions = ref<any[]>([]);
+
+const assignmentModeOptions = [
+  { title: '任务助手分配', value: 'assistant' },
+  { title: '指定 Agent', value: 'agent' },
+  { title: '指定团队', value: 'crew' },
+];
+
+const artifactTypeOptions = [
+  { title: 'Markdown', value: 'markdown' },
+  { title: '文件', value: 'file' },
+  { title: '结构化 JSON', value: 'json' },
+];
 
 
 
@@ -512,12 +650,8 @@ watch(() => props.node, (newNode) => {
 
     
 
-    // 如果是 Crew 节点，加载 Crew 列表
-
-    if (newNode.type === 'crew') {
-
-      loadCrews();
-
+    if (['crew', 'agent_task', 'sub_flow', 'hitl', 'review', 'deliverable'].includes(newNode.type)) {
+      loadResources();
     }
 
   } else {
@@ -562,6 +696,34 @@ async function loadCrews() {
 
   }
 
+}
+
+async function loadResources() {
+  loadingCrews.value = true;
+  try {
+    const [crewsRes, agentsRes, flowsRes, hitlRes] = await Promise.allSettled([
+      axios.get('/api/plug/agent/crews'),
+      axios.get('/api/plug/agent/agents'),
+      axios.get('/api/plug/agent/flows'),
+      axios.get('/api/plug/agent/hitl-templates'),
+    ]);
+    if (crewsRes.status === 'fulfilled' && crewsRes.value.data.status === 'ok') {
+      crewOptions.value = (crewsRes.value.data.data || []).map((crew: any) => ({ title: crew.name, value: crew.id || crew.name }));
+    }
+    if (agentsRes.status === 'fulfilled' && agentsRes.value.data.status === 'ok') {
+      agentOptions.value = (agentsRes.value.data.data || []).map((agent: any) => ({ title: agent.name, value: agent.id }));
+    }
+    if (flowsRes.status === 'fulfilled' && flowsRes.value.data.status === 'ok') {
+      flowOptions.value = (flowsRes.value.data.data || []).map((flow: any) => ({ title: flow.name, value: flow.id }));
+    }
+    if (hitlRes.status === 'fulfilled' && hitlRes.value.data.status === 'ok') {
+      hitlTemplateOptions.value = (hitlRes.value.data.data || []).map((tpl: any) => ({ title: tpl.name, value: tpl.id }));
+    }
+  } catch (error) {
+    console.error('Failed to load flow resources:', error);
+  } finally {
+    loadingCrews.value = false;
+  }
 }
 
 

@@ -37,6 +37,13 @@ def register_flow_routes(plugin: "AgentSystemPlugin") -> None:
     )
 
     plugin.context.register_web_api(
+        "/agent/flows/<flow_id>",
+        _patch_flow,
+        ["PATCH"],
+        "更新 Flow"
+    )
+
+    plugin.context.register_web_api(
         "/agent/flows/add",
         _create_flow,
         ["POST"],
@@ -111,6 +118,27 @@ def register_flow_routes(plugin: "AgentSystemPlugin") -> None:
         _generate_flow,
         ["POST"],
         "根据描述生成流程"
+    )
+
+    plugin.context.register_web_api(
+        "/agent/flows/<flow_id>/reset-builtin",
+        _reset_builtin_flow,
+        ["POST"],
+        "初始化/还原内置流程"
+    )
+
+    plugin.context.register_web_api(
+        "/agent/hitl-templates",
+        _list_hitl_templates,
+        ["GET", "POST"],
+        "管理 HITL 模板"
+    )
+
+    plugin.context.register_web_api(
+        "/agent/hitl-templates/<template_id>",
+        _update_hitl_template,
+        ["PATCH", "POST"],
+        "更新 HITL 模板"
     )
 
     logger.info("Flow management API routes registered")
@@ -229,6 +257,8 @@ async def _toggle_flow():
         flow = service.get_flow(flow_id)
         if not flow:
             return Response().error(f"Flow '{flow_id}' 不存在").__dict__
+        if flow.metadata.get("is_builtin") or flow.metadata.get("non_deletable"):
+            return Response().error("内置 Flow 不允许禁用").__dict__
 
         enabled = not getattr(flow, 'enabled', True)
         updated = service.update_flow(flow_id, {"enabled": enabled})
@@ -237,6 +267,74 @@ async def _toggle_flow():
         return Response().error(str(e)).__dict__
     except Exception as e:
         logger.error(f"Failed to toggle flow: {e}")
+        return Response().error(str(e)).__dict__
+
+
+async def _patch_flow(flow_id: str):
+    try:
+        service = _get_flow_service()
+        data = await request.get_json() or {}
+        data["id"] = flow_id
+        flow = service.update_flow(flow_id, data)
+        if not flow:
+            return Response().error(f"Flow '{flow_id}' 不存在").__dict__
+        return Response().ok(flow.to_dict(), "Flow 更新成功").__dict__
+    except ValueError as e:
+        return Response().error(str(e)).__dict__
+    except Exception as e:
+        logger.error(f"Failed to patch flow {flow_id}: {e}")
+        return Response().error(str(e)).__dict__
+
+
+async def _reset_builtin_flow(flow_id: str):
+    try:
+        service = _get_flow_service()
+        from ..services.flow_service import BUILTIN_DAILY_WORK_FLOW_ID
+
+        if flow_id != BUILTIN_DAILY_WORK_FLOW_ID:
+            return Response().error("该 Flow 不是可初始化的内置流程").__dict__
+        flow = service.reset_builtin_daily_work_flow()
+        return Response().ok(flow.to_dict(), "内置流程已初始化").__dict__
+    except Exception as e:
+        logger.error(f"Failed to reset builtin flow {flow_id}: {e}")
+        return Response().error(str(e)).__dict__
+
+
+def _get_hitl_template_service():
+    from ..database import get_database
+    from ..services.hitl_template_service import HITLTemplateService
+
+    return HITLTemplateService(get_database())
+
+
+async def _list_hitl_templates():
+    try:
+        service = _get_hitl_template_service()
+        if request.method == "POST":
+            data = await request.get_json() or {}
+            template = service.save_template(data)
+            return Response().ok(template, "HITL 模板已保存").__dict__
+        template_type = request.args.get("type") or request.args.get("template_type")
+        return Response().ok(service.list_templates(template_type)).__dict__
+    except Exception as e:
+        logger.error(f"Failed to manage HITL templates: {e}")
+        return Response().error(str(e)).__dict__
+
+
+async def _update_hitl_template(template_id: str):
+    try:
+        service = _get_hitl_template_service()
+        data = await request.get_json() or {}
+        data["id"] = template_id
+        if data.get("reset_builtin"):
+            template = service.reset_builtin_template(template_id)
+            if not template:
+                return Response().error("该 HITL 模板不可初始化").__dict__
+        else:
+            template = service.save_template(data)
+        return Response().ok(template, "HITL 模板已更新").__dict__
+    except Exception as e:
+        logger.error(f"Failed to update HITL template {template_id}: {e}")
         return Response().error(str(e)).__dict__
 
 

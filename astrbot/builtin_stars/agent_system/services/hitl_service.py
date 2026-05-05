@@ -179,7 +179,7 @@ class HITLService:
             return "rejected"
         if action_key in {"cancel"}:
             return "cancelled"
-        if action_key in {"modify", "retry"}:
+        if action_key in {"modify", "retry", "clarify_more"}:
             return "modified"
         return "approved"
 

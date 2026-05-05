@@ -448,9 +448,6 @@
                       color="primary"
 
 
-                      :disabled="isBuiltinFlow(flow)"
-
-
                       @click="openEditor(flow)"
 
 
@@ -556,6 +553,13 @@
                           </v-list-item-title>
 
 
+                        </v-list-item>
+
+                        <v-list-item v-if="isBuiltinFlow(flow)" @click="resetBuiltinFlow(flow)">
+                          <template v-slot:prepend>
+                            <v-icon icon="mdi-restore" />
+                          </template>
+                          <v-list-item-title>初始化/还原默认</v-list-item-title>
                         </v-list-item>
 
 
@@ -1295,7 +1299,14 @@ async function handleSaveFlow(flowData: any) {
     if (isEditing.value) {
 
 
-      await axios.post('/api/plug/agent/flows/update', flowData);
+      await axios.post('/api/plug/agent/flows/update', {
+        ...flowData,
+        id: editingFlow.value?.id,
+        metadata: {
+          ...(editingFlow.value?.metadata || {}),
+          ...(flowData.metadata || {}),
+        },
+      });
 
 
     } else {
@@ -1404,6 +1415,18 @@ async function confirmExecute() {
   }
 
 
+}
+
+
+async function resetBuiltinFlow(flow: any) {
+  if (!confirm(`确定将「${flow.name}」初始化/还原为系统默认流程吗？当前自定义节点配置会被覆盖。`)) return;
+  try {
+    await axios.post(`/api/plug/agent/flows/${encodeURIComponent(flow.id)}/reset-builtin`);
+    await loadFlows();
+  } catch (error: any) {
+    console.error('Failed to reset builtin flow:', error);
+    alert(error.response?.data?.message || '初始化内置流程失败');
+  }
 }
 
 function isBuiltinFlow(flow: any) {

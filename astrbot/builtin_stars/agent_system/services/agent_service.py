@@ -1029,6 +1029,137 @@ class AgentService:
     # ==================== 私有方法 ====================
 
     MEETING_ASSISTANT_ID = "agent_meeting_assistant"
+    WORK_ASSISTANT_ID = "agent_nicebot_work_assistant"
+    WORK_EXECUTOR_ID = "agent_nicebot_work_executor"
+    WORK_REVIEWER_ID = "agent_nicebot_work_reviewer"
+    WORK_RESEARCHER_ID = "agent_nicebot_research_expert"
+    WORK_REPORTER_ID = "agent_nicebot_report_expert"
+
+    def get_work_builtin_agent_ids(self) -> dict[str, str]:
+        return {
+            "assistant": self.WORK_ASSISTANT_ID,
+            "executor": self.WORK_EXECUTOR_ID,
+            "reviewer": self.WORK_REVIEWER_ID,
+            "researcher": self.WORK_RESEARCHER_ID,
+            "reporter": self.WORK_REPORTER_ID,
+        }
+
+    def _work_builtin_templates(self) -> dict[str, dict[str, Any]]:
+        return {
+            self.WORK_ASSISTANT_ID: {
+                "template_id": "template_nicebot_work_assistant",
+                "name": "NiceBot 任务助手",
+                "role": "需求澄清、任务规划、执行调度和验收协调者",
+                "goal": "把模糊任务转化为清晰需求、可审批计划、可调度的二级任务树，并在最终交付前做验收判断。",
+                "backstory": "你是 NiceBot Work 的任务助手，擅长通过少量高价值问题澄清目标，生成依赖明确的执行计划，并为每个子任务选择合适的执行者。",
+                "tools": [],
+                "skills": [],
+                "planning": True,
+                "planning_effort": "high",
+                "max_iter": 30,
+                "metadata": {"category": "work", "work_builtin_role": "assistant"},
+            },
+            self.WORK_EXECUTOR_ID: {
+                "template_id": "template_nicebot_work_executor",
+                "name": "通用任务执行智能体",
+                "role": "通用任务执行者",
+                "goal": "根据已确认的需求、计划和上下文完成普通任务执行，形成可审查的阶段结果。",
+                "backstory": "你是稳定、克制的通用执行智能体，专注完成当前步骤，不擅自扩大范围，并明确记录产出依据和未解决问题。",
+                "tools": [],
+                "skills": [],
+                "planning": False,
+                "planning_effort": "medium",
+                "max_iter": 25,
+                "metadata": {"category": "work", "work_builtin_role": "executor"},
+            },
+            self.WORK_REVIEWER_ID: {
+                "template_id": "template_nicebot_work_reviewer",
+                "name": "通用任务审查智能体",
+                "role": "任务质量审查者",
+                "goal": "独立审查执行结果是否满足需求、计划和交付标准，给出通过或返工意见。",
+                "backstory": "你是 NiceBot Work 的质量门禁，不参与执行本身，只根据目标、证据和交付标准判断结果是否足够可靠。",
+                "tools": [],
+                "skills": [],
+                "planning": False,
+                "planning_effort": "medium",
+                "max_iter": 18,
+                "metadata": {"category": "work", "work_builtin_role": "reviewer"},
+            },
+            self.WORK_RESEARCHER_ID: {
+                "template_id": "template_nicebot_research_expert",
+                "name": "调查专家",
+                "role": "信息收集与资料核对专家",
+                "goal": "围绕任务目标收集、筛选、核对信息来源，输出结构化资料和关键依据。",
+                "backstory": "你擅长快速建立信息地图，区分事实、推断和不确定性，并保留来源线索供后续交付引用。",
+                "tools": [],
+                "skills": [],
+                "planning": False,
+                "planning_effort": "medium",
+                "max_iter": 25,
+                "metadata": {"category": "work", "work_builtin_role": "researcher"},
+            },
+            self.WORK_REPORTER_ID: {
+                "template_id": "template_nicebot_report_expert",
+                "name": "汇报专家",
+                "role": "交付物撰写与报告整理专家",
+                "goal": "把执行结果整理为清晰、完整、可直接使用的最终交付物。",
+                "backstory": "你擅长组织结构、突出结论、保留依据，并根据任务场景选择合适的报告表达方式。",
+                "tools": [],
+                "skills": [],
+                "planning": False,
+                "planning_effort": "medium",
+                "max_iter": 25,
+                "metadata": {"category": "work", "work_builtin_role": "reporter"},
+            },
+        }
+
+    def ensure_work_builtin_agents(self) -> dict[str, Agent]:
+        """Ensure NiceBot Work builtin agents exist.
+
+        Builtin agents are editable by users, but their identity is protected and
+        can be reset to these defaults.
+        """
+        ensured: dict[str, Agent] = {}
+        for agent_id, template in self._work_builtin_templates().items():
+            existing = self.get_agent(agent_id)
+            if existing:
+                metadata = {
+                    **existing.metadata,
+                    **template.get("metadata", {}),
+                    "is_work_builtin": True,
+                    "template_id": template["template_id"],
+                    "resettable": True,
+                    "non_deletable": True,
+                }
+                if existing.agent_type.value != "builtin" or existing.metadata != metadata:
+                    self.update_agent(agent_id, {"agent_type": "builtin", "metadata": metadata}, skip_skill_validation=True)
+                    existing = self.get_agent(agent_id)
+                if existing:
+                    ensured[agent_id] = existing
+                continue
+            data = {
+                "id": agent_id,
+                "name": template["name"],
+                "role": template["role"],
+                "goal": template["goal"],
+                "backstory": template["backstory"],
+                "tools": template.get("tools", []),
+                "skills": template.get("skills", []),
+                "planning": template.get("planning", False),
+                "planning_effort": template.get("planning_effort", "medium"),
+                "max_iter": template.get("max_iter", 25),
+                "enabled": True,
+                "agent_type": "builtin",
+                "metadata": {
+                    **template.get("metadata", {}),
+                    "is_work_builtin": True,
+                    "template_id": template["template_id"],
+                    "resettable": True,
+                    "non_deletable": True,
+                },
+            }
+            ensured[agent_id] = self.create_agent(data, skip_skill_validation=True)
+        return ensured
 
     def ensure_meeting_assistant(self) -> Agent | None:
         """确保会议助手 Agent 存在，不存在则自动创建
@@ -1128,11 +1259,18 @@ class AgentService:
 
         template_id = agent.metadata.get("template_id", "")
         template = None
+        work_template = next(
+            (t for t in self._work_builtin_templates().values() if t.get("template_id") == template_id),
+            None,
+        )
+        if work_template:
+            template = work_template
 
-        for t in self.get_templates():
-            if t.get("id") == template_id:
-                template = t
-                break
+        if not template:
+            for t in self.get_templates():
+                if t.get("id") == template_id:
+                    template = t
+                    break
 
         if not template:
             category_key = agent.metadata.get("category", "")
@@ -1178,6 +1316,12 @@ class AgentService:
                     "planning_effort": template.get("planning_effort", "medium"),
                     "max_iter": template.get("max_iter", 30),
                     "enabled": True,
+                    "metadata": {
+                        **agent.metadata,
+                        **template.get("metadata", {}),
+                        "template_id": template_id,
+                        **({"is_work_builtin": True, "resettable": True, "non_deletable": True} if work_template else {}),
+                    },
                 }, skip_skill_validation=True)
             logger.info(f"Reset builtin agent {agent_id} to template {template_id}")
             return self.get_agent(agent_id)

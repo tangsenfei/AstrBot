@@ -204,15 +204,21 @@
             v-for="step in flattenedSteps"
             :key="step.id || step.description"
             class="step-row"
-            :class="{ child: step.depth === 2 }"
+            :class="{ child: step.depth === 2, blocked: hasUnfinishedDependencies(step), running: step.status === 'running' }"
             type="button"
             @click="selectedStep = step"
           >
+            <span v-if="step.depth === 2" class="tree-branch" />
             <v-icon :color="stepColor(step.status)" :icon="stepIcon(step.status)" size="18" />
             <div>
               <div class="step-title">{{ stepPreviewText(step.title || step.description || step.name) }}</div>
               <div v-if="step.dependencies?.length" class="step-deps">
-                依赖：{{ dependencyLabels(step.dependencies) }}
+                <v-icon size="13" icon="mdi-arrow-right-thin" />
+                前置：{{ dependencyLabels(step.dependencies) }}
+              </div>
+              <div v-if="executorDisplay(step)" class="step-deps">
+                <v-icon size="13" icon="mdi-account-cog-outline" />
+                {{ executorDisplay(step) }}
               </div>
               <div v-if="step.result" class="step-result">{{ stepPreviewText(step.result) }}</div>
             </div>
@@ -234,7 +240,8 @@
             <v-chip size="small" :color="stepColor(selectedStep.status)" variant="tonal">
               {{ stepStatusLabel(selectedStep.status) }}
             </v-chip>
-            <span v-if="selectedStep.agent">执行者：{{ selectedStep.agent }}</span>
+            <span v-if="executorDisplay(selectedStep)">{{ executorDisplay(selectedStep) }}</span>
+            <span v-if="selectedStep.reviewer_id">审查者：{{ resourceNameById(agents, selectedStep.reviewer_id) || selectedStep.reviewer_id }}</span>
           </div>
           <pre class="step-detail-text">{{ stepDetailText(selectedStep) }}</pre>
         </v-card-text>
@@ -292,7 +299,7 @@
           <v-text-field v-model="taskForm.name" label="任务名称" variant="outlined" />
           <v-textarea v-model="taskForm.description" label="交付目标" variant="outlined" rows="3" />
           <div class="dialog-row">
-            <v-select v-model="taskForm.work_task_kind" :items="kindOptions" label="任务类型" variant="outlined" />
+            <v-select v-model="taskForm.executor_config.flow_id" :items="flows" item-title="name" item-value="id" label="任务流程" variant="outlined" />
             <v-select v-model="taskForm.work_scope" :items="scopeOptions" label="归属" variant="outlined" />
           </div>
           <v-select
@@ -313,41 +320,11 @@
             label="日常目录"
             variant="outlined"
           />
-          <div class="dialog-row">
-            <v-select
-              v-if="taskForm.work_task_kind === 'single_agent'"
-              v-model="taskForm.executor_config.agent_id"
-              :items="agents"
-              item-title="name"
-              item-value="id"
-              label="执行智能体（可选）"
-              variant="outlined"
-              clearable
-            />
-            <v-select
-              v-if="taskForm.work_task_kind === 'multi_agent'"
-              v-model="taskForm.executor_config.crew_id"
-              :items="crews"
-              item-title="name"
-              item-value="id"
-              label="执行团队（可选）"
-              variant="outlined"
-              clearable
-            />
-            <v-select
-              v-if="taskForm.work_task_kind === 'workflow'"
-              v-model="taskForm.executor_config.flow_id"
-              :items="flows"
-              item-title="name"
-              item-value="id"
-              label="业务流程"
-              variant="outlined"
-            />
-          </div>
           <div class="option-row">
-            <v-checkbox v-model="taskForm.plan_config.enabled" label="先规划并进入人工确认" density="compact" hide-details />
+            <v-checkbox v-model="taskForm.plan_config.enabled" label="人工审查规划" density="compact" hide-details />
             <v-checkbox v-model="taskForm.review_config.enabled" label="执行后审查" density="compact" hide-details />
             <v-text-field
+              v-if="taskForm.review_config.enabled"
               v-model.number="taskForm.review_config.max_rework"
               type="number"
               min="0"
@@ -410,6 +387,7 @@ let pendingSelectedReload = false;
 const agents = ref<any[]>([]);
 const crews = ref<any[]>([]);
 const flows = ref<any[]>([]);
+const BUILTIN_DAILY_FLOW_ID = 'builtin_nicebot_daily_work_flow';
 
 const projectDialog = ref(false);
 const editingProject = ref<any | null>(null);
@@ -487,13 +465,13 @@ function defaultTaskForm() {
   return {
     name: '',
     description: '',
-    work_task_kind: 'single_agent',
+    work_task_kind: 'workflow',
     work_scope: selectedScope.value,
     work_project_id: selectedProjectId.value,
     work_daily_dir_id: selectedDailyDirId.value,
-    executor_config: { agent_id: '', crew_id: '', flow_id: '' },
-    plan_config: { enabled: false, effort: 'medium' },
-    review_config: { enabled: false, max_rework: 1 },
+    executor_config: { flow_id: BUILTIN_DAILY_FLOW_ID },
+    plan_config: { enabled: true, effort: 'medium' },
+    review_config: { enabled: false, max_rework: 3 },
   };
 }
 
@@ -531,7 +509,12 @@ async function loadResources() {
   ]);
   if (agentRes.status === 'fulfilled' && agentRes.value.data?.status === 'ok') agents.value = agentRes.value.data.data || [];
   if (crewRes.status === 'fulfilled' && crewRes.value.data?.status === 'ok') crews.value = crewRes.value.data.data || [];
-  if (flowRes.status === 'fulfilled' && flowRes.value.data?.status === 'ok') flows.value = flowRes.value.data.data || [];
+  if (flowRes.status === 'fulfilled' && flowRes.value.data?.status === 'ok') {
+    flows.value = flowRes.value.data.data || [];
+    if (!taskForm.executor_config.flow_id && flows.value.find(flow => flow.id === BUILTIN_DAILY_FLOW_ID)) {
+      taskForm.executor_config.flow_id = BUILTIN_DAILY_FLOW_ID;
+    }
+  }
 }
 
 async function loadTasks() {
@@ -724,6 +707,8 @@ async function createTask() {
   creatingTask.value = true;
   try {
     const payload = JSON.parse(JSON.stringify(taskForm));
+    payload.flow_id = payload.executor_config?.flow_id;
+    payload.work_task_kind = 'workflow';
     await axios.post('/api/plug/work/tasks', payload);
     taskDialog.value = false;
     await loadTasks();
@@ -993,6 +978,9 @@ function stepDetailText(step: any) {
   const parts = [];
   if (step.description || step.name || step.title) parts.push(step.description || step.name || step.title);
   if (step.dependencies?.length) parts.push(`依赖：${dependencyLabels(step.dependencies)}`);
+  if (executorDisplay(step)) parts.push(`执行者：${executorDisplay(step)}`);
+  if (step.reviewer_id) parts.push(`审查者：${resourceNameById(agents.value, step.reviewer_id) || step.reviewer_id}`);
+  if (step.result_ref) parts.push(`结果引用：${step.result_ref}`);
   if (step.result) parts.push(`结果：\n${step.result}`);
   if (step.error) parts.push(`错误：\n${step.error}`);
   if (step.stats) parts.push(`统计：\n${JSON.stringify(step.stats, null, 2)}`);
@@ -1017,6 +1005,24 @@ function flattenSteps(rawSteps: any[]) {
 function dependencyLabels(ids: string[]) {
   const map = new Map(flattenedSteps.value.map((step: any) => [String(step.id), step.title || step.description || step.name || step.id]));
   return ids.map((id) => stepPreviewText(map.get(String(id)) || id)).join(' → ');
+}
+
+function hasUnfinishedDependencies(step: any) {
+  const ids = step?.dependencies || [];
+  if (!ids.length) return false;
+  const byId = new Map(flattenedSteps.value.map((item: any) => [String(item.id), item]));
+  return ids.some((id: string) => {
+    const dep = byId.get(String(id));
+    return dep && !['done', 'completed'].includes(dep.status);
+  });
+}
+
+function executorDisplay(step: any) {
+  const id = step?.executor_id || step?.agent || '';
+  if (step?.executor) return `执行者：${step.executor}`;
+  if (!id) return '';
+  if (step.executor_type === 'crew') return `执行团队：${resourceNameById(crews.value, id) || id}`;
+  return `执行者：${resourceNameById(agents.value, id) || id}`;
 }
 
 function stepPreviewText(value: unknown) {
@@ -1388,6 +1394,7 @@ onBeforeUnmount(() => {
 }
 
 .step-row {
+  position: relative;
   display: grid;
   grid-template-columns: 22px 1fr;
   gap: 8px;
@@ -1405,6 +1412,27 @@ onBeforeUnmount(() => {
   margin-left: 18px;
   width: calc(100% - 18px);
   border-style: dashed;
+  padding-left: 18px;
+}
+
+.step-row.running {
+  border-color: rgba(var(--v-theme-primary), 0.55);
+  box-shadow: inset 3px 0 0 rgba(var(--v-theme-primary), 0.55);
+}
+
+.step-row.blocked {
+  opacity: 0.72;
+}
+
+.tree-branch {
+  position: absolute;
+  left: -12px;
+  top: -12px;
+  width: 20px;
+  height: 34px;
+  border-left: 1px solid rgba(var(--v-theme-primary), 0.35);
+  border-bottom: 1px solid rgba(var(--v-theme-primary), 0.35);
+  border-bottom-left-radius: 8px;
 }
 
 .step-row:hover {
