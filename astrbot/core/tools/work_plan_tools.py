@@ -109,15 +109,24 @@ def validate_plan_steps(steps: list[Any]) -> list[str]:
 class SubmitWorkPlanTool(FunctionTool[AstrAgentContext]):
     name: str = "submit_work_plan"
     description: str = (
-        "提交结构化的任务执行计划。你必须调用此工具来提交计划，不要直接输出文本。\n\n"
-        "参数格式示例：\n"
-        '{"steps": [{"title": "步骤标题", "description": "步骤说明和交付物", "dependencies": [], "children": [{"title": "子任务标题", "description": "子任务说明"}]}]}\n\n'
-        "关键规则：\n"
-        "- steps 必须是数组（方括号 [] 包裹），包含 3-7 个步骤对象\n"
-        "- 每个步骤必须有 title、description、dependencies 三个字段\n"
-        "- dependencies 是整数数组，表示前置步骤序号（从1开始），首步骤为空数组 []\n"
-        "- children 是可选的子任务数组，每个子任务有 title 和 description\n"
-        "- 格式校验不通过时会返回错误和正确示例，请根据错误修正后重新调用"
+        "提交任务执行计划。调用此工具，传入 steps 数组。\n\n"
+        "完整调用示例（含二级子任务）：\n"
+        "submit_work_plan(steps=[\n"
+        '  {"title": "需求分析", "description": "明确任务目标和交付标准", "dependencies": [], "children": [\n'
+        '    {"title": "梳理核心需求", "description": "提取任务关键目标和约束"},\n'
+        '    {"title": "确认交付形式", "description": "确定输出格式和完成标准"}]},\n'
+        '  {"title": "信息收集", "description": "获取完成任务所需的资料和上下文", "dependencies": [1], "children": [\n'
+        '    {"title": "收集参考资料", "description": "查找相关文档、案例和数据"}]},\n'
+        '  {"title": "执行核心工作", "description": "按计划完成主要任务并形成阶段结果", "dependencies": [2]},\n'
+        '  {"title": "整理交付物", "description": "汇总结果并标注关键结论和后续建议", "dependencies": [3]}\n'
+        "])\n\n"
+        "参数规则：\n"
+        "- steps: 数组，3-7 个步骤对象，按执行顺序排列\n"
+        "- 每个步骤必须包含: title(标题,≤40字), description(说明+交付物,≤300字), dependencies(前置步骤序号数组,首步骤为[])\n"
+        "- children: 二级子任务数组(每步骤最多3个)，每个子任务包含 title 和 description\n"
+        "- 至少2个一级步骤应包含 children 子任务，将步骤细化为可独立执行的小任务\n"
+        "- dependencies 中的数字指向前置步骤的序号(从1开始)，如 [1] 表示依赖第1步\n"
+        "- 格式错误时工具会返回具体错误和示例，按提示修正后重新调用即可"
     )
     parameters: dict[str, Any] = Field(default_factory=lambda: SUBMIT_PLAN_TOOL_SCHEMA)
 

@@ -178,24 +178,26 @@ async def plan_node(state: WorkTaskState, config: RunnableConfig) -> dict:
     plan_feedback = state.get("plan_feedback", "")
     feedback_text = f"人工调整意见：{plan_feedback}\n\n" if plan_feedback else ""
     prompt = (
-        f"请为 Work 任务制定可执行计划。\n\n"
+        f"请为以下任务制定执行计划，调用 submit_work_plan 工具提交。\n\n"
         f"任务名称：{task_name}\n"
         f"任务描述：{task_desc}\n\n"
         f"已确认需求：\n{_clarification_text(state)}\n\n"
         f"{_context_text(state)}\n\n"
         f"规划深度：{effort}\n\n"
         f"{feedback_text}"
-        "你必须调用 submit_work_plan 工具提交计划，不要直接输出文本格式的计划。\n\n"
-        "调用示例：\n"
-        'submit_work_plan(steps=[{"title": "明确需求与约束", "description": "确认任务目标、交付标准和关键约束条件", "dependencies": []}, '
-        '{"title": "收集资料与准备", "description": "获取完成任务所需的上下文、资料和工具条件", "dependencies": [1]}, '
-        '{"title": "执行核心工作", "description": "按计划完成主要任务，形成可检查的阶段结果", "dependencies": [2]}, '
-        '{"title": "整理交付物", "description": "汇总结果，标注关键结论、风险和后续建议", "dependencies": [3]}])\n\n'
-        "要求：\n"
-        "1. 输出 3-7 个一级步骤，按依赖顺序排列\n"
-        "2. 每个步骤必须包含 title（标题）、description（说明+交付物）、dependencies（前置步骤序号，首步骤为空数组）\n"
-        "3. 复杂步骤可拆出 1-3 个二级子任务（children）\n"
-        "4. 如果工具返回格式错误，请根据错误信息和示例修正后重新调用\n"
+        "请直接调用 submit_work_plan 工具提交计划，不要输出文本。\n\n"
+        "计划要求：\n"
+        "1. 输出 4-6 个一级步骤，按依赖顺序排列\n"
+        "2. 每个步骤必须有 title、description、dependencies 三个字段\n"
+        "3. 至少2个一级步骤必须包含 children 子任务（1-3个），将步骤细化为可独立执行的小任务\n"
+        "4. children 子任务只需 title 和 description，不需要 dependencies\n"
+        "5. dependencies 用整数数组表示前置步骤序号（从1开始），首步骤为 []\n"
+        "6. 如果工具返回格式错误，按错误提示修正后重新调用\n\n"
+        "示例（注意 children 的用法）：\n"
+        'submit_work_plan(steps=[{"title": "需求分析", "description": "明确目标和约束", "dependencies": [], "children": [{"title": "梳理核心需求", "description": "提取关键目标"}, {"title": "确认交付标准", "description": "确定输出格式"}]}, '
+        '{"title": "信息收集", "description": "获取所需资料", "dependencies": [1], "children": [{"title": "查找参考资料", "description": "搜索相关文档和案例"}]}, '
+        '{"title": "执行核心工作", "description": "完成主要任务", "dependencies": [2]}, '
+        '{"title": "整理交付物", "description": "汇总结果和建议", "dependencies": [3]}])'
     )
     plan_config = state.get("plan_config", {}) or {}
     timeout_seconds = max(10, int(plan_config.get("timeout_seconds", 30) or 30))
@@ -209,10 +211,13 @@ async def plan_node(state: WorkTaskState, config: RunnableConfig) -> dict:
                 _agent_operator.execute(
                     {
                         "system_prompt": (
-                            "你是 NiceBot Work 的任务规划助手，擅长把目标拆成可审查的执行步骤。\n"
-                            "你的唯一任务是调用 submit_work_plan 工具提交结构化计划。\n"
-                            "绝对不要直接输出文本格式的计划，必须通过工具调用提交。\n"
-                            "如果工具返回格式错误，你必须根据错误信息修正参数后重新调用，直到成功。"
+                            "你是任务规划助手，负责将任务目标拆解为可执行的步骤树。\n"
+                            "你的唯一动作是调用 submit_work_plan 工具提交计划，禁止直接输出文本。\n\n"
+                            "规划原则：\n"
+                            "- 一级步骤：4-6个，覆盖从需求到交付的完整流程\n"
+                            "- 二级子任务：至少2个一级步骤必须包含 children，将步骤细化为可独立执行的小任务\n"
+                            "- 依赖关系：用 dependencies 数组标注前置步骤序号（从1开始）\n"
+                            "- 如果工具返回格式错误，按错误提示修正参数后重新调用"
                         ),
                         "user_prompt": prompt,
                         "messages": [],
@@ -248,12 +253,13 @@ async def plan_node(state: WorkTaskState, config: RunnableConfig) -> dict:
         if attempt < max_retries:
             _emit(run_ctx, "text_delta", {"text": f"计划未成功提交，正在重试（{attempt + 1}/{max_retries}）..."}, "plan")
             prompt = (
-                f"上一次你没有成功调用 submit_work_plan 工具提交计划。请这次务必调用工具。\n\n"
-                f"调用示例：\n"
-                f'submit_work_plan(steps=[{{"title": "步骤1", "description": "说明", "dependencies": []}}, '
-                f'{{"title": "步骤2", "description": "说明", "dependencies": [1]}}])\n\n'
+                f"上一次没有成功调用 submit_work_plan 工具。请这次务必调用工具提交计划。\n\n"
+                f"调用示例（含 children 子任务）：\n"
+                f'submit_work_plan(steps=[{{"title": "需求分析", "description": "明确目标", "dependencies": [], "children": [{{"title": "梳理需求", "description": "提取关键目标"}}]}}, '
+                f'{{"title": "执行工作", "description": "完成主要任务", "dependencies": [1]}}, '
+                f'{{"title": "整理交付", "description": "汇总结果", "dependencies": [2], "children": [{{"title": "检查完整性", "description": "确认交付物齐全"}}]}}])\n\n'
                 f"原任务：{task_name}\n{task_desc}\n\n"
-                f"请立即调用 submit_work_plan 工具提交计划。"
+                f"请立即调用 submit_work_plan 工具提交计划，至少2个步骤包含 children 子任务。"
             )
         else:
             break
@@ -267,6 +273,7 @@ async def plan_node(state: WorkTaskState, config: RunnableConfig) -> dict:
         text = result.get("final_text", "")
         if not text.strip():
             text = _fallback_plan_text(state)
+
         parsed_json_steps = _try_parse_json_steps(text)
         if parsed_json_steps:
             _emit(run_ctx, "text_delta", {"text": "已从文本输出中提取结构化计划。"}, "plan")
@@ -583,6 +590,17 @@ def route_after_rework_hitl(state: WorkTaskState) -> str:
 def _try_parse_json_steps(text: str) -> list[dict[str, Any]] | None:
     import json
     import re
+    from astrbot.core.tools.work_plan_tools import validate_plan_steps
+
+    func_match = re.search(r'submit_work_plan\s*\(\s*steps\s*=\s*(\[.*\])\s*\)', text, re.DOTALL)
+    if func_match:
+        try:
+            steps = json.loads(func_match.group(1))
+            if isinstance(steps, list) and len(steps) >= 3 and not validate_plan_steps(steps):
+                return steps
+        except json.JSONDecodeError:
+            pass
+
     cleaned = text.strip()
     json_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', cleaned, re.DOTALL)
     if json_match:
@@ -598,10 +616,35 @@ def _try_parse_json_steps(text: str) -> list[dict[str, Any]] | None:
         return None
     if not isinstance(data, dict):
         return None
+
     steps = data.get("steps", [])
+    if not steps:
+        for key in ("tool_call", "function_call", "function"):
+            nested = data.get(key, {})
+            if isinstance(nested, dict):
+                args = nested.get("arguments", nested.get("args", {}))
+                if isinstance(args, dict):
+                    steps = args.get("steps", [])
+                elif isinstance(args, str):
+                    try:
+                        parsed = json.loads(args)
+                        steps = parsed.get("steps", []) if isinstance(parsed, dict) else []
+                    except json.JSONDecodeError:
+                        pass
+                if steps:
+                    break
+    if not steps:
+        arguments = data.get("arguments", {})
+        if isinstance(arguments, dict):
+            steps = arguments.get("steps", [])
+        elif isinstance(arguments, str):
+            try:
+                parsed = json.loads(arguments)
+                steps = parsed.get("steps", []) if isinstance(parsed, dict) else []
+            except json.JSONDecodeError:
+                pass
     if not isinstance(steps, list) or len(steps) < 3:
         return None
-    from astrbot.core.tools.work_plan_tools import validate_plan_steps
     errors = validate_plan_steps(steps)
     if errors:
         return None
