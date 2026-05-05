@@ -1097,7 +1097,7 @@ onBeforeUnmount(() => {
   --work-border: rgba(var(--v-border-color), 0.18);
   --work-muted: rgba(var(--v-theme-on-surface), 0.62);
   display: grid;
-  grid-template-columns: 210px 320px minmax(360px, 1fr) 300px;
+  grid-template-columns: 210px 320px minmax(360px, 1fr) 420px;
   height: 100%;
   min-height: 0;
   overflow: hidden;
@@ -1453,7 +1453,7 @@ onBeforeUnmount(() => {
 }
 
 .stage-label {
-  max-width: 80px;
+  max-width: 100px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -1692,7 +1692,7 @@ onBeforeUnmount(() => {
 
 @media (max-width: 1180px) {
   .work-shell {
-    grid-template-columns: 170px 260px minmax(300px, 1fr) 260px;
+    grid-template-columns: 170px 260px minmax(300px, 1fr) 360px;
   }
 }
 
