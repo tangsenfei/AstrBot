@@ -4,6 +4,8 @@ from pathlib import Path
 import pytest
 
 from astrbot.builtin_stars.agent_system.database import Database
+from astrbot.builtin_stars.agent_system.services.flow_service import BUILTIN_DAILY_WORK_FLOW_ID, FlowService
+from astrbot.builtin_stars.agent_system.services.hitl_service import HITLService
 from astrbot.builtin_stars.agent_system.services.work_service import WorkService
 from astrbot.core.langgraph.graphs.work_task import plan_node
 from astrbot.core.langgraph.state import GraphRunContext
@@ -91,6 +93,7 @@ async def test_create_work_task_persists_scope_configs_and_input(work_db: Databa
 
     row = work_db.select_one("agent_tasks", where="id = ?", where_params=(task["id"],))
     assert row is not None
+    assert row["task_type"] == "work_task"
     assert row["category"] == "work"
     assert row["work_scope"] == "daily"
     assert row["work_daily_dir_id"] == daily["id"]
@@ -123,6 +126,78 @@ async def test_create_work_task_persists_scope_configs_and_input(work_db: Databa
     repaired = service.get_task(task["id"])
     assert repaired["status"] == "completed"
     assert work_db.select_one("agent_tasks", where="id = ?", where_params=(task["id"],))["status"] == "completed"
+
+
+def test_work_logs_support_append_only_seq_queries(work_db: Database):
+    service = WorkService(work_db)
+    work_db.insert(
+        "agent_tasks",
+        {
+            "id": "task_logs",
+            "name": "日志测试",
+            "description": "",
+            "task_type": "work_task",
+            "created_at": "2026-05-05T00:00:00",
+            "updated_at": "2026-05-05T00:00:00",
+        },
+    )
+    service._append_log("task_logs", "info", "第一条", {"event": "phase"})
+    service._append_log("task_logs", "info", "第二条", {"event": "text_delta", "text": "第二条"})
+
+    logs = service.get_task_logs("task_logs")
+    assert [log["message"] for log in logs] == ["第一条", "第二条"]
+    assert logs[0]["seq"] < logs[1]["seq"]
+    assert service.get_task_logs("task_logs", after_seq=logs[0]["seq"])[0]["message"] == "第二条"
+
+
+def test_hitl_service_persists_and_resolves_task_status(work_db: Database):
+    work_db.insert(
+        "agent_tasks",
+        {
+            "id": "task_hitl",
+            "name": "审批测试",
+            "description": "",
+            "task_type": "work_task",
+            "status": "waiting_feedback",
+            "interaction_id": "hitl_plan_1",
+            "created_at": "2026-05-05T00:00:00",
+            "updated_at": "2026-05-05T00:00:00",
+        },
+    )
+    service = HITLService(work_db)
+    service.upsert_from_card(
+        {
+            "interaction_id": "hitl_plan_1",
+            "type": "plan_approval",
+            "title": "执行计划审批",
+            "body": "计划正文",
+            "fields": [{"key": "modify_text", "label": "修改意见", "field_type": "textarea", "required": False}],
+            "actions": [{"key": "approve", "label": "批准执行", "style": "primary"}],
+            "meta": {"task_id": "task_hitl"},
+        },
+        task_id="task_hitl",
+    )
+
+    assert service.list_pending("task_hitl")[0]["title"] == "执行计划审批"
+
+    import asyncio
+
+    result = asyncio.run(service.respond("hitl_plan_1", "approve", {}))
+    assert result["status"] == "approved"
+    row = work_db.select_one("agent_tasks", where="id = ?", where_params=("task_hitl",))
+    assert row["status"] == "running"
+    assert row["interaction_id"] == ""
+    assert service.list_pending("task_hitl") == []
+
+
+def test_builtin_daily_work_flow_is_seeded_and_locked(work_db: Database):
+    service = FlowService(work_db)
+    flows = [flow.to_dict() for flow in service.get_flows()]
+    builtin = next(flow for flow in flows if flow["id"] == BUILTIN_DAILY_WORK_FLOW_ID)
+    assert builtin["metadata"]["is_builtin"] is True
+
+    with pytest.raises(ValueError):
+        service.delete_flow(BUILTIN_DAILY_WORK_FLOW_ID)
 
 
 @pytest.mark.asyncio

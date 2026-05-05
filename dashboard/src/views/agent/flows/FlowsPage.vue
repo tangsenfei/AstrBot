@@ -338,6 +338,15 @@
 
 
                     </v-chip>
+                    <v-chip
+                      v-if="isBuiltinFlow(flow)"
+                      color="warning"
+                      size="small"
+                      variant="tonal"
+                      class="ml-1"
+                    >
+                      内置
+                    </v-chip>
 
 
                   </v-card-title>
@@ -439,6 +448,9 @@
                       color="primary"
 
 
+                      :disabled="isBuiltinFlow(flow)"
+
+
                       @click="openEditor(flow)"
 
 
@@ -523,7 +535,7 @@
                         </v-list-item>
 
 
-                        <v-list-item @click="toggleFlow(flow)">
+                        <v-list-item @click="toggleFlow(flow)" :disabled="isBuiltinFlow(flow)">
 
 
                           <template v-slot:prepend>
@@ -547,7 +559,7 @@
                         </v-list-item>
 
 
-                        <v-list-item @click="deleteFlow(flow)" class="text-error">
+                        <v-list-item @click="deleteFlow(flow)" class="text-error" :disabled="isBuiltinFlow(flow)">
 
 
                           <template v-slot:prepend>
@@ -1112,6 +1124,13 @@ async function copyFlow(flow: any) {
 
 
   delete (newFlow as any).id;
+  newFlow.metadata = {
+    ...(newFlow.metadata || {}),
+    is_builtin: false,
+    locked: false,
+    non_deletable: false,
+    copied_from: flow.id,
+  };
 
 
 
@@ -1183,13 +1202,14 @@ async function confirmDelete() {
     await axios.post('/api/plug/agent/flows/delete', {
 
 
+      id: deletingFlow.value.id,
       name: deletingFlow.value.name,
 
 
     });
 
 
-    flows.value = flows.value.filter(f => f.name !== deletingFlow.value.name);
+    flows.value = flows.value.filter(f => f.id !== deletingFlow.value.id);
 
 
     showDeleteDialog.value = false;
@@ -1226,6 +1246,7 @@ async function confirmDelete() {
 
 
 async function toggleFlow(flow: any) {
+  if (isBuiltinFlow(flow)) return;
 
 
   try {
@@ -1235,6 +1256,7 @@ async function toggleFlow(flow: any) {
 
 
       name: flow.name,
+      id: flow.id,
 
 
       enabled: !flow.enabled,
@@ -1352,6 +1374,7 @@ async function confirmExecute() {
 
 
       name: executingFlow.value.name,
+      id: executingFlow.value.id,
 
 
       input: executeInput.value,
@@ -1381,6 +1404,10 @@ async function confirmExecute() {
   }
 
 
+}
+
+function isBuiltinFlow(flow: any) {
+  return Boolean(flow?.metadata?.is_builtin || flow?.metadata?.locked || flow?.id === 'builtin_nicebot_daily_work_flow');
 }
 
 

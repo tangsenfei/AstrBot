@@ -1,4 +1,4 @@
-/* Auto-generated MDI subset – 417 icons */
+/* Auto-generated MDI subset – 419 icons */
 /* Do not edit manually. Run: pnpm run subset-icons */
 
 @font-face {
@@ -22,6 +22,10 @@
 
 .mdi-account::before {
   content: "\F0004";
+}
+
+.mdi-account-check-outline::before {
+  content: "\F0BE2";
 }
 
 .mdi-account-circle::before {
@@ -306,6 +310,10 @@
 
 .mdi-check-decagram::before {
   content: "\F0791";
+}
+
+.mdi-check-network-outline::before {
+  content: "\F0C54";
 }
 
 .mdi-checkbox-blank-outline::before {
@@ -818,10 +826,6 @@
 
 .mdi-graph::before {
   content: "\F1049";
-}
-
-.mdi-hand-back-right::before {
-  content: "\F0E47";
 }
 
 .mdi-hand-back-right-outline::before {
@@ -1398,6 +1402,10 @@
 
 .mdi-shield-crown::before {
   content: "\F18BC";
+}
+
+.mdi-shield-key-outline::before {
+  content: "\F0BC5";
 }
 
 .mdi-shield-lock::before {

@@ -1,11 +1,21 @@
 <template>
   <div class="interaction-card-wrapper">
-    <v-card class="interaction-card" :class="[`card-${resolvedStatus || 'active'}`, { 'is-dark': isDark }]" variant="outlined">
+    <v-card
+      class="interaction-card"
+      :class="[`card-${resolvedStatus || 'active'}`, { 'is-dark': isDark }]"
+      variant="outlined"
+    >
       <v-card-text class="pa-3">
         <div class="d-flex align-center mb-2">
           <v-icon :icon="typeIcon" :color="typeColor" size="20" class="mr-2" />
           <span class="text-subtitle-2 font-weight-medium">{{ card.title }}</span>
-          <v-chip v-if="resolvedStatus" size="x-small" :color="statusColor" variant="flat" class="ml-2">
+          <v-chip
+            v-if="resolvedStatus"
+            size="x-small"
+            :color="statusColor"
+            variant="flat"
+            class="ml-2"
+          >
             {{ statusLabel }}
           </v-chip>
         </div>
@@ -14,22 +24,42 @@
           {{ card.body }}
         </div>
 
-        <div v-if="card.fields && card.fields.length && !resolvedStatus" class="card-fields mb-3">
-          <div v-for="field in card.fields" :key="field.key" class="mb-2">
-            <label class="text-caption d-block mb-1">{{ field.label }}{{ field.required ? ' *' : '' }}</label>
+        <div v-if="!resolvedStatus && visibleFields.length" class="card-fields mb-3">
+          <div v-for="field in visibleFields" :key="field.key" class="field-row">
+            <label class="text-caption d-block mb-1">
+              {{ field.label }}{{ field.required ? ' *' : '' }}
+            </label>
             <v-textarea
               v-if="field.field_type === 'textarea'"
               v-model="fieldValues[field.key]"
-              :placeholder="field.default || ''"
-              rows="2"
+              :placeholder="fieldPlaceholder(field)"
+              rows="3"
+              density="compact"
+              variant="outlined"
+              hide-details
+              auto-grow
+            />
+            <v-select
+              v-else-if="field.field_type === 'select'"
+              v-model="fieldValues[field.key]"
+              :items="field.options || []"
               density="compact"
               variant="outlined"
               hide-details
             />
-            <v-text-field
-              v-else-if="field.field_type === 'text'"
+            <v-select
+              v-else-if="field.field_type === 'multiselect'"
               v-model="fieldValues[field.key]"
-              :placeholder="field.default || ''"
+              :items="field.options || []"
+              density="compact"
+              variant="outlined"
+              hide-details
+              multiple
+            />
+            <v-text-field
+              v-else
+              v-model="fieldValues[field.key]"
+              :placeholder="fieldPlaceholder(field)"
               density="compact"
               variant="outlined"
               hide-details
@@ -64,7 +94,7 @@ const props = defineProps<{
     type: string;
     title: string;
     body: string;
-    fields: Array<{ key: string; label: string; field_type: string; required: boolean; default?: string }>;
+    fields: Array<{ key: string; label: string; field_type: string; required: boolean; default?: string; options?: string[] }>;
     actions: Array<{ key: string; label: string; style: string }>;
     timeout_seconds?: number;
   };
@@ -78,8 +108,14 @@ const emit = defineEmits<{
 
 const loadingAction = ref<string | null>(null);
 const fieldValues = ref<Record<string, any>>({});
-const resolvedLocally = ref<string | null>(null);
-const resolvedStatus = computed(() => resolvedLocally.value || props.resolved?.status || null);
+const revealFields = ref(false);
+const resolvedStatus = computed(() => props.resolved?.status || null);
+const visibleFields = computed(() => {
+  const fields = props.card.fields || [];
+  if (!fields.length) return [];
+  if (revealFields.value) return fields;
+  return fields.filter((field) => field.required);
+});
 
 const typeIcon = computed(() => {
   const map: Record<string, string> = {
@@ -88,6 +124,8 @@ const typeIcon = computed(() => {
     workflow_human: 'mdi-account-question-outline',
     error_recovery: 'mdi-alert-circle-outline',
     clarification: 'mdi-help-circle-outline',
+    permission: 'mdi-shield-key-outline',
+    info_request: 'mdi-information-outline',
   };
   return map[props.card.type] || 'mdi-message-outline';
 });
@@ -99,44 +137,59 @@ const typeColor = computed(() => {
     workflow_human: 'warning',
     error_recovery: 'error',
     clarification: 'info',
+    permission: 'warning',
+    info_request: 'info',
   };
   return map[props.card.type] || 'grey';
 });
 
 const statusColor = computed(() => {
   const map: Record<string, string> = {
-    confirmed: 'success',
+    approved: 'success',
     cancelled: 'grey',
     rejected: 'error',
-    modified: 'warning',
+    rejected_with_feedback: 'warning',
   };
   return map[resolvedStatus.value || ''] || 'grey';
 });
 
 const statusLabel = computed(() => {
   const map: Record<string, string> = {
-    confirmed: '已确认',
+    approved: '已通过',
     cancelled: '已取消',
-    rejected: '已拒绝',
-    modified: '已修改',
+    rejected: '已驳回',
+    rejected_with_feedback: '已驳回（已修改）',
   };
   return map[resolvedStatus.value || ''] || '';
 });
 
 async function handleAction(action: { key: string; label: string }) {
+  const fields = props.card.fields || [];
+  const shouldRevealFields = fields.length > 0 && (
+    action.key === 'modify' ||
+    action.key === 'retry' ||
+    fields.some((field) => field.required && !fieldValues.value[field.key])
+  );
+  if (shouldRevealFields && !revealFields.value) {
+    revealFields.value = true;
+    return;
+  }
+  const missing = fields.find((field) => field.required && !String(fieldValues.value[field.key] ?? '').trim());
+  if (missing) {
+    revealFields.value = true;
+    return;
+  }
   loadingAction.value = action.key;
   try {
-    const response = await fetch('/api/interaction/respond', {
+    const response = await fetch(`/api/plug/hitl/${encodeURIComponent(props.card.interaction_id)}/respond`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        interaction_id: props.card.interaction_id,
         action_key: action.key,
         field_values: fieldValues.value,
       }),
     });
     if (response.ok) {
-      resolvedLocally.value = action.key === 'confirm' ? 'confirmed' : action.key === 'cancel' ? 'cancelled' : 'rejected';
       emit('respond', {
         interaction_id: props.card.interaction_id,
         action_key: action.key,
@@ -149,6 +202,11 @@ async function handleAction(action: { key: string; label: string }) {
     loadingAction.value = null;
   }
 }
+
+function fieldPlaceholder(field: { label: string; field_type: string }) {
+  if (field.field_type === 'textarea') return `请输入${field.label}...`;
+  return field.label;
+}
 </script>
 
 <style scoped>
@@ -157,12 +215,15 @@ async function handleAction(action: { key: string; label: string }) {
   border-radius: 8px;
   transition: opacity 0.3s;
 }
-.interaction-card.card-confirmed,
+.interaction-card.card-approved,
 .interaction-card.card-cancelled,
 .interaction-card.card-rejected { opacity: 0.65; }
 .card-body {
   color: rgba(var(--v-theme-on-surface), 0.87);
   font-size: 14px;
 }
-.card-fields { max-width: 400px; }
+
+.field-row + .field-row {
+  margin-top: 10px;
+}
 </style>

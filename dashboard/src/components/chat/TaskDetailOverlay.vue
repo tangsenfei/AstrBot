@@ -14,52 +14,55 @@
         <div class="mb-3">
           <v-chip :color="statusColor" size="small" variant="flat" class="mr-2">{{ statusLabel }}</v-chip>
           <v-progress-linear :model-value="progress" :color="statusColor" height="6" rounded class="mt-2" />
+          <div v-if="currentStep" class="text-caption text-grey mt-1">
+            {{ currentStep.activeForm || currentStep.content }}
+          </div>
         </div>
 
         <div v-if="task.description" class="text-body-2 mb-3 text-medium-emphasis">{{ task.description }}</div>
 
         <div v-if="steps.length > 0" class="steps-section mb-3">
           <div class="text-caption font-weight-medium mb-2">执行步骤</div>
-          <div v-for="step in steps" :key="step.id" class="step-item pa-2 mb-1 rounded d-flex align-start"
-            :class="{ 'step-done': step.status === 'done', 'step-running': step.status === 'running' }">
+          <div
+            v-for="step in steps"
+            :key="step.content"
+            class="step-item pa-2 mb-1 rounded d-flex align-start"
+            :class="{ 'step-done': step.status === 'completed', 'step-running': step.status === 'in_progress', 'step-failed': step.status === 'failed' }"
+          >
             <v-icon :icon="stepIcon(step)" :color="stepColor(step)" size="16" class="mr-2 mt-1" />
             <div class="flex-grow-1">
-              <div class="text-body-2">{{ step.description }}</div>
-              <div v-if="step.result && step.status === 'done'" class="text-caption text-grey mt-1" style="white-space: pre-wrap; max-height: 80px; overflow-y: auto;">
+              <div class="text-body-2">{{ step.content }}</div>
+              <div v-if="step.result && step.status === 'completed'" class="text-caption text-grey mt-1" style="white-space: pre-wrap; max-height: 80px; overflow-y: auto;">
                 {{ step.result.substring(0, 200) }}
+              </div>
+              <div v-if="step.status === 'failed'" class="mt-1">
+                <v-btn size="x-small" variant="outlined" color="warning" @click="retryStep(step)">重试</v-btn>
               </div>
             </div>
           </div>
         </div>
 
-        <InteractionCardComponent
-          v-if="task.hitl_cards?.length"
-          class="mb-3"
-          :card="task.hitl_cards[0]"
-          :is-dark="false"
-          @respond="emit('interaction-respond', $event)"
-        />
-
-        <div v-else-if="task.interaction_id" class="interaction-section mb-3 pa-2 rounded" style="border: 1px solid rgba(var(--v-theme-warning), 0.4); background: rgba(var(--v-theme-warning), 0.04);">
-          <div class="text-caption font-weight-medium mb-1">
-            <v-icon icon="mdi-hand-back-right" size="14" color="warning" class="mr-1" />
-            等待你的操作
-          </div>
-          <div class="text-caption text-medium-emphasis mb-2">{{ task.interaction_prompt || '请完成交互操作' }}</div>
-          <div class="d-flex ga-2">
-            <v-btn size="x-small" color="primary" variant="flat"
-              @click="respond('confirm')">确认</v-btn>
-            <v-btn size="x-small" color="error" variant="outlined"
-              @click="respond('cancel')">取消</v-btn>
-          </div>
+        <div v-if="activeCard" class="interaction-section mb-3">
+          <InteractionCardComponent
+            :card="activeCard"
+            :is-dark="false"
+            :resolved="cardResolved"
+            @respond="onCardRespond"
+          />
         </div>
 
         <div class="input-section">
           <div class="text-caption font-weight-medium mb-1">补充信息</div>
-          <v-textarea v-model="inputText" rows="2" density="compact" variant="outlined"
-            placeholder="输入补充要求后提交..." hide-details class="mb-2" />
-          <v-btn size="x-small" variant="outlined" :disabled="!inputText.trim()"
-            @click="submitInput">提交</v-btn>
+          <v-textarea
+            v-model="inputText"
+            rows="2"
+            density="compact"
+            variant="outlined"
+            placeholder="输入补充要求后提交..."
+            hide-details
+            class="mb-2"
+          />
+          <v-btn size="x-small" variant="outlined" :disabled="!inputText.trim()" @click="submitInput">提交</v-btn>
         </div>
       </v-card-text>
     </v-card>
@@ -67,7 +70,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import axios from 'axios';
 import InteractionCardComponent from '@/components/chat/InteractionCardComponent.vue';
 
 const props = defineProps<{ task: any }>();
@@ -79,9 +83,13 @@ const emit = defineEmits<{
 
 const visible = ref(true);
 const inputText = ref('');
+const activeCard = ref<any>(null);
+const cardResolved = ref<any>(null);
+let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 const steps = computed(() => {
   if (Array.isArray(props.task.steps)) return props.task.steps;
+  if (Array.isArray(props.task.todo_steps)) return props.task.todo_steps;
   if (typeof props.task.steps === 'string') {
     try { return JSON.parse(props.task.steps); } catch { return []; }
   }
@@ -91,8 +99,12 @@ const steps = computed(() => {
 const progress = computed(() => {
   if (props.task.status === 'completed') return 100;
   if (steps.value.length === 0) return 0;
-  const done = steps.value.filter((s: any) => s.status === 'done').length;
+  const done = steps.value.filter((s: any) => s.status === 'completed').length;
   return Math.round((done / steps.value.length) * 100);
+});
+
+const currentStep = computed(() => {
+  return steps.value.find((s: any) => s.status === 'in_progress') || null;
 });
 
 const statusLabels: Record<string, string> = {
@@ -115,15 +127,46 @@ const statusIcon = computed(() => {
 });
 
 function stepIcon(step: any) {
-  if (step.status === 'done') return 'mdi-check-circle';
-  if (step.status === 'running') return 'mdi-loading';
+  if (step.status === 'completed') return 'mdi-check-circle';
+  if (step.status === 'in_progress') return 'mdi-loading';
+  if (step.status === 'failed') return 'mdi-alert-circle';
   return 'mdi-circle-outline';
 }
 
 function stepColor(step: any) {
-  if (step.status === 'done') return 'success';
-  if (step.status === 'running') return 'primary';
+  if (step.status === 'completed') return 'success';
+  if (step.status === 'in_progress') return 'primary';
+  if (step.status === 'failed') return 'error';
   return 'grey';
+}
+
+async function fetchPendingCards() {
+  try {
+    const resp = await axios.get('/api/interaction/pending');
+    if (resp.data?.status === 'ok' && resp.data?.data?.cards) {
+      const cards = resp.data.data.cards;
+      const taskCard = cards.find(
+        (c: any) => c.interaction_id && c.interaction_id.includes(props.task.id)
+      );
+      if (taskCard && !activeCard.value) {
+        activeCard.value = taskCard;
+      } else if (!taskCard && activeCard.value && !cardResolved.value) {
+        activeCard.value = null;
+      }
+    }
+  } catch (e) { /* ignore */ }
+}
+
+function onCardRespond(payload: any) {
+  cardResolved.value = {
+    status: payload.action_key === 'approve' ? 'approved' : payload.action_key === 'modify' ? 'rejected_with_feedback' : 'rejected',
+    message: payload.action_key === 'approve' ? '已通过' : '已处理',
+  };
+  emit('interaction-respond', payload);
+}
+
+function retryStep(step: any) {
+  step.status = 'pending';
 }
 
 function submitInput() {
@@ -132,23 +175,14 @@ function submitInput() {
   inputText.value = '';
 }
 
-async function respond(key: string) {
-  const payload = {
-    interaction_id: props.task.interaction_id,
-    action_key: key,
-    field_values: {},
-  };
-  try {
-    const response = await fetch('/api/interaction/respond', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (response.ok) emit('interaction-respond', payload);
-  } catch (e) {
-    console.error('Interaction respond failed:', e);
-  }
-}
+onMounted(() => {
+  fetchPendingCards();
+  pollTimer = setInterval(fetchPendingCards, 3000);
+});
+
+onBeforeUnmount(() => {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+});
 </script>
 
 <style scoped>
@@ -156,4 +190,5 @@ async function respond(key: string) {
 .step-item { border-left: 3px solid transparent; }
 .step-done { border-left-color: rgba(var(--v-theme-success), 0.5); background: rgba(var(--v-theme-success), 0.03); }
 .step-running { border-left-color: rgba(var(--v-theme-primary), 0.5); background: rgba(var(--v-theme-primary), 0.03); }
+.step-failed { border-left-color: rgba(var(--v-theme-error), 0.5); background: rgba(var(--v-theme-error), 0.03); }
 </style>

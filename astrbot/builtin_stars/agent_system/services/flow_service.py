@@ -22,6 +22,8 @@ if TYPE_CHECKING:
 
 from ..models import Flow, FlowEdge, FlowNode, FlowNodeType, TaskStatus
 
+BUILTIN_DAILY_WORK_FLOW_ID = "builtin_nicebot_daily_work_flow"
+
 
 class FlowService:
     """Flow 管理服务"""
@@ -45,6 +47,7 @@ class FlowService:
         Returns:
             Flow 列表
         """
+        self.ensure_builtin_daily_work_flow()
         flows = []
 
         if enabled_only:
@@ -75,6 +78,8 @@ class FlowService:
         Returns:
             Flow 对象，不存在则返回 None
         """
+        if flow_id == BUILTIN_DAILY_WORK_FLOW_ID:
+            self.ensure_builtin_daily_work_flow()
         row = self.db.select_one("flows", where="id = ?", where_params=(flow_id,))
         if row:
             return self._row_to_flow(row)
@@ -173,6 +178,8 @@ class FlowService:
         row = self.db.select_one("flows", where="id = ?", where_params=(flow_id,))
         if not row:
             return None
+        if self._is_builtin_row(row):
+            raise ValueError("内置 Flow 不允许直接编辑，请复制为自定义流程后修改")
 
         # 准备更新数据
         update_data = {
@@ -253,6 +260,8 @@ class FlowService:
         row = self.db.select_one("flows", where="id = ?", where_params=(flow_id,))
         if not row:
             return False
+        if self._is_builtin_row(row):
+            raise ValueError("内置 Flow 不允许删除")
 
         # 检查是否有正在执行的任务
         running_tasks = self.db.select_all(
@@ -271,6 +280,70 @@ class FlowService:
         self.db.delete("flows", where="id = ?", where_params=(flow_id,))
         logger.info(f"Deleted flow: {flow_id}")
         return True
+
+    def ensure_builtin_daily_work_flow(self) -> None:
+        existing = self.db.select_one("flows", where="id = ?", where_params=(BUILTIN_DAILY_WORK_FLOW_ID,))
+        if existing:
+            return
+        now = datetime.now()
+        flow_data = {
+            "id": BUILTIN_DAILY_WORK_FLOW_ID,
+            "name": "NiceBot 日常任务执行流程",
+            "description": "Work 日常任务内置流程：准备上下文、可选规划与 HITL、按依赖执行任务、可选审查、生成交付物。",
+            "enabled": 1,
+            "metadata": {
+                "is_builtin": True,
+                "locked": True,
+                "non_deletable": True,
+                "kind": "work_daily_task",
+            },
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+        }
+        nodes = [
+            {"id": "daily_start", "name": "开始", "type": "start", "position": {"x": 80, "y": 160}, "config": {}},
+            {"id": "daily_prepare", "name": "准备任务上下文", "type": "human", "position": {"x": 320, "y": 160}, "config": {"builtin_stage": "prepare"}},
+            {"id": "daily_plan", "name": "规划与人工审批", "type": "human", "position": {"x": 560, "y": 160}, "config": {"builtin_stage": "plan_hitl", "optional": True}},
+            {"id": "daily_execute", "name": "按依赖执行任务", "type": "human", "position": {"x": 800, "y": 160}, "config": {"builtin_stage": "execute_dag"}},
+            {"id": "daily_review", "name": "审查与返工确认", "type": "human", "position": {"x": 1040, "y": 160}, "config": {"builtin_stage": "review_hitl", "optional": True}},
+            {"id": "daily_deliver", "name": "生成最终交付物", "type": "human", "position": {"x": 1280, "y": 160}, "config": {"builtin_stage": "deliverable"}},
+        ]
+        edges = [
+            {"id": "edge_daily_start_prepare", "source": "daily_start", "target": "daily_prepare", "condition": {}},
+            {"id": "edge_daily_prepare_plan", "source": "daily_prepare", "target": "daily_plan", "condition": {}},
+            {"id": "edge_daily_plan_execute", "source": "daily_plan", "target": "daily_execute", "condition": {}},
+            {"id": "edge_daily_execute_review", "source": "daily_execute", "target": "daily_review", "condition": {}},
+            {"id": "edge_daily_review_deliver", "source": "daily_review", "target": "daily_deliver", "condition": {}},
+        ]
+        self.db.insert("flows", flow_data)
+        for node in nodes:
+            self.db.insert(
+                "flow_nodes",
+                {
+                    "id": node["id"],
+                    "flow_id": BUILTIN_DAILY_WORK_FLOW_ID,
+                    "name": node["name"],
+                    "type": node["type"],
+                    "config": node["config"],
+                    "position": node["position"],
+                },
+            )
+        for edge in edges:
+            self.db.insert(
+                "flow_edges",
+                {
+                    "id": edge["id"],
+                    "flow_id": BUILTIN_DAILY_WORK_FLOW_ID,
+                    "source": edge["source"],
+                    "target": edge["target"],
+                    "condition": edge["condition"],
+                },
+            )
+        logger.info("Ensured builtin NiceBot daily work flow")
+
+    def _is_builtin_row(self, row: dict[str, Any]) -> bool:
+        metadata = self._parse_json(row.get("metadata", "{}"))
+        return row.get("id") == BUILTIN_DAILY_WORK_FLOW_ID or bool(isinstance(metadata, dict) and metadata.get("is_builtin"))
 
     def _row_to_crew(self, row: dict[str, Any]) -> Crew:
         """将数据库行转换为 Crew 对象"""

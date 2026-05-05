@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
-import asyncio
 from typing import Any
 
 from langgraph.config import RunnableConfig
@@ -31,6 +31,9 @@ class WorkTaskState(AgentGraphState, total=False):
     review_passed: bool
     rework_count: int
     final_summary: str
+    approval_action: str
+    plan_feedback: str
+    cancelled: bool
 
 
 def _get_run_ctx(config: RunnableConfig) -> GraphRunContext | None:
@@ -78,13 +81,16 @@ async def plan_node(state: WorkTaskState, config: RunnableConfig) -> dict:
     task_name = state.get("task_name", "")
     task_desc = state.get("task_desc", "")
     effort = (state.get("plan_config", {}) or {}).get("effort", "medium")
+    plan_feedback = state.get("plan_feedback", "")
+    feedback_text = f"人工调整意见：{plan_feedback}\n\n" if plan_feedback else ""
     prompt = (
         f"请为 Work 任务制定可执行计划。\n\n"
         f"任务名称：{task_name}\n"
         f"任务描述：{task_desc}\n\n"
         f"{_context_text(state)}\n\n"
         f"规划深度：{effort}\n\n"
-        "请输出 3-7 个步骤，每个步骤包含清晰交付物。"
+        f"{feedback_text}"
+        "请输出 3-7 个步骤，每个步骤包含清晰交付物。步骤之间应按依赖顺序排列；如果存在子任务，最多拆到二级。"
     )
     plan_config = state.get("plan_config", {}) or {}
     timeout_seconds = max(10, int(plan_config.get("timeout_seconds", 30) or 30))
@@ -125,7 +131,7 @@ async def plan_node(state: WorkTaskState, config: RunnableConfig) -> dict:
     plan_display = _format_plan_for_display(steps) if steps else text
     _emit(run_ctx, "text_delta", {"text": plan_display}, "plan")
     _emit(run_ctx, "phase", {"phase": "plan_done", "label": "计划已生成", "steps": steps, "progress": 25}, "plan")
-    return {"plan_steps": steps, "current_step_index": 0, "step_results": []}
+    return {"plan_steps": steps, "current_step_index": 0, "step_results": [], "approval_action": "", "plan_feedback": ""}
 
 
 async def approve_plan_node(state: WorkTaskState, config: RunnableConfig) -> dict:
@@ -155,23 +161,27 @@ async def approve_plan_node(state: WorkTaskState, config: RunnableConfig) -> dic
         meta={"task_id": state.get("task_id", "")},
     )
     _emit(run_ctx, "interaction", card.to_dict(), "approve_plan")
-    response = await get_interaction_manager().send_and_wait(card, thread_id=state.get("task_id", ""), channel="chatui")
+    response = await get_interaction_manager().send_and_wait(
+        card,
+        thread_id=state.get("task_id", ""),
+        channel="chatui",
+        channel_extra={"task_id": state.get("task_id", ""), "sync_chatui": True},
+    )
     if response.action_key == "approve":
-        _emit(run_ctx, "phase", {"phase": "plan_approved", "label": "计划已批准", "progress": 30}, "approve_plan")
-        return {"review_passed": False}
+        _emit(run_ctx, "phase", {"phase": "plan_approved", "label": "计划已批准", "progress": 30, "status": "running"}, "approve_plan")
+        return {"review_passed": False, "approval_action": "approve"}
     if response.action_key == "modify":
-        modify_text = response.field_values.get("modify_text", "")
-        updated = list(steps)
-        if modify_text:
-            updated.append({
-                "id": len(updated) + 1,
-                "description": f"根据人工意见调整：{modify_text}",
-                "status": "pending",
-            })
-        _emit(run_ctx, "phase", {"phase": "plan_modified", "label": "计划已按人工意见调整", "steps": updated, "progress": 30}, "approve_plan")
-        return {"plan_steps": updated, "review_passed": False}
-    _emit(run_ctx, "error", {"message": "执行计划被拒绝"}, "approve_plan")
-    return {"review_passed": False, "current_step_index": 999999}
+        modify_text = response.field_values.get("modify_text") or response.field_values.get("feedback") or ""
+        _emit(
+            run_ctx,
+            "phase",
+            {"phase": "plan_revision_requested", "label": "已收到调整计划要求，将重新规划", "progress": 18, "status": "running"},
+            "approve_plan",
+        )
+        return {"approval_action": "modify", "plan_feedback": modify_text, "review_passed": False}
+    _emit(run_ctx, "error", {"message": "执行计划被拒绝，任务已取消", "status": "cancelled"}, "approve_plan")
+    _emit(run_ctx, "phase", {"phase": "cancelled", "label": "任务已取消", "progress": state.get("progress", 0), "status": "cancelled"}, "approve_plan")
+    return {"review_passed": False, "current_step_index": 999999, "approval_action": "reject", "cancelled": True}
 
 
 async def execute_node(state: WorkTaskState, config: RunnableConfig) -> dict:
@@ -223,7 +233,6 @@ async def execute_node(state: WorkTaskState, config: RunnableConfig) -> dict:
         "status": "done",
         "stats": result.get("stats", {}),
     })
-    _emit(run_ctx, "token", {"stats": result.get("stats", {}), "step_id": step.get("id", idx + 1)}, "execute")
     return {"plan_steps": steps, "step_results": results, "current_step_index": idx + 1}
 
 
@@ -281,7 +290,12 @@ async def rework_hitl_node(state: WorkTaskState, config: RunnableConfig) -> dict
         meta={"task_id": state.get("task_id", "")},
     )
     _emit(run_ctx, "interaction", card.to_dict(), "rework_hitl")
-    response = await get_interaction_manager().send_and_wait(card, thread_id=state.get("task_id", ""), channel="chatui")
+    response = await get_interaction_manager().send_and_wait(
+        card,
+        thread_id=state.get("task_id", ""),
+        channel="chatui",
+        channel_extra={"task_id": state.get("task_id", ""), "sync_chatui": True},
+    )
     if response.action_key == "retry":
         guidance = response.field_values.get("guidance", "")
         steps = list(state.get("plan_steps", []))
@@ -341,6 +355,10 @@ def route_after_prepare(state: WorkTaskState) -> str:
 
 
 def route_after_approval(state: WorkTaskState) -> str:
+    if state.get("approval_action") == "modify":
+        return "plan"
+    if state.get("cancelled"):
+        return "end"
     if state.get("current_step_index", 0) >= 999999:
         return "end"
     return "execute"
@@ -376,9 +394,28 @@ def _parse_steps(text: str) -> list[dict[str, Any]]:
             continue
         cleaned = stripped.lstrip("-*0123456789.、)） ").strip()
         if cleaned and (stripped[0].isdigit() or stripped.startswith(("-", "*"))):
-            steps.append({"id": len(steps) + 1, "description": cleaned, "status": "pending"})
+            step_id = f"step_{len(steps) + 1}"
+            steps.append({
+                "id": step_id,
+                "title": cleaned[:80],
+                "description": cleaned,
+                "status": "pending",
+                "dependencies": [] if not steps else [f"step_{len(steps)}"],
+                "parent_id": None,
+                "depth": 1,
+                "sort_order": len(steps),
+            })
     if not steps:
-        steps.append({"id": 1, "description": text.strip()[:500] or "完成任务交付", "status": "pending"})
+        steps.append({
+            "id": "step_1",
+            "title": "完成任务交付",
+            "description": text.strip()[:500] or "完成任务交付",
+            "status": "pending",
+            "dependencies": [],
+            "parent_id": None,
+            "depth": 1,
+            "sort_order": 0,
+        })
     return steps[:7]
 
 
@@ -424,7 +461,7 @@ def build_work_task_graph(config: dict | None = None, checkpointer=None) -> Stat
     builder.set_entry_point("prepare")
     builder.add_conditional_edges("prepare", route_after_prepare, {"plan": "plan", "execute": "execute"})
     builder.add_edge("plan", "approve_plan")
-    builder.add_conditional_edges("approve_plan", route_after_approval, {"execute": "execute", "end": END})
+    builder.add_conditional_edges("approve_plan", route_after_approval, {"plan": "plan", "execute": "execute", "end": END})
     builder.add_conditional_edges("execute", route_after_execute, {"execute": "execute", "review": "review"})
     builder.add_conditional_edges("review", route_after_review, {"execute": "execute", "hitl": "rework_hitl", "finalize": "finalize"})
     builder.add_conditional_edges("rework_hitl", route_after_rework_hitl, {"execute": "execute", "finalize": "finalize"})

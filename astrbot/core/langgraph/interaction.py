@@ -31,6 +31,8 @@ class InteractionCard:
         "workflow_human",
         "error_recovery",
         "clarification",
+        "permission",
+        "info_request",
     ]
     title: str
     body: str
@@ -40,26 +42,30 @@ class InteractionCard:
     meta: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        def _field_dict(f):
+            if isinstance(f, dict):
+                return f
+            return {
+                "key": f.key,
+                "label": f.label,
+                "field_type": f.field_type,
+                "required": f.required,
+                "default": f.default,
+                "options": f.options,
+            }
+
+        def _action_dict(a):
+            if isinstance(a, dict):
+                return a
+            return {"key": a.key, "label": a.label, "style": a.style}
+
         return {
             "interaction_id": self.interaction_id,
             "type": self.type,
             "title": self.title,
             "body": self.body,
-            "fields": [
-                {
-                    "key": f.key,
-                    "label": f.label,
-                    "field_type": f.field_type,
-                    "required": f.required,
-                    "default": f.default,
-                    "options": f.options,
-                }
-                for f in self.fields
-            ],
-            "actions": [
-                {"key": a.key, "label": a.label, "style": a.style}
-                for a in self.actions
-            ],
+            "fields": [_field_dict(f) for f in self.fields],
+            "actions": [_action_dict(a) for a in self.actions],
             "timeout_seconds": self.timeout_seconds,
             "meta": self.meta,
         }

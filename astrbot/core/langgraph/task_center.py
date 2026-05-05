@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import time
 import traceback
 import uuid
@@ -14,6 +13,21 @@ from typing import Any
 from .state import StreamEvent, TaskRecord, TaskStatus
 
 _DEBUG_LOG_PATH = Path(__file__).parent.parent.parent.parent / "data" / "task_center_debug.log"
+
+
+def _merge_steps(task: TaskRecord, new_steps: list[dict]) -> None:
+    """Merge new steps into existing, preserving completed results."""
+    existing = {}
+    for index, step in enumerate(task.steps or []):
+        key = str(step.get("id") or step.get("description") or step.get("content") or index)
+        existing[key] = step
+    for s in new_steps:
+        key = str(s.get("id") or s.get("description") or s.get("content") or len(existing) + 1)
+        if key in existing:
+            existing[key].update(s)
+        else:
+            existing[key] = s
+    task.steps = list(existing.values())
 
 
 def _debug_log(msg: str) -> None:
@@ -46,6 +60,7 @@ class TaskCenter:
                 TaskStatus.DISPATCHED: "pending",
                 TaskStatus.RUNNING: "running",
                 TaskStatus.PAUSED: "waiting_feedback",
+                TaskStatus.WAITING_FEEDBACK: "waiting_feedback",
                 TaskStatus.RESUMING: "running",
                 TaskStatus.DONE: "completed",
                 TaskStatus.FAILED: "failed",
@@ -56,6 +71,8 @@ class TaskCenter:
                 "progress": 100 if task.status == TaskStatus.DONE else task.progress,
                 "result": task.result_text,
                 "steps": json.dumps(task.steps, ensure_ascii=False),
+                "pending_input": task.interaction_text,
+                "interaction_id": task.interaction_id,
                 "input_tokens": task.input_tokens,
                 "output_tokens": task.output_tokens,
                 "total_tokens": task.total_tokens,
@@ -95,34 +112,43 @@ class TaskCenter:
 
     def _handle_stream_event(self, task: TaskRecord, event: StreamEvent) -> None:
         event_type = event.get("event", "event")
-        _debug_log(f"_handle_stream_event ENTER: task_id={task.task_id} thread_id={task.thread_id} event_type={event_type}")
         data = event.get("data", {}) or {}
         if event_type == "text_delta":
             text = str(data.get("text") or "")
             if text:
                 task.result_text = (task.result_text + text)[-120000:]
         elif event_type == "phase":
+            status = data.get("status")
+            if status == "cancelled":
+                task.status = TaskStatus.CANCELLED
+            elif status == "running" and task.status == TaskStatus.WAITING_FEEDBACK:
+                task.status = TaskStatus.RUNNING
             progress = data.get("progress")
             if isinstance(progress, int | float):
                 task.progress = max(0, min(100, int(progress)))
             steps = data.get("steps")
             if isinstance(steps, list):
-                task.steps = steps
+                _merge_steps(task, steps)
         elif event_type == "artifact":
             content = str(data.get("content") or "")
             if content:
                 task.result_text = content
         elif event_type == "token":
-            input_tokens, output_tokens, total_tokens = self._extract_token_counts(data)
-            task.input_tokens += input_tokens
-            task.output_tokens += output_tokens
-            task.total_tokens += total_tokens or input_tokens + output_tokens
+            input_t = data.get("input") or data.get("input_tokens") or 0
+            output_t = data.get("output") or data.get("output_tokens") or 0
+            task.input_tokens += int(input_t)
+            task.output_tokens += int(output_t)
+            task.total_tokens += int(data.get("total") or data.get("total_tokens") or input_t + output_t)
         elif event_type == "error":
             task.error = str(data.get("message") or data)
         elif event_type == "tool_call":
             pass
         elif event_type == "tool_result":
             pass
+        elif event_type in ("interaction_card", "interaction"):
+            task.status = TaskStatus.WAITING_FEEDBACK
+            task.interaction_text = str(data.get("body") or data.get("title") or "")[:500]
+            task.interaction_id = str(data.get("interaction_id") or "")
 
         asyncio.create_task(self._sync_to_db(task))
         asyncio.create_task(self._persist_stream_event(task, event))
@@ -193,6 +219,18 @@ class TaskCenter:
                 )
 
             if event_type == "interaction" and isinstance(data, dict):
+                try:
+                    from astrbot.builtin_stars.agent_system.services.hitl_service import HITLService
+
+                    HITLService(db).upsert_from_card(
+                        data,
+                        task_id=task_id,
+                        session_id=task.session_id,
+                        channel="chatui",
+                        metadata={"thread_id": task.thread_id, "node_id": event.get("node_id", "")},
+                    )
+                except Exception as e_hitl:
+                    _debug_log(f"hitl upsert failed: {e_hitl}")
                 db.update(
                     "agent_tasks",
                     {
@@ -317,9 +355,13 @@ class TaskCenter:
         if self._checkpointer is not None:
             return self._checkpointer
 
-        from astrbot.core.langgraph.checkpoint import get_checkpoint_db_path, set_checkpointer
-        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
         import aiosqlite
+        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+        from astrbot.core.langgraph.checkpoint import (
+            get_checkpoint_db_path,
+            set_checkpointer,
+        )
 
         db_path = get_checkpoint_db_path()
         conn = await aiosqlite.connect(db_path)
@@ -342,7 +384,7 @@ class TaskCenter:
         checkpointer = await self._get_or_create_checkpointer()
         _debug_log(f"  checkpointer: {checkpointer}")
 
-        _debug_log(f"  building graph...")
+        _debug_log("  building graph...")
         try:
             graph = builder(config=task.config, checkpointer=checkpointer)
             _debug_log(f"  graph built: {graph}")
@@ -352,7 +394,7 @@ class TaskCenter:
         task.status = TaskStatus.RUNNING
         task.updated_at = time.time()
         self._install_run_writer(task)
-        _debug_log(f"  run_writer installed, emitting started event...")
+        _debug_log("  run_writer installed, emitting started event...")
         self._handle_stream_event(
             task,
             StreamEvent(
@@ -363,7 +405,7 @@ class TaskCenter:
             ),
         )
         await self._sync_to_db(task)
-        _debug_log(f"  synced to db, starting astream_events...")
+        _debug_log("  synced to db, starting astream_events...")
 
         try:
             async for event in graph.astream_events(
@@ -383,26 +425,28 @@ class TaskCenter:
                         await task.stream_callback(stream_event)
 
                 elif event["event"] == "on_interrupt":
-                    _debug_log(f"  on_interrupt received!")
+                    _debug_log("  on_interrupt received!")
                     task.status = TaskStatus.PAUSED
                     task.hitl_context = event["data"]
                     task.updated_at = time.time()
                     await self._sync_to_db(task)
                     return
 
-            _debug_log(f"  astream_events loop ended normally")
-            task.status = TaskStatus.DONE
+            _debug_log("  astream_events loop ended normally")
+            if task.status != TaskStatus.CANCELLED:
+                task.status = TaskStatus.DONE
             task.result = {"output": "Task completed"}
             task.updated_at = time.time()
-            self._handle_stream_event(
-                task,
-                StreamEvent(
-                    event="phase",
-                    data={"phase": "done", "label": "任务执行器已结束", "progress": 100},
-                    timestamp=time.time(),
-                    node_id="task_center",
-                ),
-            )
+            if task.status == TaskStatus.DONE:
+                self._handle_stream_event(
+                    task,
+                    StreamEvent(
+                        event="phase",
+                        data={"phase": "done", "label": "任务执行器已结束", "progress": 100},
+                        timestamp=time.time(),
+                        node_id="task_center",
+                    ),
+                )
             await self._sync_to_db(task)
         except asyncio.CancelledError:
             _debug_log(f"  _run_task CANCELLED: {task.task_id}")
@@ -465,18 +509,20 @@ class TaskCenter:
                     await self._sync_to_db(task)
                     return
 
-            task.status = TaskStatus.DONE
+            if task.status != TaskStatus.CANCELLED:
+                task.status = TaskStatus.DONE
             task.result = {"output": "Task completed"}
             task.updated_at = time.time()
-            self._handle_stream_event(
-                task,
-                StreamEvent(
-                    event="phase",
-                    data={"phase": "done", "label": "任务执行器已结束", "progress": 100},
-                    timestamp=time.time(),
-                    node_id="task_center",
-                ),
-            )
+            if task.status == TaskStatus.DONE:
+                self._handle_stream_event(
+                    task,
+                    StreamEvent(
+                        event="phase",
+                        data={"phase": "done", "label": "任务执行器已结束", "progress": 100},
+                        timestamp=time.time(),
+                        node_id="task_center",
+                    ),
+                )
             await self._sync_to_db(task)
         except asyncio.CancelledError:
             task.status = TaskStatus.CANCELLED

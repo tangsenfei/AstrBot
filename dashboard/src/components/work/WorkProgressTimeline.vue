@@ -61,6 +61,8 @@
 
           <pre v-if="item.kind === 'token'" class="tl-text token-text">{{ item.text }}</pre>
 
+          <pre v-if="item.kind === 'log' || item.kind === 'phase'" class="tl-text log-text">{{ item.text }}</pre>
+
           <div v-if="item.kind === 'artifact' && item.content" class="tl-artifact">
             <div class="tl-section-title">交付内容</div>
             <pre class="tl-text">{{ item.content }}</pre>
@@ -73,6 +75,8 @@
               @respond="onRespond"
             />
           </div>
+
+          <pre v-if="item.kind === 'hitl_resolved' && item.text" class="tl-text log-text">{{ item.text }}</pre>
         </div>
       </div>
     </div>
@@ -100,7 +104,7 @@ const props = withDefaults(defineProps<{
   logs: () => [],
   activeCards: () => [],
   isDark: false,
-  maxItems: 200,
+  maxItems: 0,
   loading: false,
 });
 
@@ -197,39 +201,26 @@ const items = computed<TimelineItem[]>(() => {
     const log = logs[i];
     const data = log?.data || {};
     const event = data.event || 'log';
-    if (event === 'interaction') continue;
-
     const ts = log.created_at ? Date.parse(log.created_at) : 0;
     const dur = prevTs && ts ? Math.max(0, ts - prevTs) : undefined;
 
     if (event === 'text_delta') {
       const text = String(data.text || log.message || '');
       if (!text) continue;
-      const prev = result[result.length - 1];
-      if (prev && prev.kind === 'text_delta') {
-        prev.text += text;
-        prev.created_at = log.created_at;
-      } else {
-        result.push({
-          id: log.id || `log-${i}`, kind: 'text_delta', icon: 'mdi-message-text-outline',
-          title: '智能体输出', text, created_at: log.created_at, duration_ms: dur ? Math.min(dur, 30000) : undefined, collapsible: false,
-        });
-      }
+      result.push({
+        id: log.id || `log-${i}`, kind: 'text_delta', icon: 'mdi-message-text-outline',
+        title: data.step_label || data.agent || '智能体输出', text, created_at: log.created_at,
+        duration_ms: dur ? Math.min(dur, 30000) : undefined, collapsible: false,
+      });
     } else if (event === 'reasoning') {
       const text = String(data.text || log.message || '');
-      const prev = result[result.length - 1];
-      if (prev && prev.kind === 'reasoning') {
-        prev.text += text;
-        prev.created_at = log.created_at;
-      } else {
-        const item: TimelineItem = {
-          id: log.id || `log-${i}`, kind: 'reasoning', icon: 'mdi-brain',
-          title: '推理过程', text, created_at: log.created_at,
-          duration_ms: dur ? Math.min(dur, 30000) : undefined, collapsible: true,
-        };
-        collapsedIds.value.add(item.id);
-        result.push(item);
-      }
+      const item: TimelineItem = {
+        id: log.id || `log-${i}`, kind: 'reasoning', icon: 'mdi-brain',
+        title: '推理过程', text, created_at: log.created_at,
+        duration_ms: dur ? Math.min(dur, 30000) : undefined, collapsible: true,
+      };
+      collapsedIds.value.add(item.id);
+      result.push(item);
     } else if (event === 'tool_call') {
       const name = data.name || data.tool || 'tool';
       const argsObj = { ...data };
@@ -269,6 +260,23 @@ const items = computed<TimelineItem[]>(() => {
         title: phaseTitle(data), text: data.message || log.message || '',
         created_at: log.created_at, collapsible: false,
       });
+    } else if (event === 'interaction') {
+      const card = data.interaction_id ? data : null;
+      result.push({
+        id: log.id || `log-${i}`, kind: 'interaction', icon: 'mdi-account-question-outline',
+        title: data.title || '等待人工确认', text: data.body || log.message || '',
+        card, created_at: log.created_at, collapsible: Boolean(card),
+      });
+    } else if (event === 'hitl_resolved') {
+      const actionLabels: Record<string, string> = { approve: '批准执行', modify: '调整计划', reject: '拒绝', retry: '继续返工', finish: '接受当前结果', cancel: '取消任务' };
+      const label = actionLabels[data.action_key] || data.action_key || '';
+      const fields = data.field_values || {};
+      const feedback = fields.modify_text || fields.guidance || fields.feedback || '';
+      result.push({
+        id: log.id || `log-${i}`, kind: 'hitl_resolved', icon: 'mdi-account-check-outline',
+        title: `已处理：${label}`, text: feedback,
+        created_at: log.created_at, collapsible: false,
+      });
     } else if (event === 'error' || log.level === 'error') {
       result.push({
         id: log.id || `log-${i}`, kind: 'error', icon: 'mdi-alert-circle-outline',
@@ -293,7 +301,8 @@ const items = computed<TimelineItem[]>(() => {
     prevTs = ts;
   }
 
-  return result.slice(-props.maxItems);
+  if (props.maxItems && props.maxItems > 0) return result.slice(-props.maxItems);
+  return result;
 });
 
 function tokenCounts(data: any) {
@@ -450,7 +459,8 @@ function phaseTitle(data: any) {
   font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
   color: rgba(var(--v-theme-on-surface), 0.72);
   white-space: pre-wrap;
-  word-break: break-all;
+  overflow-wrap: anywhere;
+  word-break: normal;
   max-height: 360px;
   overflow: auto;
   line-height: 1.5;
@@ -464,7 +474,8 @@ function phaseTitle(data: any) {
   font-size: 12px;
   color: rgba(var(--v-theme-on-surface), 0.68);
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
+  word-break: normal;
   line-height: 1.5;
   max-height: 280px;
   overflow: auto;

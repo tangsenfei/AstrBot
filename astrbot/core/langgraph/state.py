@@ -122,6 +122,7 @@ class TaskStatus(str, Enum):
     RUNNING = "running"
     PAUSED = "paused"
     RESUMING = "resuming"
+    WAITING_FEEDBACK = "waiting_feedback"
     DONE = "done"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -148,6 +149,8 @@ class TaskRecord:
     input_tokens: int = 0
     output_tokens: int = 0
     total_tokens: int = 0
+    interaction_id: str = ""
+    interaction_text: str = ""
     _started_at_db_set: bool = field(default=False, repr=False)
 
 

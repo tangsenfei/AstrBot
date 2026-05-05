@@ -54,5 +54,6 @@ shipyard-neo-sdk>=0.2.0
 packaging>=24.2
 langgraph>=1.0,<2.0
 langgraph-checkpoint-sqlite>=3.0
+agent-client-protocol>=0.1.0
 qrcode>=8.2
 python-ripgrep==0.0.8

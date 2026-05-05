@@ -105,6 +105,7 @@
         :loading="loading"
         :is-dark="isDark"
         @select="selectTask"
+        @hitl-open="openTaskHitl"
         @interaction-respond="handleInteractionRespond"
       />
     </aside>
@@ -138,33 +139,18 @@
         </header>
 
         <v-tabs v-model="detailTab" density="compact" class="detail-tabs">
-          <v-tab value="progress">
-            <v-icon start size="16">mdi-timeline-text-outline</v-icon>
-            进展
+          <v-tab value="logs">
+            <v-icon start size="16">mdi-text-box-search-outline</v-icon>
+            日志
           </v-tab>
           <v-tab value="artifacts" :disabled="!isCompleted(selectedTask)">
             <v-icon start size="16">mdi-package-variant-closed</v-icon>
             交付物
           </v-tab>
-          <v-tab value="logs">
-            <v-icon start size="16">mdi-text-box-search-outline</v-icon>
-            日志
-          </v-tab>
         </v-tabs>
 
         <section class="detail-body">
-          <WorkProgressTimeline
-            v-if="detailTab === 'progress'"
-            :task="selectedTask"
-            :logs="logs"
-            :active-cards="interactionCards"
-            :is-dark="isDark"
-            :max-items="MAX_VISIBLE_LOGS"
-            :loading="detailLoading"
-            @interaction-respond="handleInteractionRespond"
-          />
-
-          <div v-else-if="detailTab === 'artifacts'" class="artifact-list">
+          <div v-if="detailTab === 'artifacts'" class="artifact-list">
             <article v-for="artifact in displayArtifacts" :key="artifact.id" class="artifact-item">
               <div class="artifact-title">
                 <v-icon size="18">mdi-file-document-outline</v-icon>
@@ -210,20 +196,24 @@
 
     <aside class="work-progress-pane">
       <div class="progress-pane-header">
-        <div class="pane-title small">子任务进度</div>
+        <div class="pane-title small">任务进度</div>
       </div>
       <div v-if="selectedTask" class="step-list-wrap">
         <div class="step-list">
           <button
-            v-for="step in steps"
+            v-for="step in flattenedSteps"
             :key="step.id || step.description"
             class="step-row"
+            :class="{ child: step.depth === 2 }"
             type="button"
             @click="selectedStep = step"
           >
             <v-icon :color="stepColor(step.status)" :icon="stepIcon(step.status)" size="18" />
             <div>
-              <div class="step-title">{{ stepPreviewText(step.description || step.name) }}</div>
+              <div class="step-title">{{ stepPreviewText(step.title || step.description || step.name) }}</div>
+              <div v-if="step.dependencies?.length" class="step-deps">
+                依赖：{{ dependencyLabels(step.dependencies) }}
+              </div>
               <div v-if="step.result" class="step-result">{{ stepPreviewText(step.result) }}</div>
             </div>
           </button>
@@ -254,6 +244,13 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <HitlDialog
+      v-model="hitlDialog"
+      :card="activeHitlCard"
+      :is-dark="isDark"
+      @respond="handleInteractionRespond"
+    />
 
     <v-dialog v-model="projectDialog" max-width="640">
       <v-card>
@@ -375,7 +372,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import axios from 'axios';
 import WorkTaskList from '@/components/work/WorkTaskList.vue';
-import WorkProgressTimeline from '@/components/work/WorkProgressTimeline.vue';
+import HitlDialog from '@/components/chat/HitlDialog.vue';
 import { useCustomizerStore } from '@/stores/customizer';
 
 const customizer = useCustomizerStore();
@@ -394,8 +391,9 @@ const selectedTask = ref<any | null>(null);
 const logs = ref<any[]>([]);
 const artifacts = ref<any[]>([]);
 const interactionCards = ref<any[]>([]);
+const hitlDialog = ref(false);
 const selectedStep = ref<any | null>(null);
-const detailTab = ref('progress');
+const detailTab = ref('logs');
 const searchQuery = ref('');
 const statusFilter = ref<string | null>(null);
 const kindFilter = ref<string | null>(null);
@@ -408,7 +406,6 @@ let selectedTaskRequestId = 0;
 let taskListRequestId = 0;
 let selectedTaskLoading = false;
 let pendingSelectedReload = false;
-const MAX_VISIBLE_LOGS = 120;
 
 const agents = ref<any[]>([]);
 const crews = ref<any[]>([]);
@@ -475,42 +472,16 @@ const stepDialog = computed({
 });
 
 const displayArtifacts = computed(() => {
-  const items: any[] = [...artifacts.value];
-
-  const deliverables = selectedTask.value?.deliverables;
-  if (Array.isArray(deliverables)) {
-    for (const d of deliverables) {
-      if (!items.find(a => a.id === d.id)) {
-        items.push({
-          id: d.id || `del-${items.length}`,
-          title: d.title || '交付物',
-          artifact_type: d.type || 'markdown',
-          content: d.content || '',
-          file_path: d.file_path || d.path || '',
-          created_at: d.created_at || selectedTask.value?.completed_at,
-        });
-      }
-    }
-  }
-
-  const resultText = selectedTask.value?.result_text || selectedTask.value?.result || selectedTask.value?.output?.result || selectedTask.value?.final_summary;
-  if (resultText && typeof resultText === 'string' && resultText.trim()) {
-    const alreadyExists = items.some(a => a.content === resultText);
-    if (!alreadyExists) {
-      items.push({
-        id: `${selectedTask.value?.id || 'task'}-summary`,
-        title: '最终交付摘要',
-        artifact_type: 'markdown',
-        content: resultText,
-        created_at: selectedTask.value?.completed_at,
-      });
-    }
-  }
-
-  return items;
+  return artifacts.value.filter((artifact) =>
+    artifact && (artifact.file_path || artifact.content || artifact.artifact_type === 'file')
+  );
 });
 
 const displayLogs = computed(() => aggregateLogs(logs.value));
+const activeHitlCard = computed(() =>
+  selectedTask.value?.active_hitl || selectedTask.value?.hitl_cards?.[0] || interactionCards.value?.[0] || null
+);
+const flattenedSteps = computed(() => flattenSteps(steps.value));
 
 function defaultTaskForm() {
   return {
@@ -565,7 +536,7 @@ async function loadResources() {
 
 async function loadTasks() {
   const requestId = ++taskListRequestId;
-  const params: any = { page_size: 50, work_scope: selectedScope.value, include_hitl_cards: false };
+  const params: any = { page_size: 100, work_scope: selectedScope.value, include_hitl_cards: false };
   if (selectedScope.value === 'project' && selectedProjectId.value) params.project_id = selectedProjectId.value;
   if (selectedScope.value === 'daily' && selectedDailyDirId.value) params.daily_dir_id = selectedDailyDirId.value;
   const response = await axios.get('/api/plug/work/tasks', { params });
@@ -587,14 +558,12 @@ async function loadSelectedTask(mergeLogs = false) {
   const taskId = selectedTaskId.value;
   try {
     const response = await axios.get(`/api/plug/work/tasks/${taskId}`, {
-      params: { logs_limit: MAX_VISIBLE_LOGS },
+      params: { logs_limit: 5000 },
     });
     if (requestId !== selectedTaskRequestId || taskId !== selectedTaskId.value) return;
     if (response.data?.status === 'ok') {
       selectedTask.value = response.data.data;
-      if (!mergeLogs || !eventSource) {
-        logs.value = (selectedTask.value.logs || []).slice(-MAX_VISIBLE_LOGS);
-      }
+      if (!mergeLogs || !eventSource) logs.value = selectedTask.value.logs || [];
       artifacts.value = selectedTask.value.artifacts || [];
       interactionCards.value = selectedTask.value.hitl_cards || [];
     }
@@ -636,17 +605,26 @@ function clearSelection() {
   closeEventSource();
 }
 
-function selectTask(taskId: string) {
+async function selectTask(taskId: string) {
   if (selectedTaskId.value === taskId) return;
   selectedTaskRequestId += 1;
   pendingSelectedReload = false;
   selectedTaskId.value = taskId;
-  detailTab.value = 'progress';
+  detailTab.value = 'logs';
   interactionCards.value = [];
   selectedStep.value = null;
   closeEventSource();
-  loadSelectedTask();
+  await loadSelectedTask();
   openEventSource(taskId);
+}
+
+async function openTaskHitl(taskId: string) {
+  if (selectedTaskId.value !== taskId) {
+    await selectTask(taskId);
+  } else {
+    await loadSelectedTask();
+  }
+  hitlDialog.value = Boolean(activeHitlCard.value);
 }
 
 function openEventSource(taskId: string) {
@@ -663,7 +641,7 @@ function openEventSource(taskId: string) {
         const log = JSON.parse(event.data);
         if (!log || !log.id) { reload(); return; }
         if (logs.value.find(l => l.id === log.id)) return;
-        logs.value = [...logs.value, log].slice(-MAX_VISIBLE_LOGS);
+        logs.value = [...logs.value, log].sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0));
       } catch { reload(); }
     };
 
@@ -767,6 +745,7 @@ async function submitSupplement() {
 }
 
 async function handleInteractionRespond() {
+  hitlDialog.value = false;
   await Promise.all([loadTasks(), loadSelectedTask(true)]);
 }
 
@@ -927,7 +906,6 @@ function aggregateLogs(rawLogs: any[]) {
       continue;
     }
     flush();
-    if (event === 'interaction') continue;
     result.push({
       id: log.id,
       created_at: log.created_at,
@@ -947,6 +925,14 @@ function logMessage(log: any) {
   if (event === 'tool_result') return data.result || data.output || data.message || '工具调用完成';
   if (event === 'token') return tokenText(data);
   if (event === 'phase') return data.message || data.label || data.phase || log.message || '';
+  if (event === 'interaction') return data.title || data.body || '等待人工处理';
+  if (event === 'hitl_resolved') {
+    const actionLabels: Record<string, string> = { approve: '批准执行', modify: '调整计划', reject: '拒绝', retry: '继续返工', finish: '接受当前结果', cancel: '取消任务' };
+    const label = actionLabels[data.action_key] || data.action_key || '';
+    const fields = data.field_values || {};
+    const feedback = fields.modify_text || fields.guidance || fields.feedback || '';
+    return feedback ? `已处理：${label} — ${feedback}` : `已处理：${label}`;
+  }
   return data.message || log.message || '';
 }
 
@@ -957,6 +943,8 @@ function eventLabel(event: string, level: string) {
     tool_result: '工具结果',
     token: 'Token',
     artifact: '交付物',
+    interaction: 'HITL',
+    hitl_resolved: 'HITL',
     error: '错误',
     log: level || '日志',
   };
@@ -1003,11 +991,32 @@ function artifactText(artifact: any) {
 
 function stepDetailText(step: any) {
   const parts = [];
-  if (step.description || step.name) parts.push(step.description || step.name);
+  if (step.description || step.name || step.title) parts.push(step.description || step.name || step.title);
+  if (step.dependencies?.length) parts.push(`依赖：${dependencyLabels(step.dependencies)}`);
   if (step.result) parts.push(`结果：\n${step.result}`);
   if (step.error) parts.push(`错误：\n${step.error}`);
   if (step.stats) parts.push(`统计：\n${JSON.stringify(step.stats, null, 2)}`);
   return parts.join('\n\n') || '暂无详情';
+}
+
+function flattenSteps(rawSteps: any[]) {
+  const tree = Array.isArray(selectedTask.value?.steps_tree) && selectedTask.value.steps_tree.length
+    ? selectedTask.value.steps_tree
+    : rawSteps;
+  const result: any[] = [];
+  const visit = (step: any, depth = 1) => {
+    result.push({ ...step, depth: Math.min(2, step.depth || depth) });
+    for (const child of (step.children || []).slice(0, 20)) {
+      visit(child, 2);
+    }
+  };
+  for (const step of tree || []) visit(step, 1);
+  return result;
+}
+
+function dependencyLabels(ids: string[]) {
+  const map = new Map(flattenedSteps.value.map((step: any) => [String(step.id), step.title || step.description || step.name || step.id]));
+  return ids.map((id) => stepPreviewText(map.get(String(id)) || id)).join(' → ');
 }
 
 function stepPreviewText(value: unknown) {
@@ -1392,6 +1401,12 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
+.step-row.child {
+  margin-left: 18px;
+  width: calc(100% - 18px);
+  border-style: dashed;
+}
+
 .step-row:hover {
   border-color: rgba(var(--v-theme-primary), 0.45);
   background: rgba(var(--v-theme-primary), 0.08);
@@ -1409,6 +1424,13 @@ onBeforeUnmount(() => {
   margin-top: 4px;
   font-size: 12px;
   line-height: 1.45;
+}
+
+.step-deps {
+  margin-top: 3px;
+  color: var(--work-muted);
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .token-box {
@@ -1528,18 +1550,14 @@ onBeforeUnmount(() => {
 
 @media (max-width: 1180px) {
   .work-shell {
-    grid-template-columns: 190px 280px minmax(320px, 1fr);
-  }
-
-  .work-progress-pane {
-    display: none;
+    grid-template-columns: 170px 260px minmax(300px, 1fr) 260px;
   }
 }
 
 @media (max-width: 820px) {
   .work-shell {
     grid-template-columns: 1fr;
-    grid-template-rows: auto auto 1fr;
+    grid-template-rows: auto auto 1fr auto;
   }
 
   .work-category-pane,
@@ -1567,6 +1585,12 @@ onBeforeUnmount(() => {
 
   .raw-log-row {
     grid-template-columns: 1fr;
+  }
+
+  .work-progress-pane {
+    max-height: 240px;
+    border-left: 0;
+    border-top: 1px solid var(--work-border);
   }
 }
 </style>

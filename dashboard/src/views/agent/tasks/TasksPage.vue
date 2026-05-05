@@ -392,12 +392,24 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <div v-if="activeCards.length" class="active-cards-bar pa-3 mb-4">
+      <div class="text-subtitle-2 font-weight-medium mb-2">⏳ 待处理审核</div>
+      <InteractionCardComponent
+        v-for="card in activeCards"
+        :key="card.interaction_id"
+        :card="card"
+        :resolved="card._resolved"
+        @respond="fetchPendingCards"
+      />
+    </div>
   </v-container>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import axios from 'axios';
+import InteractionCardComponent from '@/components/chat/InteractionCardComponent.vue';
 
 const loading = ref(false);
 const creating = ref(false);
@@ -670,9 +682,27 @@ async function deleteTask(task: any) {
 
 watch(activeTab, () => { currentPage.value = 1; });
 
+const activeCards = ref<any[]>([]);
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+async function fetchPendingCards() {
+  try {
+    const resp = await axios.get('/api/interaction/pending');
+    if (resp.data?.status === 'ok' && resp.data?.data?.cards) {
+      activeCards.value = resp.data.data.cards.map((c: any) => ({ ...c, _resolved: null }));
+    }
+  } catch (e) { /* ignore */ }
+}
+
 onMounted(() => {
   loadTasks();
   loadStats();
+  fetchPendingCards();
+  pollTimer = setInterval(fetchPendingCards, 3000);
+});
+
+onBeforeUnmount(() => {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 });
 </script>
 

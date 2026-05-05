@@ -10,8 +10,10 @@ from .flows import register_flow_routes
 from .roundtables import register_roundtable_routes
 from .tasks import register_task_routes
 from .work import register_work_routes
+from .cli_agents import register_cli_agent_routes
 
 __all__ = [
+    "register_cli_agent_routes",
     "register_tool_routes",
     "register_skill_routes",
     "register_agent_routes",

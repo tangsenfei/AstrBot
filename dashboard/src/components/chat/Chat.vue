@@ -79,6 +79,28 @@
           </v-chip>
         </v-btn>
 
+        <div v-if="!isSidebarCollapsed && cliAgentClients.length" class="cli-agent-nav">
+          <button
+            v-for="client in cliAgentClients"
+            :key="client.id"
+            class="cli-agent-entry"
+            :class="{
+              active:
+                isCliAgentWorkspace && selectedCliAgentClient?.id === client.id,
+            }"
+            type="button"
+            @click="openCliAgentWorkspace(client)"
+          >
+            <v-icon size="18" :color="client.agent_kind === 'codex' ? 'primary' : undefined">
+              {{ clientIcon(client.agent_kind) }}
+            </v-icon>
+            <span class="cli-agent-entry-name">{{ client.name }}</span>
+            <span class="cli-agent-entry-badge">
+              {{ client.location_kind === 'remote' ? '远程' : '本地' }}
+            </span>
+          </button>
+        </div>
+
         <v-btn
           class="new-chat-btn"
           :class="{ 'icon-only': isSidebarCollapsed }"
@@ -310,7 +332,7 @@
     <main
       class="chat-main"
       :class="{
-        'empty-chat': !isProviderWorkspace &&
+        'empty-chat': !isProviderWorkspace && !isCliAgentWorkspace &&
           !selectedProject && !loadingMessages && !activeMessages.length,
       }"
     >
@@ -318,6 +340,16 @@
         <ProviderChatCompletionPanel
           class="provider-workspace-page"
           :show-border="false"
+        />
+      </section>
+
+      <section
+        v-else-if="isCliAgentWorkspace && selectedCliAgentClient"
+        class="cli-agent-workspace-shell"
+      >
+        <CliAgentWorkspace
+          :client="selectedCliAgentClient"
+          @manage="router.push('/cli-agents')"
         />
       </section>
 
@@ -568,6 +600,7 @@ import ProjectList, { type Project } from "@/components/chat/ProjectList.vue";
 import ProjectView from "@/components/chat/ProjectView.vue";
 import ChatInput from "@/components/chat/ChatInput.vue";
 import ChatMessageList from "@/components/chat/ChatMessageList.vue";
+import CliAgentWorkspace from "@/components/chat/CliAgentWorkspace.vue";
 import type { RegenerateModelSelection } from "@/components/chat/RegenerateMenu.vue";
 import ReasoningSidebar from "@/components/chat/ReasoningSidebar.vue";
 import ThreadPanel from "@/components/chat/ThreadPanel.vue";
@@ -649,7 +682,16 @@ const {
   cleanupMediaCache,
 } = useMediaHandling();
 
-type WorkspaceView = "chat" | "providers";
+type WorkspaceView = "chat" | "providers" | "cli-agent";
+type CliAgentClient = {
+  id: string;
+  name: string;
+  agent_kind: string;
+  location_kind: "local" | "remote";
+  transport_kind: string;
+  enabled: boolean;
+  status?: string;
+};
 
 const sidebarCollapsed = ref(false);
 const activeWorkspace = ref<WorkspaceView>("chat");
@@ -666,6 +708,8 @@ const savingMessageEdit = ref(false);
 const projectSessions = ref<Session[]>([]);
 const loadingSessions = ref(false);
 const pendingWorkHitlCount = ref(0);
+const cliAgentClients = ref<CliAgentClient[]>([]);
+const selectedCliAgentClient = ref<CliAgentClient | null>(null);
 const draft = ref("");
 const messagesContainer = ref<HTMLElement | null>(null);
 const inputRef = ref<InstanceType<typeof ChatInput> | null>(null);
@@ -712,6 +756,9 @@ const isSidebarCollapsed = computed(() =>
 );
 const isProviderWorkspace = computed(
   () => activeWorkspace.value === "providers",
+);
+const isCliAgentWorkspace = computed(
+  () => activeWorkspace.value === "cli-agent",
 );
 const activeReasoningParts = computed<MessagePart[]>(() => {
   if (!activeReasoningTarget.value) return [];
@@ -816,10 +863,12 @@ provide("isDark", isDark);
 onMounted(async () => {
   loadingSessions.value = true;
   try {
-    await Promise.all([getSessions(), getProjects()]);
+    await Promise.all([getSessions(), getProjects(), loadCliAgentClients()]);
     const routeSessionId = getRouteSessionId();
     if (routeSessionId === "models") {
       activeWorkspace.value = "providers";
+    } else if (routeSessionId.startsWith("cli-agent-")) {
+      openCliAgentRoute(routeSessionId);
     } else if (routeSessionId) {
       await selectSession(routeSessionId, false);
     }
@@ -844,6 +893,10 @@ watch(
     const routeSessionId = getRouteSessionId();
     if (routeSessionId === "models") {
       activeWorkspace.value = "providers";
+      return;
+    }
+    if (routeSessionId.startsWith("cli-agent-")) {
+      openCliAgentRoute(routeSessionId);
       return;
     }
     if (routeSessionId && routeSessionId !== currSessionId.value) {
@@ -890,11 +943,13 @@ function closeSecondaryPanels() {
 
 function showChatWorkspace() {
   activeWorkspace.value = "chat";
+  selectedCliAgentClient.value = null;
 }
 
 async function openProviderWorkspace() {
   closeSecondaryPanels();
   activeWorkspace.value = "providers";
+  selectedCliAgentClient.value = null;
   const targetPath = `${basePath()}/models`;
   if (route.path !== targetPath) {
     await router.push(targetPath);
@@ -904,6 +959,70 @@ async function openProviderWorkspace() {
 
 function sessionTitle(session: Session) {
   return session.display_name?.trim() || tm("conversation.newConversation");
+}
+
+async function loadCliAgentClients() {
+  try {
+    const response = await axios.get("/api/plug/cli-agents/clients", {
+      params: { enabled: 1 },
+    });
+    if (response.data?.status === "ok") {
+      const data = response.data.data;
+      const clients = Array.isArray(data) ? data : data?.clients || [];
+      cliAgentClients.value = clients.filter(
+        (client: CliAgentClient) => client.enabled,
+      );
+    }
+  } catch {
+    cliAgentClients.value = [];
+  }
+}
+
+async function openCliAgentWorkspace(client: CliAgentClient) {
+  closeSecondaryPanels();
+  activeWorkspace.value = "cli-agent";
+  selectedCliAgentClient.value = client;
+  selectedProjectId.value = null;
+  currSessionId.value = "";
+  replyTarget.value = null;
+  const targetPath = `${basePath()}/cli-agent-${client.id}`;
+  if (route.path !== targetPath) {
+    await router.push(targetPath);
+  }
+  closeMobileSidebar();
+}
+
+function openCliAgentRoute(routeSessionId: string) {
+  const clientId = routeSessionId.replace(/^cli-agent-/, "");
+  const client = cliAgentClients.value.find((item) => item.id === clientId);
+  if (client) {
+    activeWorkspace.value = "cli-agent";
+    selectedCliAgentClient.value = client;
+    selectedProjectId.value = null;
+    currSessionId.value = "";
+  }
+}
+
+function clientIcon(kind: string) {
+  if (kind === "codex") return "mdi-code-braces";
+  if (kind === "claude") return "mdi-creation";
+  return "mdi-console";
+}
+
+function agentKindLabel(kind: string) {
+  if (kind === "claude") return "Claude";
+  if (kind === "codex") return "Codex";
+  return "自定义";
+}
+
+function transportLabel(kind: string) {
+  const labels: Record<string, string> = {
+    native_stdio: "原生 STDIO",
+    acp_stdio: "ACP STDIO",
+    remote_ws: "远程 WebSocket",
+    remote_http_sse: "远程 HTTP SSE",
+  };
+  return labels[kind] || kind;
 }
 
 async function startNewChat() {
@@ -1563,6 +1682,52 @@ function toggleTheme() {
   text-overflow: ellipsis;
 }
 
+.cli-agent-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: -2px 0 8px 12px;
+}
+
+.cli-agent-entry {
+  width: 100%;
+  min-height: 34px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--chat-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.cli-agent-entry:hover,
+.cli-agent-entry.active {
+  background: var(--chat-session-active-bg);
+  color: rgb(var(--v-theme-on-surface));
+}
+
+.cli-agent-entry-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.cli-agent-entry-badge {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(var(--v-theme-on-surface), 0.08);
+  font-size: 11px;
+}
+
 .new-chat-btn:not(.icon-only),
 .settings-btn:not(.icon-only) {
   padding-inline: 12px;
@@ -1714,6 +1879,13 @@ function toggleTheme() {
 .provider-workspace-page {
   height: 100%;
   min-height: 0;
+}
+
+.cli-agent-workspace-shell {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
 }
 
 .chat-task-drawer {

@@ -249,18 +249,18 @@ class AstrBotCoreLifecycle:
             from astrbot.core.langgraph.graphs.plan_execute import (
                 build_plan_execute_graph,
             )
-            from astrbot.core.langgraph.graphs.task_manager import (
-                build_task_manager_graph,
-            )
-            from astrbot.core.langgraph.graphs.workflow import build_workflow_graph
+            from astrbot.core.langgraph.graphs.plan_phase import build_plan_phase_graph
+            from astrbot.core.langgraph.graphs.task_manager import build_task_graph
             from astrbot.core.langgraph.graphs.work_task import build_work_task_graph
+            from astrbot.core.langgraph.graphs.workflow import build_workflow_graph
 
             TaskCenter.register_executor("meeting", build_meeting_graph)
             TaskCenter.register_executor("plan_execute", build_plan_execute_graph)
             TaskCenter.register_executor("workflow", build_workflow_graph)
             TaskCenter.register_executor("crew", build_crew_graph)
-            TaskCenter.register_executor("daily", build_task_manager_graph)
+            TaskCenter.register_executor("daily", build_task_graph)
             TaskCenter.register_executor("work_task", build_work_task_graph)
+            TaskCenter.register_executor("plan_phase", build_plan_phase_graph)
 
             logger.info("LangGraph TaskCenter initialized.")
 

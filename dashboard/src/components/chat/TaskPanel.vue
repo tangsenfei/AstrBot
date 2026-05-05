@@ -18,23 +18,23 @@
       :is-dark="isDark"
       compact
       @select="selectTask"
+      @hitl-open="openHitl"
       @interaction-respond="handleInteractionRespond"
     />
 
-    <TaskDetailOverlay
-      v-if="selectedTask"
-      :task="selectedTask"
-      @close="selectedTask = null"
-      @input-submitted="onInputSubmitted"
-      @interaction-respond="handleInteractionRespond"
+    <HitlDialog
+      v-model="hitlDialog"
+      :card="activeHitlCard"
+      :is-dark="isDark"
+      @respond="handleInteractionRespond"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, inject, type ComputedRef } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, inject, type ComputedRef } from 'vue';
 import axios from 'axios';
-import TaskDetailOverlay from './TaskDetailOverlay.vue';
+import HitlDialog from './HitlDialog.vue';
 import WorkTaskList from '@/components/work/WorkTaskList.vue';
 
 defineEmits(['close']);
@@ -42,9 +42,14 @@ defineEmits(['close']);
 const tasks = ref<any[]>([]);
 const loading = ref(true);
 const selectedTask = ref<any>(null);
+const hitlDialog = ref(false);
 const injectedIsDark = inject<ComputedRef<boolean> | null>('isDark', null);
 const isDark = injectedIsDark?.value || false;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+const activeHitlCard = computed(() =>
+  selectedTask.value?.active_hitl || selectedTask.value?.hitl_cards?.[0] || null
+);
 
 async function selectTask(taskId: string) {
   const fallback = tasks.value.find((task) => task.id === taskId) || null;
@@ -55,10 +60,16 @@ async function selectTask(taskId: string) {
     });
     if (resp.data?.status === 'ok') {
       selectedTask.value = resp.data.data;
+      if (activeHitlCard.value) hitlDialog.value = true;
     }
   } catch (e) {
     console.error('Failed to load work task:', e);
   }
+}
+
+async function openHitl(taskId: string) {
+  await selectTask(taskId);
+  hitlDialog.value = Boolean(activeHitlCard.value);
 }
 
 async function fetchTasks() {
@@ -78,14 +89,10 @@ async function fetchTasks() {
   loading.value = false;
 }
 
-function onInputSubmitted(taskId: string, text: string) {
-  axios.post(`/api/plug/work/tasks/${taskId}/input`, { text })
-    .then(() => fetchTasks())
-    .catch((e) => console.error('Failed to submit input:', e));
-}
-
 async function handleInteractionRespond() {
+  hitlDialog.value = false;
   await fetchTasks();
+  if (selectedTask.value?.id) await selectTask(selectedTask.value.id);
 }
 
 onMounted(() => {

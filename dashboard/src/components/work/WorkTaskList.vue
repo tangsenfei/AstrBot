@@ -32,23 +32,15 @@
       </button>
 
       <button
-        v-if="needsHuman(task) && !showHitlInline"
+        v-if="needsHuman(task)"
         class="hitl-entry"
         type="button"
-        @click.stop="emit('select', task.id)"
+        @click.stop="emit('hitl-open', task.id)"
       >
         <v-icon size="15" icon="mdi-hand-back-right-outline" />
         <span>{{ task.interaction_title || '等待人工确认' }}</span>
         <v-icon size="15" icon="mdi-chevron-right" />
       </button>
-
-      <div v-if="showHitlInline && task.hitl_cards?.length" class="hitl-inline">
-        <InteractionCardComponent
-          :card="task.hitl_cards[0]"
-          :is-dark="isDark"
-          @respond="onRespond"
-        />
-      </div>
     </article>
 
     <div v-if="!tasks.length && !loading" class="empty-state">暂无任务</div>
@@ -56,8 +48,6 @@
 </template>
 
 <script setup lang="ts">
-import InteractionCardComponent from '@/components/chat/InteractionCardComponent.vue';
-
 withDefaults(defineProps<{
   tasks: any[];
   selectedTaskId?: string | null;
@@ -76,12 +66,9 @@ withDefaults(defineProps<{
 
 const emit = defineEmits<{
   (e: 'select', taskId: string): void;
+  (e: 'hitl-open', taskId: string): void;
   (e: 'interaction-respond', payload: { interaction_id: string; action_key: string; field_values: Record<string, any> }): void;
 }>();
-
-function onRespond(payload: { interaction_id: string; action_key: string; field_values: Record<string, any> }) {
-  emit('interaction-respond', payload);
-}
 
 function needsHuman(task: any) {
   return task?.status === 'waiting_feedback' || task?.has_hitl || Boolean(task?.hitl_cards?.length);

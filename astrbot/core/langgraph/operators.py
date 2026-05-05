@@ -123,6 +123,18 @@ class AgentOperator:
                     if chain:
                         final_text = chain.get_plain_text(with_other_comps_mark=True)
 
+            if write_stream and writer and runner.stats:
+                tok = runner.stats.token_usage
+                writer(StreamEvent(
+                    event="token",
+                    data={
+                        "input": getattr(tok, "input", getattr(tok, "prompt_tokens", 0) or 0),
+                        "output": getattr(tok, "output", getattr(tok, "completion_tokens", 0) or 0),
+                    },
+                    timestamp=time.time(),
+                    node_id="agent_operator",
+                ))
+
             return AgentGraphResult(
                 final_text=final_text,
                 tool_calls=tool_calls,

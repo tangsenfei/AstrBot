@@ -72,6 +72,11 @@ const sidebarItems: menu[] = [
     to: '/task-management'
   },
   {
+    title: 'CLI Agent',
+    icon: 'mdi-console',
+    to: '/cli-agents'
+  },
+  {
     title: 'nicebot.navigation.work',
     icon: 'mdi-briefcase-outline',
     to: '/work'

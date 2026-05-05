@@ -6,7 +6,6 @@ the shared HITL interaction manager.
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import uuid
 from datetime import datetime
@@ -241,6 +240,15 @@ class WorkService:
         context_pack = self._build_context_pack(project, daily_dir)
 
         executor_config = dict(data.get("executor_config") or {})
+        builtin_flow_id = ""
+        if scope == "daily":
+            try:
+                from .flow_service import BUILTIN_DAILY_WORK_FLOW_ID, FlowService
+
+                FlowService(self.db, self.context).ensure_builtin_daily_work_flow()
+                builtin_flow_id = BUILTIN_DAILY_WORK_FLOW_ID
+            except Exception:
+                pass
         plan_config = {"enabled": False, **dict(data.get("plan_config") or {})}
         review_config = {"enabled": False, "max_rework": 1, **dict(data.get("review_config") or {})}
         input_data = dict(data.get("input") or {})
@@ -256,8 +264,10 @@ class WorkService:
             "thread_id": thread_id,
             "task_name": name,
             "task_desc": data.get("description", ""),
+            "planning_enabled": plan_config.get("enabled", False),
             "work_task_kind": kind,
             "executor_config": executor_config,
+            "builtin_flow_id": builtin_flow_id,
             "plan_config": plan_config,
             "review_config": review_config,
             "input": input_data,
@@ -322,6 +332,7 @@ class WorkService:
         data["logs"] = self.get_task_logs(task_id, logs_limit=logs_limit)
         data["subtasks"] = [s.to_dict() for s in self.task_service.get_subtasks(task_id)]
         data["artifacts"] = self.list_artifacts(task_id)
+        data["steps_tree"] = self._build_steps_tree(data.get("steps", []))
         self._repair_completed_status(data)
         return self._enrich_task_dict(data)
 
@@ -355,47 +366,55 @@ class WorkService:
         if not interaction_id:
             raise ValueError("缺少 interaction_id")
 
-        from astrbot.core.langgraph.interaction import InteractionResponse
-        from astrbot.core.langgraph.interaction_manager import get_interaction_manager
+        from .hitl_service import HITLService
 
-        response = InteractionResponse(
-            interaction_id=interaction_id,
-            action_key=data.get("action_key", "approve"),
-            field_values=data.get("field_values", {}),
-            responded_at=datetime.now().timestamp(),
+        result = await HITLService(self.db).respond(
+            interaction_id,
+            data.get("action_key", "approve"),
+            data.get("field_values", {}),
         )
-        ok = get_interaction_manager().respond(interaction_id, response)
-        if not ok:
-            raise ValueError(f"交互 '{interaction_id}' 不存在或已处理")
-        self.db.update(
-            "agent_tasks",
-            {
-                "status": TaskStatus.RUNNING.value,
-                "interaction_id": "",
-                "updated_at": datetime.now().isoformat(),
-            },
-            where="id = ?",
-            where_params=(task_id,),
-        )
-        self._append_log(task_id, "info", "HITL 响应已提交", response.field_values)
-        return {"interaction_id": interaction_id, "action_key": response.action_key}
+        self._append_log(task_id, "info", "HITL 响应已提交", result)
+        return result
 
-    def get_task_logs(self, task_id: str, logs_limit: int | None = None) -> list[dict[str, Any]]:
-        if not logs_limit:
-            return [log.to_dict() for log in self.task_service.get_task_logs(task_id)]
-        limit = max(1, min(1000, int(logs_limit)))
-        rows = self.db.select_all(
-            "execution_logs",
-            where="task_id = ?",
-            where_params=(task_id,),
-            order_by="created_at DESC",
-            limit=limit,
-        )
-        rows = list(reversed(rows))
+    def get_task_logs(
+        self,
+        task_id: str,
+        logs_limit: int | None = None,
+        *,
+        before_seq: int | None = None,
+        after_seq: int | None = None,
+    ) -> list[dict[str, Any]]:
+        conditions = ["task_id = ?"]
+        params: list[Any] = [task_id]
+        if before_seq:
+            conditions.append("rowid < ?")
+            params.append(int(before_seq))
+        if after_seq:
+            conditions.append("rowid > ?")
+            params.append(int(after_seq))
+
+        limit_sql = ""
+        if logs_limit:
+            limit = max(1, min(5000, int(logs_limit)))
+            limit_sql = " LIMIT ?"
+            params.append(limit)
+        rows = self.db.execute(
+            f"""
+            SELECT rowid AS seq, *
+            FROM execution_logs
+            WHERE {" AND ".join(conditions)}
+            ORDER BY rowid ASC
+            {limit_sql}
+            """,
+            tuple(params),
+        ).fetchall()
         logs = []
         for row in rows:
             try:
-                logs.append(self.task_service._row_to_execution_log(dict(row)).to_dict())
+                row_dict = dict(row)
+                log = self.task_service._row_to_execution_log(row_dict).to_dict()
+                log["seq"] = row_dict.get("seq")
+                logs.append(log)
             except Exception:
                 continue
         return logs
@@ -425,10 +444,21 @@ class WorkService:
         task["has_hitl"] = bool(hitl_cards)
         task["hitl_cards"] = hitl_cards if include_hitl_cards else []
         if hitl_cards:
-            task["interaction_id"] = hitl_cards[0].get("interaction_id", task.get("interaction_id", ""))
-            task["interaction_title"] = hitl_cards[0].get("title", "")
-            task["interaction_type"] = hitl_cards[0].get("type", "")
+            active = hitl_cards[0]
+            task["active_hitl"] = active
+            task["hitl_summary"] = {
+                "interaction_id": active.get("interaction_id", task.get("interaction_id", "")),
+                "title": active.get("title", ""),
+                "type": active.get("type", ""),
+                "created_at": active.get("created_at"),
+            }
+            task["interaction_id"] = active.get("interaction_id", task.get("interaction_id", ""))
+            task["interaction_title"] = active.get("title", "")
+            task["interaction_type"] = active.get("type", "")
             task["status"] = "waiting_feedback"
+        else:
+            task["active_hitl"] = None
+            task["hitl_summary"] = None
         return task
 
     def _row_to_task_summary(self, row: dict[str, Any]) -> dict[str, Any]:
@@ -477,42 +507,102 @@ class WorkService:
             pass
 
     def _pending_hitl_cards_by_task(self) -> dict[str, list[dict[str, Any]]]:
-        try:
-            from astrbot.core.langgraph.interaction_manager import get_interaction_manager
+        from .hitl_service import HITLService
 
-            cards_by_task: dict[str, list[dict[str, Any]]] = {}
+        cards_by_task: dict[str, list[dict[str, Any]]] = {}
+        for card in HITLService(self.db).list_pending():
+            task_id = card.get("task_id")
+            if task_id:
+                cards_by_task.setdefault(task_id, []).append(card)
+        try:
+            from astrbot.core.langgraph.interaction_manager import (
+                get_interaction_manager,
+            )
+
             for state in get_interaction_manager().get_pending_interactions():
                 card = state.card.to_dict()
                 task_id = card.get("meta", {}).get("task_id") or state.thread_id
                 if not task_id:
                     continue
+                if any(existing.get("interaction_id") == card.get("interaction_id") for existing in cards_by_task.get(task_id, [])):
+                    continue
                 card["thread_id"] = state.thread_id
                 card["task_id"] = task_id
                 card["channel"] = state.channel
                 cards_by_task.setdefault(task_id, []).append(card)
-            return cards_by_task
         except Exception:
-            return {}
+            pass
+        return cards_by_task
 
     def _pending_hitl_cards_for_task(self, task_id: str) -> list[dict[str, Any]]:
         if not task_id:
             return []
-        try:
-            from astrbot.core.langgraph.interaction_manager import get_interaction_manager
+        from .hitl_service import HITLService
 
-            cards = []
+        cards = HITLService(self.db).list_pending(task_id)
+        try:
+            from astrbot.core.langgraph.interaction_manager import (
+                get_interaction_manager,
+            )
+
             for state in get_interaction_manager().get_pending_interactions():
                 card = state.card.to_dict()
                 card_task_id = card.get("meta", {}).get("task_id") or state.thread_id
                 if card_task_id != task_id:
                     continue
+                if any(existing.get("interaction_id") == card.get("interaction_id") for existing in cards):
+                    continue
                 card["thread_id"] = state.thread_id
                 card["task_id"] = task_id
                 card["channel"] = state.channel
                 cards.append(card)
-            return cards
         except Exception:
-            return []
+            pass
+        return cards
+
+    def _build_steps_tree(self, raw_steps: Any) -> list[dict[str, Any]]:
+        steps = raw_steps
+        if isinstance(raw_steps, str):
+            try:
+                steps = json.loads(raw_steps)
+            except json.JSONDecodeError:
+                steps = []
+        if not isinstance(steps, list):
+            steps = []
+        normalized = [self._normalize_step(step, index) for index, step in enumerate(steps)]
+        by_parent: dict[str | None, list[dict[str, Any]]] = {}
+        for step in normalized:
+            parent = step.get("parent_id") or None
+            by_parent.setdefault(parent, []).append(step)
+        for step in normalized:
+            children = by_parent.get(step["id"], [])
+            step["children"] = sorted(children, key=lambda item: item.get("sort_order", 0))[:20]
+        return sorted(by_parent.get(None, []), key=lambda item: item.get("sort_order", 0))
+
+    @staticmethod
+    def _normalize_step(step: Any, index: int) -> dict[str, Any]:
+        source = step if isinstance(step, dict) else {"description": str(step)}
+        step_id = str(source.get("id") or f"step_{index + 1}")
+        dependencies = source.get("dependencies")
+        if dependencies is None:
+            dependencies = source.get("depends_on") or ([] if index == 0 or source.get("parent_id") else [f"step_{index}"])
+        if not isinstance(dependencies, list):
+            dependencies = [dependencies] if dependencies else []
+        title = source.get("title") or source.get("name") or source.get("description") or f"步骤 {index + 1}"
+        return {
+            "id": step_id,
+            "parent_id": source.get("parent_id") or source.get("parent"),
+            "title": title,
+            "description": source.get("description") or title,
+            "status": source.get("status", "pending"),
+            "dependencies": [str(dep) for dep in dependencies if dep],
+            "executor": source.get("executor") or source.get("agent") or "",
+            "result": source.get("result", ""),
+            "depth": min(2, int(source.get("depth") or (2 if source.get("parent_id") else 1))),
+            "sort_order": int(source.get("sort_order") or index),
+            "stats": source.get("stats", {}),
+            "error": source.get("error", ""),
+        }
 
     # ------------------------------------------------------------------
     # Helpers

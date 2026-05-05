@@ -32,10 +32,13 @@ def register_work_routes(plugin: AgentSystemPlugin) -> None:
         ("/work/tasks", _list_tasks, ["GET"], "Work 任务列表"),
         ("/work/tasks", _create_task, ["POST"], "创建 Work 任务"),
         ("/work/tasks/<task_id>", _get_task, ["GET"], "获取 Work 任务详情"),
+        ("/work/tasks/<task_id>/logs", _list_task_logs, ["GET"], "获取 Work 任务日志"),
         ("/work/tasks/<task_id>/events", _task_events, ["GET"], "Work 任务事件流"),
         ("/work/tasks/<task_id>/input", _submit_input, ["POST"], "Work 任务补充信息"),
         ("/work/tasks/<task_id>/hitl", _respond_hitl, ["POST"], "Work HITL 响应"),
         ("/work/tasks/<task_id>/artifacts", _list_artifacts, ["GET"], "Work 任务交付物"),
+        ("/hitl", _list_hitl, ["GET"], "HITL 请求列表"),
+        ("/hitl/<interaction_id>/respond", _respond_hitl_by_id, ["POST"], "HITL 统一响应"),
     ]
     for path, handler, methods, desc in routes:
         plugin.context.register_web_api(path, handler, methods, desc)
@@ -165,6 +168,24 @@ async def _get_task(task_id: str):
         return Response().error(str(e)).__dict__
 
 
+async def _list_task_logs(task_id: str):
+    try:
+        limit = request.args.get("limit", type=int)
+        before_seq = request.args.get("before_seq", type=int)
+        after_seq = request.args.get("after_seq", type=int)
+        return Response().ok(
+            _get_work_service().get_task_logs(
+                task_id,
+                logs_limit=limit,
+                before_seq=before_seq,
+                after_seq=after_seq,
+            )
+        ).__dict__
+    except Exception as e:
+        logger.error(f"Failed to list work task logs {task_id}: {e}", exc_info=True)
+        return Response().error(str(e)).__dict__
+
+
 async def _submit_input(task_id: str):
     try:
         data = await request.get_json() or {}
@@ -190,6 +211,37 @@ async def _respond_hitl(task_id: str):
         return Response().error(str(e)).__dict__
 
 
+async def _list_hitl():
+    try:
+        from ..database import get_database
+        from ..services.hitl_service import HITLService
+
+        task_id = request.args.get("task_id")
+        return Response().ok(HITLService(get_database()).list_pending(task_id)).__dict__
+    except Exception as e:
+        logger.error(f"Failed to list HITL requests: {e}", exc_info=True)
+        return Response().error(str(e)).__dict__
+
+
+async def _respond_hitl_by_id(interaction_id: str):
+    try:
+        from ..database import get_database
+        from ..services.hitl_service import HITLService
+
+        data = await request.get_json() or {}
+        result = await HITLService(get_database()).respond(
+            interaction_id,
+            data.get("action_key", "approve"),
+            data.get("field_values", {}),
+        )
+        return Response().ok(result, "已提交人工确认").__dict__
+    except ValueError as e:
+        return Response().error(str(e)).__dict__
+    except Exception as e:
+        logger.error(f"Failed to respond HITL {interaction_id}: {e}", exc_info=True)
+        return Response().error(str(e)).__dict__
+
+
 async def _list_artifacts(task_id: str):
     try:
         return Response().ok(_get_work_service().list_artifacts(task_id)).__dict__
@@ -203,13 +255,12 @@ async def _task_events(task_id: str):
         service = _get_work_service()
         try:
             task = _task_event_snapshot(service, task_id)
-            existing_logs = service.get_task_logs(task_id, logs_limit=200)
-            seen_logs: set[str] = {log.get("id") for log in existing_logs if log.get("id")}
+            after_seq = request.args.get("after_seq", type=int) or 0
             seen_artifacts: set[str] = set(_artifact_ids(service, task_id))
             last_status = task.get("status", "")
             yield _sse("phase", {"status": last_status, "progress": task.get("progress", 0)})
         except Exception:
-            seen_logs = set()
+            after_seq = 0
             seen_artifacts = set()
             last_status = ""
         for _ in range(3600):
@@ -219,12 +270,10 @@ async def _task_events(task_id: str):
                     last_status = task.get("status", "")
                     yield _sse("phase", {"status": last_status, "progress": task.get("progress", 0)})
 
-                for log in service.get_task_logs(task_id, logs_limit=200):
-                    log_id = log.get("id")
-                    if log_id and log_id not in seen_logs:
-                        seen_logs.add(log_id)
-                        event_name = log.get("data", {}).get("event") or "log"
-                        yield _sse(event_name, log)
+                for log in service.get_task_logs(task_id, logs_limit=300, after_seq=after_seq):
+                    after_seq = max(after_seq, int(log.get("seq") or 0))
+                    event_name = log.get("data", {}).get("event") or "log"
+                    yield _sse(event_name, log)
 
                 new_artifact_ids = [artifact_id for artifact_id in _artifact_ids(service, task_id) if artifact_id not in seen_artifacts]
                 if new_artifact_ids:

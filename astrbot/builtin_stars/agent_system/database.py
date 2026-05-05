@@ -381,6 +381,156 @@ class Database:
             )
         """)
 
+        # 通用 HITL 人工交互请求表
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS hitl_requests (
+                id TEXT PRIMARY KEY,
+                task_id TEXT,
+                session_id TEXT DEFAULT '',
+                scope TEXT DEFAULT 'work',
+                interaction_type TEXT NOT NULL,
+                title TEXT NOT NULL,
+                body TEXT DEFAULT '',
+                fields TEXT DEFAULT '[]',
+                actions TEXT DEFAULT '[]',
+                status TEXT DEFAULT 'pending',
+                response TEXT DEFAULT '{}',
+                channel TEXT DEFAULT '',
+                metadata TEXT DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                resolved_at TEXT DEFAULT NULL,
+                FOREIGN KEY (task_id) REFERENCES agent_tasks(id) ON DELETE CASCADE
+            )
+        """)
+
+        # Work 任务步骤表：最多两级，dependencies 为同任务内 step id 列表
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS work_task_steps (
+                id TEXT PRIMARY KEY,
+                task_id TEXT NOT NULL,
+                parent_id TEXT,
+                title TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                status TEXT DEFAULT 'pending',
+                dependencies TEXT DEFAULT '[]',
+                executor TEXT DEFAULT '',
+                result TEXT DEFAULT '',
+                depth INTEGER DEFAULT 1,
+                sort_order INTEGER DEFAULT 0,
+                started_at TEXT DEFAULT NULL,
+                completed_at TEXT DEFAULT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (task_id) REFERENCES agent_tasks(id) ON DELETE CASCADE,
+                FOREIGN KEY (parent_id) REFERENCES work_task_steps(id) ON DELETE CASCADE
+            )
+        """)
+
+        # CLI Agent 客户端表
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS cli_agent_clients (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                agent_kind TEXT NOT NULL,
+                location_kind TEXT NOT NULL,
+                transport_kind TEXT NOT NULL,
+                command TEXT DEFAULT '',
+                args TEXT DEFAULT '[]',
+                executable_path TEXT DEFAULT '',
+                remote_url TEXT DEFAULT '',
+                auth_type TEXT DEFAULT 'none',
+                auth_secret TEXT DEFAULT '',
+                env TEXT DEFAULT '{}',
+                default_workspace_id TEXT DEFAULT NULL,
+                permission_policy TEXT DEFAULT 'ask',
+                enabled INTEGER DEFAULT 1,
+                status TEXT DEFAULT 'unknown',
+                status_message TEXT DEFAULT '',
+                last_checked_at TEXT DEFAULT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+
+        # CLI Agent 工作区表
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS cli_agent_workspaces (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                path TEXT NOT NULL,
+                location_kind TEXT NOT NULL,
+                remote_client_id TEXT DEFAULT NULL,
+                rules TEXT DEFAULT '',
+                env TEXT DEFAULT '{}',
+                status TEXT DEFAULT 'active',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+
+        # CLI Agent 会话表
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS cli_agent_sessions (
+                id TEXT PRIMARY KEY,
+                client_id TEXT NOT NULL,
+                workspace_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                external_session_key TEXT DEFAULT '',
+                status TEXT DEFAULT 'idle',
+                total_tokens INTEGER DEFAULT 0,
+                input_tokens INTEGER DEFAULT 0,
+                output_tokens INTEGER DEFAULT 0,
+                last_error TEXT DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (client_id) REFERENCES cli_agent_clients(id),
+                FOREIGN KEY (workspace_id) REFERENCES cli_agent_workspaces(id)
+            )
+        """)
+
+        # CLI Agent 消息表
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS cli_agent_messages (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                external_message_id TEXT DEFAULT '',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (session_id) REFERENCES cli_agent_sessions(id) ON DELETE CASCADE
+            )
+        """)
+
+        # CLI Agent 事件表
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS cli_agent_events (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (session_id) REFERENCES cli_agent_sessions(id) ON DELETE CASCADE
+            )
+        """)
+
+        # CLI Agent 权限请求表
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS cli_agent_permissions (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                client_id TEXT NOT NULL,
+                request_key TEXT NOT NULL,
+                title TEXT NOT NULL,
+                body TEXT DEFAULT '',
+                payload TEXT NOT NULL,
+                status TEXT DEFAULT 'pending',
+                decision TEXT DEFAULT '',
+                created_at TEXT NOT NULL,
+                responded_at TEXT DEFAULT NULL,
+                FOREIGN KEY (session_id) REFERENCES cli_agent_sessions(id) ON DELETE CASCADE,
+                FOREIGN KEY (client_id) REFERENCES cli_agent_clients(id)
+            )
+        """)
+
         # 智能体记忆表
         self.execute("""
             CREATE TABLE IF NOT EXISTS agent_memories (
@@ -539,6 +689,19 @@ class Database:
             "CREATE INDEX IF NOT EXISTS idx_work_projects_status ON work_projects(status)",
             "CREATE INDEX IF NOT EXISTS idx_work_daily_dirs_status ON work_daily_dirs(status)",
             "CREATE INDEX IF NOT EXISTS idx_work_artifacts_task ON work_artifacts(task_id)",
+            "CREATE INDEX IF NOT EXISTS idx_hitl_requests_task ON hitl_requests(task_id)",
+            "CREATE INDEX IF NOT EXISTS idx_hitl_requests_status ON hitl_requests(status)",
+            "CREATE INDEX IF NOT EXISTS idx_work_task_steps_task ON work_task_steps(task_id)",
+            "CREATE INDEX IF NOT EXISTS idx_work_task_steps_parent ON work_task_steps(parent_id)",
+            "CREATE INDEX IF NOT EXISTS idx_cli_agent_clients_kind ON cli_agent_clients(agent_kind)",
+            "CREATE INDEX IF NOT EXISTS idx_cli_agent_clients_enabled ON cli_agent_clients(enabled)",
+            "CREATE INDEX IF NOT EXISTS idx_cli_agent_workspaces_status ON cli_agent_workspaces(status)",
+            "CREATE INDEX IF NOT EXISTS idx_cli_agent_sessions_client ON cli_agent_sessions(client_id)",
+            "CREATE INDEX IF NOT EXISTS idx_cli_agent_sessions_workspace ON cli_agent_sessions(workspace_id)",
+            "CREATE INDEX IF NOT EXISTS idx_cli_agent_sessions_status ON cli_agent_sessions(status)",
+            "CREATE INDEX IF NOT EXISTS idx_cli_agent_events_session ON cli_agent_events(session_id)",
+            "CREATE INDEX IF NOT EXISTS idx_cli_agent_permissions_session ON cli_agent_permissions(session_id)",
+            "CREATE INDEX IF NOT EXISTS idx_cli_agent_permissions_status ON cli_agent_permissions(status)",
         ]
 
         for index_sql in indexes:

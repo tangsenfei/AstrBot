@@ -65,6 +65,12 @@ const MainRoutes = {
       meta: { requiresAuth: true }
     },
     {
+      name: 'CliAgents',
+      path: '/cli-agents',
+      component: () => import('@/views/CliAgentsPage.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       name: 'MemoryManagement',
       path: '/memory-management',
       component: () => import('@/views/MemoryManagementPage.vue'),

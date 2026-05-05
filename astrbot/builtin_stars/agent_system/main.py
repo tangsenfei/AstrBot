@@ -93,6 +93,7 @@ class AgentSystemPlugin(Star):
 
         # 注册工具管理 API
         from .routes import (
+            register_cli_agent_routes,
             register_agent_routes,
             register_crew_routes,
             register_flow_routes,
@@ -112,6 +113,7 @@ class AgentSystemPlugin(Star):
         register_roundtable_routes(self)
         register_task_routes(self)
         register_work_routes(self)
+        register_cli_agent_routes(self)
 
         logger.info("AgentSystemPlugin APIs registered")
 
