@@ -50,9 +50,10 @@
                 variant="outlined"
                 hide-details
                 class="flex-grow-1"
+                @update:modelValue="(v: any) => onFieldSelect(field.key, v)"
               />
               <v-text-field
-                v-if="field.allow_custom && fieldValues[field.key] === '__custom__'"
+                v-if="field.allow_custom && fieldValues[field.key] === '自定义'"
                 v-model="customFieldValues[field.key]"
                 :placeholder="field.custom_placeholder || '请输入自定义内容'"
                 density="compact"
@@ -61,15 +62,31 @@
                 class="flex-grow-1"
               />
             </div>
-            <v-select
-              v-else-if="field.field_type === 'multiselect'"
-              v-model="fieldValues[field.key]"
-              :items="fieldOptions(field)"
-              density="compact"
-              variant="outlined"
-              hide-details
-              multiple
-            />
+            <div v-else-if="field.field_type === 'multiselect'" class="d-flex flex-column ga-1">
+              <v-select
+                v-model="fieldValues[field.key]"
+                :items="fieldOptions(field)"
+                density="compact"
+                variant="outlined"
+                hide-details
+                multiple
+                chips
+                closable-chips
+              />
+              <v-text-field
+                v-if="field.allow_custom && fieldValues[field.key]?.includes('自定义')"
+                v-model="customFieldValues[field.key]"
+                :placeholder="field.custom_placeholder || '请输入自定义内容，回车添加'"
+                density="compact"
+                variant="outlined"
+                hide-details
+                @keydown.enter.prevent="addCustomToMulti(field.key)"
+              >
+                <template v-slot:append-inner>
+                  <v-btn size="x-small" variant="text" icon="mdi-plus" @click="addCustomToMulti(field.key)" />
+                </template>
+              </v-text-field>
+            </div>
             <v-text-field
               v-else
               v-model="fieldValues[field.key]"
@@ -229,8 +246,11 @@ async function handleAction(action: { key: string; label: string }) {
   try {
     const submitValues: Record<string, any> = {};
     for (const [key, val] of Object.entries(fieldValues.value)) {
-      if (val === '__custom__' && customFieldValues.value[key]) {
-        submitValues[key] = customFieldValues.value[key];
+      if (Array.isArray(val)) {
+        const cleaned = val
+          .map((v: any) => v === '自定义' ? (customFieldValues.value[key] || v) : v)
+          .filter((v: any) => v !== '自定义');
+        submitValues[key] = cleaned;
       } else if (val === '自定义' && customFieldValues.value[key]) {
         submitValues[key] = customFieldValues.value[key];
       } else {
@@ -265,6 +285,28 @@ function fieldOptions(field: { options?: string[]; allow_custom?: boolean }) {
     opts.push('自定义');
   }
   return opts;
+}
+
+function onFieldSelect(key: string, value: any) {
+  if (value === '自定义') {
+    customFieldValues.value[key] = '';
+  }
+}
+
+function addCustomToMulti(key: string) {
+  const custom = customFieldValues.value[key]?.trim();
+  if (!custom) return;
+  const current = fieldValues.value[key] || [];
+  if (!current.includes(custom)) {
+    fieldValues.value[key] = [...current, custom];
+  }
+  const idx = current.indexOf('自定义');
+  if (idx >= 0) {
+    const updated = [...fieldValues.value[key]];
+    updated.splice(updated.indexOf('自定义'), 1);
+    fieldValues.value[key] = updated;
+  }
+  customFieldValues.value[key] = '';
 }
 
 function fieldPlaceholder(field: { label: string; field_type: string }) {

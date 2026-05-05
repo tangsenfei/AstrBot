@@ -28,6 +28,7 @@ class WorkTaskState(AgentGraphState, total=False):
     clarification_config: dict[str, Any]
     input: dict[str, Any]
     plan_steps: list[dict[str, Any]]
+    plan_text_full: str
     step_results: list[dict[str, Any]]
     current_step_index: int
     review_passed: bool
@@ -126,6 +127,9 @@ async def clarify_node(state: WorkTaskState, config: RunnableConfig) -> dict:
         _emit(run_ctx, "phase", {"phase": "cancelled", "label": "任务已取消", "progress": 8, "status": "cancelled"}, "clarify")
         return {"cancelled": True, "clarification_action": "cancel"}
     values = dict(response.field_values or {})
+    confirmation_summary = _format_clarification_summary(values, card)
+    if confirmation_summary:
+        _emit(run_ctx, "text_delta", {"text": confirmation_summary}, "clarify")
     if response.action_key == "clarify_more":
         _emit(
             run_ctx,
@@ -156,7 +160,17 @@ async def plan_node(state: WorkTaskState, config: RunnableConfig) -> dict:
         f"{_context_text(state)}\n\n"
         f"规划深度：{effort}\n\n"
         f"{feedback_text}"
-        "请输出 3-7 个步骤，每个步骤包含清晰交付物。步骤之间应按依赖顺序排列；如果存在子任务，最多拆到二级，并标注依赖。"
+        "请输出 3-7 个一级步骤，每个步骤包含清晰交付物。如果步骤较复杂，可拆出 1-3 个二级子任务。\n\n"
+        "格式要求（严格遵守）：\n"
+        "一级步骤用数字编号，如：\n"
+        "1. 步骤标题\n"
+        "   交付物：xxx\n"
+        "   子任务1.1：xxx\n"
+        "   子任务1.2：xxx\n\n"
+        "2. 步骤标题\n"
+        "   交付物：xxx\n"
+        "   子任务2.1：xxx\n\n"
+        "二级子任务用「子任务X.Y」或缩进表示，最多两级。步骤按依赖顺序排列。"
     )
     plan_config = state.get("plan_config", {}) or {}
     timeout_seconds = max(10, int(plan_config.get("timeout_seconds", 30) or 30))
@@ -197,20 +211,19 @@ async def plan_node(state: WorkTaskState, config: RunnableConfig) -> dict:
     plan_display = _format_plan_for_display(steps) if steps else text
     _emit(run_ctx, "text_delta", {"text": plan_display}, "plan")
     _emit(run_ctx, "phase", {"phase": "plan_done", "label": "计划已生成", "steps": steps, "progress": 25}, "plan")
-    return {"plan_steps": steps, "current_step_index": 0, "step_results": [], "approval_action": "", "plan_feedback": ""}
+    return {"plan_steps": steps, "plan_text_full": text, "current_step_index": 0, "step_results": [], "approval_action": "", "plan_feedback": ""}
 
 
 async def approve_plan_node(state: WorkTaskState, config: RunnableConfig) -> dict:
     run_ctx = _get_run_ctx(config)
     steps = state.get("plan_steps", [])
-    steps_text = "\n".join(
-        f"{idx + 1}. {step.get('description', '')}" for idx, step in enumerate(steps)
-    )
+    plan_text_full = state.get("plan_text_full", "")
+    plan_body = _format_plan_for_approval(steps) if steps else (plan_text_full or "无计划内容")
     card = InteractionCard(
         interaction_id=f"work_plan_{uuid.uuid4().hex[:12]}",
         type="plan_approval",
-        title="Work 执行计划审批",
-        body=f"任务「{state.get('task_name', '')}」的执行计划如下：\n\n{steps_text}",
+        title=f"执行计划审批：{state.get('task_name', '')}",
+        body=f"请审批以下执行计划：\n\n{plan_body}",
         fields=[
             CardField(
                 key="modify_text",
@@ -490,29 +503,76 @@ def route_after_rework_hitl(state: WorkTaskState) -> str:
 
 
 def _parse_steps(text: str) -> list[dict[str, Any]]:
-    steps: list[dict[str, Any]] = []
+    import re
+    parent_steps: list[dict[str, Any]] = []
+    child_steps: list[dict[str, Any]] = []
+    current_parent_id: str | None = None
+    parent_counter = 0
+    child_counter = 0
+    main_step_pattern = re.compile(r'^(\d+)[.、)）]\s')
+    sub_num_pattern = re.compile(r'^(\d+)\.(\d+)\s')
+    indent_pattern = re.compile(r'^(\s{2,}|\t+)')
+    sub_prefix_pattern = re.compile(r'^(子任务|sub[- ]?task)\s*\d*', re.IGNORECASE)
+
     for line in text.splitlines():
         stripped = line.strip()
         if not stripped:
             continue
+
+        is_main_step = bool(main_step_pattern.match(stripped))
+        is_sub = False
+        sub_num_match = sub_num_pattern.match(stripped)
+        indent_match = indent_pattern.match(line)
+        sub_prefix_match = sub_prefix_pattern.match(stripped)
+
+        if sub_num_match:
+            is_sub = True
+        elif indent_match and not is_main_step:
+            is_sub = True
+        elif sub_prefix_match:
+            is_sub = True
+
         cleaned = stripped.lstrip("-*0123456789.、)） ").strip()
-        if cleaned and (stripped[0].isdigit() or stripped.startswith(("-", "*"))):
-            step_id = f"step_{len(steps) + 1}"
-            steps.append({
-                "id": step_id,
+        if not cleaned:
+            continue
+
+        if is_sub and current_parent_id:
+            child_counter += 1
+            child_id = f"step_{parent_counter}_{child_counter}"
+            child_steps.append({
+                "id": child_id,
                 "title": cleaned[:80],
                 "description": cleaned,
                 "status": "pending",
-                "dependencies": [] if not steps else [f"step_{len(steps)}"],
-                "parent_id": None,
-                "depth": 1,
-                "sort_order": len(steps),
+                "dependencies": [],
+                "parent_id": current_parent_id,
+                "depth": 2,
+                "sort_order": child_counter,
                 "executor_type": "agent",
                 "executor_id": "agent_nicebot_work_executor",
                 "reviewer_id": "agent_nicebot_work_reviewer",
             })
-    if not steps:
-        steps.append({
+        elif is_main_step:
+            parent_counter += 1
+            child_counter = 0
+            step_id = f"step_{parent_counter}"
+            current_parent_id = step_id
+            parent_steps.append({
+                "id": step_id,
+                "title": cleaned[:80],
+                "description": cleaned,
+                "status": "pending",
+                "dependencies": [] if not parent_steps else [f"step_{len(parent_steps)}"],
+                "parent_id": None,
+                "depth": 1,
+                "sort_order": parent_counter,
+                "executor_type": "agent",
+                "executor_id": "agent_nicebot_work_executor",
+                "reviewer_id": "agent_nicebot_work_reviewer",
+            })
+
+    if not parent_steps:
+        parent_steps.append({
             "id": "step_1",
             "title": "完成任务交付",
             "description": text.strip()[:500] or "完成任务交付",
@@ -525,7 +585,13 @@ def _parse_steps(text: str) -> list[dict[str, Any]]:
             "executor_id": "agent_nicebot_work_executor",
             "reviewer_id": "agent_nicebot_work_reviewer",
         })
-    return steps[:7]
+
+    result = list(parent_steps[:7])
+    for ps in result:
+        pid = ps["id"]
+        children = [cs for cs in child_steps if cs.get("parent_id") == pid][:10]
+        ps["children"] = children
+    return result
 
 
 def _work_agent_id(state: WorkTaskState, role: str) -> str:
@@ -593,7 +659,7 @@ async def _agent_clarify_content(
         '      "key": "字段英文key",\n'
         '      "label": "字段中文标签",\n'
         '      "description": "该确认项的说明",\n'
-        '      "field_type": "select 或 textarea",\n'
+        '      "field_type": "select 或 multiselect 或 textarea",\n'
         '      "required": true,\n'
         '      "recommended": "推荐选项或默认值",\n'
         '      "options": ["选项1", "选项2", "推荐选项"],\n'
@@ -605,8 +671,12 @@ async def _agent_clarify_content(
         "要求：\n"
         "1. 根据任务内容生成 2-5 个最相关的确认项\n"
         "2. 每个确认项的 options 应包含 3-6 个选项，推荐项以\"推荐：\"开头\n"
-        "3. field_type 优先用 select（有明确选项时），需要自由输入时用 textarea\n"
+        "3. field_type 选择规则：\n"
+        "   - select：单选，有明确互斥选项时使用\n"
+        "   - multiselect：多选，需要同时选择多个选项时使用（如：关注维度、目标品牌、数据来源）\n"
+        "   - textarea：需要自由输入时使用\n"
         "4. 确保推荐项与任务内容相关，不要使用通用默认值\n"
+        "5. 当确认项天然需要多选时（如\"关注哪些维度\"\"需要哪些数据源\"），使用 multiselect\n"
     )
 
     if run_ctx is None:
@@ -668,6 +738,28 @@ def _parse_confirmation_items(text: str) -> list[dict[str, Any]]:
         if isinstance(item, dict) and item.get("key") and item.get("label"):
             valid.append(item)
     return valid
+
+
+def _format_clarification_summary(values: dict[str, Any], card: InteractionCard) -> str:
+    if not values:
+        return ""
+    field_labels: dict[str, str] = {}
+    for f in (card.fields or []):
+        if isinstance(f, dict):
+            field_labels[f.get("key", "")] = f.get("label", f.get("key", ""))
+        else:
+            field_labels[f.key] = f.label
+    lines = ["✅ 需求已确认："]
+    for key, val in values.items():
+        if val is None or val == "":
+            continue
+        label = field_labels.get(key, key)
+        if isinstance(val, list):
+            val_str = "、".join(str(v) for v in val)
+        else:
+            val_str = str(val)
+        lines.append(f"- {label}：{val_str}")
+    return "\n".join(lines)
 
 
 def _fallback_clarify_content(state: WorkTaskState) -> dict[str, Any]:
@@ -759,7 +851,36 @@ def _format_plan_for_display(steps: list[dict[str, Any]]) -> str:
             "skipped": "⏭️",
         }.get(step.get("status", "pending"), "⬜")
         lines.append(f"{i}. {status_icon} {desc}")
+        for child in step.get("children", []):
+            child_desc = child.get("description", str(child))
+            lines.append(f"   - {child_desc}")
     lines.append("\n请确认以上计划，或进行修改后确认执行。")
+    return "\n".join(lines)
+
+
+def _format_plan_for_approval(steps: list[dict[str, Any]]) -> str:
+    lines = []
+    for i, step in enumerate(steps, 1):
+        title = step.get("title", step.get("description", ""))
+        lines.append(f"步骤{i}：{title}")
+        desc = step.get("description", "")
+        if desc and desc != title:
+            lines.append(f"  说明：{desc}")
+        deliverable = step.get("deliverable") or step.get("deliverables", "")
+        if deliverable:
+            lines.append(f"  交付物：{deliverable}")
+        deps = step.get("dependencies", [])
+        if deps:
+            dep_labels = [d for d in deps if d.startswith("step_")]
+            if dep_labels:
+                lines.append(f"  前置：{', '.join(dep_labels)}")
+        else:
+            lines.append(f"  前置：无")
+        children = step.get("children", [])
+        if children:
+            child_names = [c.get("title", c.get("description", ""))[:60] for c in children]
+            lines.append(f"  子任务：{'；'.join(child_names)}")
+        lines.append("")
     return "\n".join(lines)
 
 

@@ -199,31 +199,50 @@
         <div class="pane-title small">任务进度</div>
       </div>
       <div v-if="selectedTask" class="step-list-wrap">
-        <div class="step-list">
-          <button
-            v-for="step in flattenedSteps"
-            :key="step.id || step.description"
-            class="step-row"
-            :class="{ child: step.depth === 2, blocked: hasUnfinishedDependencies(step), running: step.status === 'running' }"
-            type="button"
-            @click="selectedStep = step"
+        <div v-if="stageSteps.length" class="stage-progress-bar">
+          <div
+            v-for="(stage, idx) in stageSteps"
+            :key="stage.id"
+            class="stage-chip"
+            :class="{
+              'stage-done': stage.status === 'done' || stage.status === 'completed',
+              'stage-running': stage.status === 'running',
+              'stage-pending': stage.status === 'pending',
+              'stage-failed': stage.status === 'failed',
+            }"
+            @click="selectedStageIndex = idx"
           >
-            <span v-if="step.depth === 2" class="tree-branch" />
-            <v-icon :color="stepColor(step.status)" :icon="stepIcon(step.status)" size="18" />
-            <div>
-              <div class="step-title">{{ stepPreviewText(step.title || step.description || step.name) }}</div>
-              <div v-if="step.dependencies?.length" class="step-deps">
-                <v-icon size="13" icon="mdi-arrow-right-thin" />
-                前置：{{ dependencyLabels(step.dependencies) }}
+            <v-icon :icon="stage.status === 'done' || stage.status === 'completed' ? 'mdi-check-circle' : stage.status === 'running' ? 'mdi-progress-clock' : stage.status === 'failed' ? 'mdi-alert-circle' : 'mdi-circle-outline'" size="14" />
+            <span class="stage-label">{{ stage.title || stage.description || stage.name }}</span>
+          </div>
+        </div>
+        <div class="step-list">
+          <transition-group name="step-list" tag="div">
+            <button
+              v-for="step in executionSteps"
+              :key="step.id || step.description"
+              class="step-row"
+              :class="{ child: step.depth === 2, blocked: hasUnfinishedDependencies(step), running: step.status === 'running' }"
+              type="button"
+              @click="selectedStep = step"
+            >
+              <span v-if="step.depth === 2" class="tree-branch" />
+              <v-icon :color="stepColor(step.status)" :icon="stepIcon(step.status)" size="18" />
+              <div>
+                <div class="step-title">{{ stepPreviewText(step.title || step.description || step.name) }}</div>
+                <div v-if="step.dependencies?.length" class="step-deps">
+                  <v-icon size="13" icon="mdi-arrow-right-thin" />
+                  前置：{{ dependencyLabels(step.dependencies) }}
+                </div>
+                <div v-if="executorDisplay(step)" class="step-deps">
+                  <v-icon size="13" icon="mdi-account-cog-outline" />
+                  {{ executorDisplay(step) }}
+                </div>
+                <div v-if="step.result" class="step-result">{{ stepPreviewText(step.result) }}</div>
               </div>
-              <div v-if="executorDisplay(step)" class="step-deps">
-                <v-icon size="13" icon="mdi-account-cog-outline" />
-                {{ executorDisplay(step) }}
-              </div>
-              <div v-if="step.result" class="step-result">{{ stepPreviewText(step.result) }}</div>
-            </div>
-          </button>
-          <div v-if="!steps.length" class="empty-state compact">暂无步骤</div>
+            </button>
+          </transition-group>
+          <div v-if="!executionSteps.length" class="empty-state compact">暂无执行步骤</div>
         </div>
       </div>
       <div v-else class="empty-state compact progress-empty">选择任务后查看步骤</div>
@@ -460,6 +479,13 @@ const activeHitlCard = computed(() =>
   selectedTask.value?.active_hitl || selectedTask.value?.hitl_cards?.[0] || interactionCards.value?.[0] || null
 );
 const flattenedSteps = computed(() => flattenSteps(steps.value));
+const selectedStageIndex = ref(0);
+const stageSteps = computed(() =>
+  flattenedSteps.value.filter((step: any) => /(?:^|:)stage_/.test(String(step.id || '')))
+);
+const executionSteps = computed(() =>
+  flattenedSteps.value.filter((step: any) => !/(?:^|:)stage_/.test(String(step.id || '')))
+);
 
 function defaultTaskForm() {
   return {
@@ -585,6 +611,7 @@ function clearSelection() {
   artifacts.value = [];
   interactionCards.value = [];
   selectedStep.value = null;
+  selectedStageIndex.value = 0;
   closeEventSource();
 }
 
@@ -1378,6 +1405,92 @@ onBeforeUnmount(() => {
   min-height: 0;
 }
 
+.stage-progress-bar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 6px 0;
+  overflow-x: auto;
+}
+
+.stage-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: 1px solid var(--work-border);
+  background: var(--work-panel-soft);
+  color: var(--work-muted);
+}
+
+.stage-chip.stage-done {
+  background: rgba(var(--v-theme-success), 0.12);
+  border-color: rgba(var(--v-theme-success), 0.35);
+  color: rgb(var(--v-theme-success));
+}
+
+.stage-chip.stage-running {
+  background: rgba(var(--v-theme-primary), 0.12);
+  border-color: rgba(var(--v-theme-primary), 0.45);
+  color: rgb(var(--v-theme-primary));
+  box-shadow: 0 0 0 2px rgba(var(--v-theme-primary), 0.12);
+}
+
+.stage-chip.stage-pending {
+  opacity: 0.65;
+}
+
+.stage-chip.stage-failed {
+  background: rgba(var(--v-theme-error), 0.1);
+  border-color: rgba(var(--v-theme-error), 0.35);
+  color: rgb(var(--v-theme-error));
+}
+
+.stage-label {
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.step-list-enter-active {
+  transition: all 0.3s ease;
+}
+
+.step-list-leave-active {
+  transition: all 0.2s ease;
+}
+
+.step-list-enter-from {
+  opacity: 0;
+  transform: translateX(-12px);
+}
+
+.step-list-leave-to {
+  opacity: 0;
+  transform: translateX(8px);
+}
+
+.step-list-move {
+  transition: transform 0.3s ease;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 .progress-pane-header {
   position: sticky;
   top: 0;
@@ -1406,6 +1519,7 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   background: var(--work-panel-soft);
   cursor: pointer;
+  transition: all 0.3s ease;
 }
 
 .step-row.child {
