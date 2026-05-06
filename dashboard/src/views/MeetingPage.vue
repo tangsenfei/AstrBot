@@ -405,6 +405,8 @@ const selectedMeetingId = ref('');
 const selectedMeeting = ref<Meeting | null>(null);
 const events = ref<MeetingEvent[]>([]);
 const artifacts = ref<any[]>([]);
+const cachedMessages = ref<ChatMessage[]>([]);
+const lastProcessedEventCount = ref(0);
 const searchText = ref('');
 const statusFilter = ref<string | null>(null);
 const typeFilter = ref<string | null>(null);
@@ -476,7 +478,26 @@ const filteredMeetings = computed(() => {
   });
 });
 
-const chatMessages = computed<ChatMessage[]>(() => mapEventsToMessages(events.value));
+const chatMessages = computed<ChatMessage[]>(() => {
+  const currentEvents = events.value;
+  // 如果事件数量没有变化，直接返回缓存
+  if (currentEvents.length === lastProcessedEventCount.value && cachedMessages.value.length > 0) {
+    return cachedMessages.value;
+  }
+  // 增量更新：如果新事件数量大于上次处理的数量，只处理新事件
+  if (currentEvents.length > lastProcessedEventCount.value && cachedMessages.value.length > 0) {
+    const newEvents = currentEvents.slice(lastProcessedEventCount.value);
+    const newMessages = mapEventsToMessages(newEvents, cachedMessages.value);
+    cachedMessages.value = newMessages;
+    lastProcessedEventCount.value = currentEvents.length;
+    return newMessages;
+  }
+  // 全量重新计算（首次或事件被重置）
+  const result = mapEventsToMessages(currentEvents);
+  cachedMessages.value = result;
+  lastProcessedEventCount.value = currentEvents.length;
+  return result;
+});
 
 const displayArtifacts = computed(() => {
   return artifacts.value.filter((artifact) =>
@@ -528,6 +549,8 @@ async function selectMeeting(meetingId: string) {
   detailTab.value = 'chatroom';
   events.value = [];
   artifacts.value = [];
+  cachedMessages.value = [];
+  lastProcessedEventCount.value = 0;
   await loadMeeting(meetingId);
   openEventSource(meetingId);
 }
@@ -597,6 +620,11 @@ async function respondHitl(payload: { interaction_id: string; action_key: string
   if (!selectedMeetingId.value) return;
   await axios.post(`/api/plug/meeting/meetings/${encodeURIComponent(selectedMeetingId.value)}/hitl`, payload);
   hitlDialog.value = false;
+  // 立即清除 active_hitl，避免状态不同步
+  if (selectedMeeting.value) {
+    selectedMeeting.value.active_hitl = null;
+    selectedMeeting.value.has_hitl = false;
+  }
   await loadMeeting();
   await loadMeetings();
 }
@@ -628,7 +656,7 @@ function openEventSource(meetingId: string) {
       await loadMeetings();
     }, 300);
   };
-  ['phase', 'text_delta', 'tool_call', 'tool_result', 'reasoning', 'interaction', 'artifact', 'error', 'done', 'user_message', 'token'].forEach(name => {
+  ['phase', 'text_delta', 'tool_call', 'tool_result', 'reasoning', 'interaction', 'artifact', 'error', 'done', 'user_message', 'token', 'hitl_resolved'].forEach(name => {
     eventSource?.addEventListener(name, (evt: MessageEvent) => {
       try {
         const payload = JSON.parse(evt.data);
@@ -640,6 +668,10 @@ function openEventSource(meetingId: string) {
           if (payload.status) selectedMeeting.value.status = payload.status;
           if (payload.stage) selectedMeeting.value.stage = payload.stage;
           if (payload.progress !== undefined) selectedMeeting.value.progress = payload.progress;
+        }
+        if (name === 'hitl_resolved' && selectedMeeting.value) {
+          selectedMeeting.value.active_hitl = null;
+          selectedMeeting.value.has_hitl = false;
         }
         if (payload?.id && !events.value.find(item => item.id === payload.id)) {
           events.value = [...events.value, payload];
@@ -663,9 +695,19 @@ function closeEventSource() {
   }
 }
 
-function mapEventsToMessages(items: MeetingEvent[]): ChatMessage[] {
-  const messages: ChatMessage[] = [];
+function mapEventsToMessages(items: MeetingEvent[], existingMessages?: ChatMessage[]): ChatMessage[] {
+  const messages: ChatMessage[] = existingMessages ? [...existingMessages] : [];
   const toolIndex = new Map<string, ToolCallInfo>();
+  // 如果已有消息，重建 toolIndex
+  if (existingMessages) {
+    for (const msg of existingMessages) {
+      if (msg.toolCalls) {
+        for (const tc of msg.toolCalls) {
+          if (tc.id) toolIndex.set(tc.id, tc);
+        }
+      }
+    }
+  }
   for (const event of items) {
     const type = event.event_type;
     const payload = event.payload || {};
@@ -718,10 +760,19 @@ function mapEventsToMessages(items: MeetingEvent[]): ChatMessage[] {
       const last = messages[messages.length - 1];
       if (last && last.role === 'assistant' && last.speaker === event.speaker) {
         last.thinking = `${last.thinking || ''}${content}`;
+        last.thinkingDone = false;
       } else {
-        messages.push({ ...baseAssistantMessage(event, '', 'thinking'), thinking: content });
+        messages.push({ ...baseAssistantMessage(event, '', 'thinking'), thinking: content, thinkingDone: false });
       }
       continue;
+    }
+
+    // 当收到非 reasoning 的 assistant 事件时，标记上一个 thinking 为完成
+    if (type !== 'reasoning' && messages.length > 0) {
+      const last = messages[messages.length - 1];
+      if (last && last.role === 'assistant' && last.thinking !== undefined && last.thinkingDone === false) {
+        last.thinkingDone = true;
+      }
     }
 
     if (event.role === 'user' || type === 'user_message') {
