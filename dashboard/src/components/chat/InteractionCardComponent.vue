@@ -41,7 +41,11 @@
               variant="outlined"
               hide-details
               auto-grow
+              :ref="(el: any) => { if (field.key === 'clarify_more_text' && el) clarifyMoreRef = el }"
             />
+            <div v-if="field.key === 'clarify_more_text'" class="text-caption text-medium-emphasis mt-1" style="line-height: 1.4;">
+              💡 填写补充信息后再次点击「补充信息」提交，系统将根据你的反馈重新生成确认卡片
+            </div>
             <div v-else-if="field.field_type === 'select'" class="d-flex align-center ga-2">
               <v-select
                 v-model="fieldValues[field.key]"
@@ -155,6 +159,7 @@ const loadingAction = ref<string | null>(null);
 const fieldValues = ref<Record<string, any>>({});
 const customFieldValues = ref<Record<string, any>>({});
 const revealFields = ref(false);
+const clarifyMoreRef = ref<any>(null);
 const resolvedStatus = computed(() => props.resolved?.status || null);
 const visibleFields = computed(() => {
   const fields = props.card.fields || [];
@@ -178,6 +183,17 @@ watch(() => props.card?.interaction_id, () => {
   customFieldValues.value = customNext;
   revealFields.value = false;
 }, { immediate: true });
+
+watch(revealFields, (val) => {
+  if (val) {
+    setTimeout(() => {
+      if (clarifyMoreRef.value) {
+        const input = clarifyMoreRef.value.$el?.querySelector?.('textarea') || clarifyMoreRef.value.$el;
+        input?.focus?.();
+      }
+    }, 100);
+  }
+});
 
 const typeIcon = computed(() => {
   const map: Record<string, string> = {

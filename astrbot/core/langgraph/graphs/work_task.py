@@ -40,6 +40,7 @@ class WorkTaskState(AgentGraphState, total=False):
     cancelled: bool
     clarification: dict[str, Any]
     clarification_action: str
+    clarification_feedback: str
 
 
 def _get_run_ctx(config: RunnableConfig) -> GraphRunContext | None:
@@ -119,6 +120,14 @@ async def clarify_node(state: WorkTaskState, config: RunnableConfig) -> dict:
         interaction_type="clarification",
         meta={"task_id": state.get("task_id", ""), "template_id": template_id},
     )
+    card.fields.append(CardField(
+        key="clarify_more_text",
+        label="补充信息",
+        field_type="textarea",
+        required=False,
+        description="如需补充或调整需求，请在此填写",
+        custom_placeholder="例如：交付时间要求本周内完成、需要包含竞品对比分析...",
+    ))
 
     task_name = state.get("task_name", "")
     if task_name and not content_payload.get("title"):
@@ -144,13 +153,14 @@ async def clarify_node(state: WorkTaskState, config: RunnableConfig) -> dict:
     if confirmation_summary:
         _emit(run_ctx, "text_delta", {"text": confirmation_summary}, "clarify")
     if response.action_key == "clarify_more":
+        feedback = values.pop("clarify_more_text", "") if isinstance(values, dict) else ""
         _emit(
             run_ctx,
             "phase",
-            {"phase": "clarification_more", "label": "已收到补充需求，将继续确认", "progress": 8, "status": "running"},
+            {"phase": "clarification_more", "label": "已收到补充需求，将重新生成确认卡片", "progress": 8, "status": "running"},
             "clarify",
         )
-        return {"clarification": values, "clarification_action": "clarify_more"}
+        return {"clarification": values, "clarification_feedback": feedback, "clarification_action": "clarify_more"}
     _emit(run_ctx, "phase", {"phase": "clarification_done", "label": "需求已明确", "progress": 12, "status": "running"}, "clarify")
     stages = _update_stage_status(list(state.get("stage_steps", [])), "stage_clarify", "done")
     stages = _update_stage_status(stages, "stage_plan", "running")
@@ -201,7 +211,7 @@ async def plan_node(state: WorkTaskState, config: RunnableConfig) -> dict:
                     "session_id": state.get("session_id", "work"),
                 },
                 run_ctx,
-                write_stream=True,
+                write_stream=False,
             ),
             timeout=timeout_seconds,
         )
@@ -213,6 +223,13 @@ async def plan_node(state: WorkTaskState, config: RunnableConfig) -> dict:
             "plan",
         )
     text = result.get("final_text", "")
+    stats = result.get("stats", {}) if isinstance(result, dict) else {}
+    if stats:
+        tok_usage = stats.get("token_usage", {}) if isinstance(stats, dict) else {}
+        _emit(run_ctx, "token", {
+            "input": tok_usage.get("input", 0),
+            "output": tok_usage.get("output", 0),
+        }, "plan")
     if result.get("error"):
         _emit(
             run_ctx,
@@ -323,6 +340,12 @@ async def execute_node(state: WorkTaskState, config: RunnableConfig) -> dict:
     step["status"] = "done"
     step["result"] = result.get("final_text", "")
     steps[idx] = step
+    _emit(run_ctx, "phase", {
+        "phase": "step_done",
+        "label": f"{step['description']} 已完成",
+        "steps": steps,
+        "progress": progress,
+    }, "execute")
     results = list(state.get("step_results", []))
     results.append({
         "step_id": step.get("id", idx + 1),
@@ -685,11 +708,34 @@ async def _agent_clarify_content(
     task_name = state.get("task_name", "")
     task_desc = state.get("task_desc", "")
 
+    previous = state.get("clarification", {}) or {}
+    previous_feedback = state.get("clarification_feedback", "")
+
+    history_context = ""
+    if previous:
+        history_lines = []
+        for k, v in previous.items():
+            if k == "clarify_more_text":
+                continue
+            val_str = "、".join(str(x) for x in v) if isinstance(v, list) else str(v)
+            history_lines.append(f"  - {k}: {val_str}")
+        history_context = "已提交的需求信息：\n" + "\n".join(history_lines) + "\n\n"
+        if previous_feedback:
+            history_context += f"用户的补充意见：\n{previous_feedback}\n\n"
+        history_context += (
+            "请根据以上已提交信息和补充意见，重新生成需求确认卡片。\n"
+            "要求：\n"
+            "1. 保留之前已提交的选择作为对应字段的推荐/默认值\n"
+            "2. 根据补充意见调整或新增确认项\n"
+            "3. 对于用户已明确选择的字段，options 中应将该选择标注为推荐\n"
+        )
+
     prompt = (
         f"请为以下任务生成需求确认项，以 JSON 格式返回。\n\n"
         f"任务名称：{task_name}\n"
         f"任务描述：{task_desc}\n\n"
         f"{_context_text(state)}\n\n"
+        f"{history_context}"
         "请返回如下 JSON 结构（不要包含 markdown 代码块标记）：\n"
         "{\n"
         '  "confirmation_items": [\n'
@@ -701,7 +747,7 @@ async def _agent_clarify_content(
         '      "required": true,\n'
         '      "recommended": "推荐选项或默认值",\n'
         '      "options": ["选项1", "选项2", "推荐选项"],\n'
-        '      "allow_custom": false,\n'
+        '      "allow_custom": true,\n'
         '      "custom_placeholder": "自定义时填写"\n'
         "    }\n"
         "  ]\n"
@@ -715,6 +761,7 @@ async def _agent_clarify_content(
         "   - textarea：需要自由输入时使用\n"
         "4. 确保推荐项与任务内容相关，不要使用通用默认值\n"
         "5. 当确认项天然需要多选时（如\"关注哪些维度\"\"需要哪些数据源\"），使用 multiselect\n"
+        "6. 每个 select/multiselect 类型字段必须设置 allow_custom 为 true\n"
     )
 
     if run_ctx is None:
@@ -736,9 +783,17 @@ async def _agent_clarify_content(
             timeout=20,
         )
         text = result.get("final_text", "").strip()
+        stats = result.get("stats", {}) if isinstance(result, dict) else {}
+        if stats:
+            tok_usage = stats.get("token_usage", {}) if isinstance(stats, dict) else {}
+            _emit(run_ctx, "token", {
+                "input": tok_usage.get("input", 0),
+                "output": tok_usage.get("output", 0),
+            }, "clarify")
         if text:
             items = _parse_confirmation_items(text)
             if items:
+                items = _ensure_allow_custom(items)
                 return {"confirmation_items": items}
     except (asyncio.TimeoutError, Exception):
         pass
@@ -776,6 +831,14 @@ def _parse_confirmation_items(text: str) -> list[dict[str, Any]]:
         if isinstance(item, dict) and item.get("key") and item.get("label"):
             valid.append(item)
     return valid
+
+
+def _ensure_allow_custom(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    for item in items:
+        ft = item.get("field_type", "select")
+        if ft in ("select", "multiselect"):
+            item["allow_custom"] = True
+    return items
 
 
 def _format_clarification_summary(values: dict[str, Any], card: InteractionCard) -> str:

@@ -106,15 +106,15 @@ class HITLTemplateService:
                 "body": "请确认以下信息。默认已选推荐项，如不合适可改选或填写自定义补充。",
                 "fields": [],
                 "actions": [
-                    {"key": "confirm", "label": "确认，继续", "style": "primary"},
-                    {"key": "clarify_more", "label": "继续补充", "style": "default"},
+                    {"key": "confirm", "label": "确认", "style": "primary"},
+                    {"key": "clarify_more", "label": "补充信息", "style": "default"},
                     {"key": "cancel", "label": "取消", "style": "danger"},
                 ],
                 "metadata": {
                     "is_builtin": True,
                     "supports_custom_input": True,
                     "schema_template": True,
-                    "schema_version": 2,
+                    "schema_version": 3,
                     "description": "Generic clarification/confirmation template. Fields are populated by the caller via content_payload.confirmation_items.",
                 },
             },
