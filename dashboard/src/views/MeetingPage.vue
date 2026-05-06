@@ -1160,7 +1160,7 @@ function joinDeltaText(current: string, next: string) {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 18px max(18px, calc((100% - 880px) / 2));
+  padding: 18px;
 }
 
 .chatroom-wrap {
@@ -1345,6 +1345,10 @@ function joinDeltaText(current: string, next: string) {
 
   .detail-body {
     padding: 14px;
+  }
+
+  .inline-hitl {
+    padding: 12px 14px 0;
   }
 
   .filter-row {
