@@ -7,6 +7,7 @@ from typing import Any
 
 from langgraph.config import RunnableConfig
 from langgraph.graph import END, StateGraph
+from langgraph.types import interrupt
 
 from astrbot.core.langgraph.hitl_card_builder import build_hitl_card
 from astrbot.core.langgraph.interaction import CardAction, CardField, InteractionCard
@@ -144,12 +145,21 @@ async def clarify_node(state: WorkTaskState, config: RunnableConfig) -> dict:
         )
 
     _emit(run_ctx, "interaction", card.to_dict(), "clarify")
-    response = await get_interaction_manager().send_and_wait(
-        card,
-        thread_id=state.get("task_id", ""),
-        channel="chatui",
-        channel_extra={"task_id": state.get("task_id", ""), "sync_chatui": True},
-    )
+    try:
+        response = await get_interaction_manager().send_and_wait(
+            card,
+            thread_id=state.get("task_id", ""),
+            channel="chatui",
+            channel_extra={"task_id": state.get("task_id", ""), "sync_chatui": True},
+        )
+    except asyncio.TimeoutError:
+        _emit(run_ctx, "phase", {"phase": "clarification_timeout", "label": "等待用户响应中（可随时补充）", "progress": 8, "status": "waiting_feedback"}, "clarify")
+        # 通过 LangGraph interrupt 暂停，保留 checkpoint，用户响应后恢复
+        return interrupt({
+            "type": "clarification",
+            "interaction_id": card.interaction_id,
+            "message": "等待用户确认需求",
+        })
     if response.action_key == "cancel":
         _emit(run_ctx, "phase", {"phase": "cancelled", "label": "任务已取消", "progress": 8, "status": "cancelled"}, "clarify")
         return {"cancelled": True, "clarification_action": "cancel"}
@@ -279,12 +289,20 @@ async def approve_plan_node(state: WorkTaskState, config: RunnableConfig) -> dic
         meta={"task_id": state.get("task_id", "")},
     )
     _emit(run_ctx, "interaction", card.to_dict(), "approve_plan")
-    response = await get_interaction_manager().send_and_wait(
-        card,
-        thread_id=state.get("task_id", ""),
-        channel="chatui",
-        channel_extra={"task_id": state.get("task_id", ""), "sync_chatui": True},
-    )
+    try:
+        response = await get_interaction_manager().send_and_wait(
+            card,
+            thread_id=state.get("task_id", ""),
+            channel="chatui",
+            channel_extra={"task_id": state.get("task_id", ""), "sync_chatui": True},
+        )
+    except asyncio.TimeoutError:
+        _emit(run_ctx, "phase", {"phase": "plan_approval_timeout", "label": "等待计划审批中（可随时补充）", "progress": state.get("progress", 25), "status": "waiting_feedback"}, "approve_plan")
+        return interrupt({
+            "type": "plan_approval",
+            "interaction_id": card.interaction_id,
+            "message": "等待用户审批执行计划",
+        })
     if response.action_key == "approve":
         stages = _update_stage_status(list(state.get("stage_steps", [])), "stage_assign", "running")
         _emit(run_ctx, "phase", {"phase": "plan_approved", "label": "计划已批准", "progress": 30, "status": "running", "steps": stages}, "approve_plan")

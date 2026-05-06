@@ -482,7 +482,14 @@ class TaskCenter:
 
                 elif event["event"] == "on_interrupt":
                     _debug_log("  on_interrupt received!")
-                    task.status = TaskStatus.PAUSED
+                    # 超时导致的 interrupt 保持 waiting_feedback，让用户弱感知
+                    interrupt_data = event.get("data", {})
+                    # 如果 interrupt 数据中有 type 字段（来自 work_task 的 interrupt），
+                    # 说明是 HITL 等待超时，保持 waiting_feedback 状态
+                    if isinstance(interrupt_data, dict) and interrupt_data.get("type") in ("clarification", "plan_approval"):
+                        task.status = TaskStatus.WAITING_FEEDBACK
+                    else:
+                        task.status = TaskStatus.PAUSED
                     task.hitl_context = event["data"]
                     task.updated_at = time.time()
                     await self._sync_to_db(task)
@@ -528,8 +535,8 @@ class TaskCenter:
 
     async def resume_task(self, task_id: str, resume_value: Any):
         task = self._tasks.get(task_id)
-        if not task or task.status != TaskStatus.PAUSED:
-            raise ValueError(f"Task {task_id} is not paused")
+        if not task or task.status not in (TaskStatus.PAUSED, TaskStatus.WAITING_FEEDBACK):
+            raise ValueError(f"Task {task_id} is not paused or waiting feedback")
 
         task.status = TaskStatus.RESUMING
         task.updated_at = time.time()

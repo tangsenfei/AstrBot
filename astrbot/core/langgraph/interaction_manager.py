@@ -72,15 +72,11 @@ class InteractionManager:
             )
         except asyncio.TimeoutError:
             logger.warning(f"Interaction {card.interaction_id} timed out")
-            response = InteractionResponse(
-                interaction_id=card.interaction_id,
-                action_key="cancel",
-                field_values={},
-                responded_at=time.time(),
+            # 超时不是取消，只是释放等待资源；让上游图节点决定如何处理
+            self._events.pop(card.interaction_id, None)
+            raise asyncio.TimeoutError(
+                f"Interaction {card.interaction_id} timed out after {card.timeout_seconds}s"
             )
-            self._responses[card.interaction_id] = response
-            state.mark_resolved(response)
-            return response
 
         response = self._responses.pop(card.interaction_id, None)
         if response is None:

@@ -36,6 +36,7 @@ def register_work_routes(plugin: AgentSystemPlugin) -> None:
         ("/work/tasks/<task_id>/events", _task_events, ["GET"], "Work 任务事件流"),
         ("/work/tasks/<task_id>/input", _submit_input, ["POST"], "Work 任务补充信息"),
         ("/work/tasks/<task_id>/hitl", _respond_hitl, ["POST"], "Work HITL 响应"),
+        ("/work/tasks/<task_id>/resume-hitl", _resume_hitl, ["POST"], "Work HITL 超时唤醒"),
         ("/work/tasks/<task_id>/artifacts", _list_artifacts, ["GET"], "Work 任务交付物"),
         ("/hitl", _list_hitl, ["GET"], "HITL 请求列表"),
         ("/hitl/<interaction_id>/respond", _respond_hitl_by_id, ["POST"], "HITL 统一响应"),
@@ -208,6 +209,17 @@ async def _respond_hitl(task_id: str):
         return Response().error(str(e)).__dict__
     except Exception as e:
         logger.error(f"Failed to respond work HITL {task_id}: {e}", exc_info=True)
+        return Response().error(str(e)).__dict__
+
+
+async def _resume_hitl(task_id: str):
+    try:
+        data = await request.get_json() or {}
+        return Response().ok(await _get_work_service().resume_hitl_task(task_id, data), "任务已唤醒并恢复执行").__dict__
+    except ValueError as e:
+        return Response().error(str(e)).__dict__
+    except Exception as e:
+        logger.error(f"Failed to resume work HITL task {task_id}: {e}", exc_info=True)
         return Response().error(str(e)).__dict__
 
 

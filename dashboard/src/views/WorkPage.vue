@@ -171,17 +171,25 @@
         </section>
 
         <section class="input-panel">
+          <div v-if="selectedTask?.status === 'waiting_feedback'" class="resume-hint">
+            <v-icon size="16" color="warning">mdi-timer-sand</v-icon>
+            <span>任务等待确认中，输入信息后点击「继续执行」唤醒任务</span>
+          </div>
           <v-textarea
             v-model="supplementText"
             rows="2"
             auto-grow
             hide-details
             variant="outlined"
-            placeholder="补充信息、调整要求或人工确认说明..."
-            @keydown.ctrl.enter.prevent="submitSupplement"
-            @keydown.meta.enter.prevent="submitSupplement"
+            :placeholder="selectedTask?.status === 'waiting_feedback' ? '输入确认信息或补充说明，唤醒任务继续执行...' : '补充信息、调整要求或人工确认说明...'"
+            @keydown.ctrl.enter.prevent="selectedTask?.status === 'waiting_feedback' ? resumeHitl() : submitSupplement()"
+            @keydown.meta.enter.prevent="selectedTask?.status === 'waiting_feedback' ? resumeHitl() : submitSupplement()"
           />
-          <v-btn color="primary" :disabled="!supplementText.trim()" :loading="submittingInput" @click="submitSupplement">
+          <v-btn v-if="selectedTask?.status === 'waiting_feedback'" color="warning" :disabled="!supplementText.trim()" :loading="submittingInput" @click="resumeHitl">
+            <v-icon start>mdi-play-circle-outline</v-icon>
+            继续执行
+          </v-btn>
+          <v-btn v-else color="primary" :disabled="!supplementText.trim()" :loading="submittingInput" @click="submitSupplement">
             <v-icon start>mdi-send</v-icon>
             发送
           </v-btn>
@@ -776,6 +784,21 @@ async function submitSupplement() {
 async function handleInteractionRespond() {
   hitlDialog.value = false;
   await Promise.all([loadTasks(), loadSelectedTask(true)]);
+}
+
+async function resumeHitl() {
+  if (!selectedTaskId.value || !supplementText.value.trim()) return;
+  submittingInput.value = true;
+  try {
+    await axios.post(`/api/plug/work/tasks/${selectedTaskId.value}/resume-hitl`, {
+      action_key: 'confirm',
+      field_values: { text: supplementText.value.trim() },
+    });
+    supplementText.value = '';
+    await Promise.all([loadTasks(), loadSelectedTask(true)]);
+  } finally {
+    submittingInput.value = false;
+  }
 }
 
 function isCompleted(task: any) {
@@ -1404,6 +1427,15 @@ onBeforeUnmount(() => {
 
 .input-panel .v-textarea {
   flex: 1;
+}
+
+.resume-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: rgb(var(--v-theme-warning));
+  opacity: 0.9;
 }
 
 .detail-empty,

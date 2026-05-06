@@ -7,6 +7,7 @@ the shared HITL interaction manager.
 from __future__ import annotations
 
 import json
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -397,6 +398,32 @@ class WorkService:
         self._append_log(task_id, "info", "HITL 响应已提交", result)
         return result
 
+    async def resume_hitl_task(self, task_id: str, data: dict[str, Any]) -> dict[str, Any]:
+        """唤醒因 HITL 超时而挂起的任务（用户重新提交响应）。"""
+        task = self.task_service.get_task(task_id)
+        if not task:
+            raise ValueError(f"任务 '{task_id}' 不存在")
+
+        from astrbot.core.langgraph.task_tools import get_task_center
+        from astrbot.core.langgraph.interaction import InteractionResponse
+
+        tc = get_task_center()
+        record = tc.get_task(task_id)
+        if not record:
+            raise ValueError("任务执行器未找到")
+
+        # 构造 InteractionResponse 作为 resume_value
+        response = InteractionResponse(
+            interaction_id=data.get("interaction_id", task.interaction_id or ""),
+            action_key=data.get("action_key", "confirm"),
+            field_values=data.get("field_values", {}),
+            responded_at=time.time(),
+        )
+
+        await tc.resume_task(task_id, response)
+        self._append_log(task_id, "info", "HITL 超时任务已唤醒并恢复执行", {"action_key": response.action_key})
+        return {"resumed": True, "task_id": task_id}
+
     def get_task_logs(
         self,
         task_id: str,
@@ -464,6 +491,14 @@ class WorkService:
         )
         task["has_hitl"] = bool(hitl_cards)
         task["hitl_cards"] = hitl_cards if include_hitl_cards else []
+
+        # 如果数据库状态已经是终态，不再用 HITL  pending 状态覆盖
+        db_status = task.get("status", "")
+        if db_status in ("cancelled", "completed", "failed"):
+            task["active_hitl"] = None
+            task["hitl_summary"] = None
+            return task
+
         if hitl_cards:
             active = hitl_cards[0]
             task["active_hitl"] = active
