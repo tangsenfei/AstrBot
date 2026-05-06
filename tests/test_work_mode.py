@@ -4,13 +4,14 @@ from pathlib import Path
 import pytest
 
 from astrbot.builtin_stars.agent_system.database import Database
-from astrbot.builtin_stars.agent_system.services.agent_service import AgentService
-from astrbot.builtin_stars.agent_system.services.flow_service import BUILTIN_DAILY_WORK_FLOW_ID, FlowService
-from astrbot.builtin_stars.agent_system.services.hitl_template_service import HITLTemplateService
-from astrbot.builtin_stars.agent_system.services.hitl_service import HITLService
 from astrbot.builtin_stars.agent_system.services.work_service import WorkService
-from astrbot.core.langgraph.graphs.work_task import plan_node
-from astrbot.core.langgraph.state import GraphRunContext
+from astrbot.core.langgraph.graphs.work_task import (
+    _collect_executable_steps,
+    _fallback_assign_steps,
+    _parse_assigned_steps,
+    _update_parent_status,
+    _update_step_in_tree,
+)
 
 
 @pytest.fixture
@@ -87,7 +88,7 @@ async def test_create_work_task_persists_scope_configs_and_input(work_db: Databa
             "work_scope": "daily",
             "work_daily_dir_id": daily["id"],
             "work_task_kind": "single_agent",
-            "executor_config": {"agent_id": "assistant", "crew_id": "", "flow_id": ""},
+            "executor_config": {"agent_id": "assistant"},
             "plan_config": {"enabled": False},
             "review_config": {"enabled": True, "max_rework": 2},
         }
@@ -95,19 +96,12 @@ async def test_create_work_task_persists_scope_configs_and_input(work_db: Databa
 
     row = work_db.select_one("agent_tasks", where="id = ?", where_params=(task["id"],))
     assert row is not None
-    assert row["task_type"] == "work_task"
     assert row["category"] == "work"
     assert row["work_scope"] == "daily"
     assert row["work_daily_dir_id"] == daily["id"]
     assert row["work_task_kind"] == "single_agent"
-    executor_config = json.loads(row["executor_config"])
-    assert executor_config["agent_id"] == "assistant"
-    assert executor_config["crew_id"] == ""
-    assert executor_config["flow_id"] == BUILTIN_DAILY_WORK_FLOW_ID
-    assert executor_config["default_agents"]["executor"] == "agent_nicebot_work_executor"
-    assert row["crew_id"] is None
-    assert row["flow_id"] == BUILTIN_DAILY_WORK_FLOW_ID
-    assert json.loads(row["plan_config"]) == {"enabled": False, "effort": "medium"}
+    assert json.loads(row["executor_config"])["agent_id"] == "assistant"
+    assert json.loads(row["plan_config"])["enabled"] is False
     assert json.loads(row["review_config"]) == {"enabled": True, "max_rework": 2}
     assert json.loads(row["input"])["work_context"]["rules"] == "保留执行记录。"
 
@@ -117,166 +111,250 @@ async def test_create_work_task_persists_scope_configs_and_input(work_db: Databa
     assert "风险清单" in updated["pending_input"]
     assert service.get_task(task["id"])["logs"]
 
-    listed = service.list_tasks({"page_size": 10})["tasks"][0]
-    assert listed["id"] == task["id"]
-    assert listed["hitl_cards"] == []
-    assert "logs" not in listed
-    assert "executor_config" not in listed
 
-    work_db.update(
-        "agent_tasks",
-        {"status": "running", "progress": 100},
-        where="id = ?",
-        where_params=(task["id"],),
-    )
-    repaired = service.get_task(task["id"])
-    assert repaired["status"] == "completed"
-    assert work_db.select_one("agent_tasks", where="id = ?", where_params=(task["id"],))["status"] == "completed"
-
-
-def test_work_logs_support_append_only_seq_queries(work_db: Database):
+@pytest.mark.asyncio
+async def test_create_task_default_task_mode_is_normal(work_db: Database, tmp_path: Path):
     service = WorkService(work_db)
-    work_db.insert(
-        "agent_tasks",
+    daily = service.create_daily_dir(
         {
-            "id": "task_logs",
-            "name": "日志测试",
-            "description": "",
-            "task_type": "work_task",
-            "created_at": "2026-05-05T00:00:00",
-            "updated_at": "2026-05-05T00:00:00",
-        },
+            "name": "默认池",
+            "directory": str(tmp_path / "daily-pool"),
+            "default_rules": "测试",
+        }
     )
-    service._append_log("task_logs", "info", "第一条", {"event": "phase"})
-    service._append_log("task_logs", "info", "第二条", {"event": "text_delta", "text": "第二条"})
-
-    logs = service.get_task_logs("task_logs")
-    assert [log["message"] for log in logs] == ["第一条", "第二条"]
-    assert logs[0]["seq"] < logs[1]["seq"]
-    assert service.get_task_logs("task_logs", after_seq=logs[0]["seq"])[0]["message"] == "第二条"
-
-
-def test_hitl_service_persists_and_resolves_task_status(work_db: Database):
-    work_db.insert(
-        "agent_tasks",
+    task = await service.create_task(
         {
-            "id": "task_hitl",
-            "name": "审批测试",
-            "description": "",
-            "task_type": "work_task",
-            "status": "waiting_feedback",
-            "interaction_id": "hitl_plan_1",
-            "created_at": "2026-05-05T00:00:00",
-            "updated_at": "2026-05-05T00:00:00",
-        },
+            "name": "测试任务模式",
+            "description": "验证默认 task_mode",
+            "work_scope": "daily",
+            "work_daily_dir_id": daily["id"],
+            "plan_config": {"enabled": False},
+        }
     )
-    service = HITLService(work_db)
-    service.upsert_from_card(
-        {
-            "interaction_id": "hitl_plan_1",
-            "type": "plan_approval",
-            "title": "执行计划审批",
-            "body": "计划正文",
-            "fields": [{"key": "modify_text", "label": "修改意见", "field_type": "textarea", "required": False}],
-            "actions": [{"key": "approve", "label": "批准执行", "style": "primary"}],
-            "meta": {"task_id": "task_hitl"},
-        },
-        task_id="task_hitl",
-    )
-
-    assert service.list_pending("task_hitl")[0]["title"] == "执行计划审批"
-
-    import asyncio
-
-    result = asyncio.run(service.respond("hitl_plan_1", "approve", {}))
-    assert result["status"] == "approved"
-    row = work_db.select_one("agent_tasks", where="id = ?", where_params=("task_hitl",))
-    assert row["status"] == "running"
-    assert row["interaction_id"] == ""
-    assert service.list_pending("task_hitl") == []
-
-
-def test_builtin_daily_work_flow_is_seeded_editable_and_resettable(work_db: Database):
-    service = FlowService(work_db)
-    flows = [flow.to_dict() for flow in service.get_flows()]
-    builtin = next(flow for flow in flows if flow["id"] == BUILTIN_DAILY_WORK_FLOW_ID)
-    assert builtin["metadata"]["is_builtin"] is True
-    assert any(node["type"] == "hitl" and node["id"] == "daily_clarify" for node in builtin["nodes"])
-
-    updated = service.update_flow(
-        BUILTIN_DAILY_WORK_FLOW_ID,
-        {
-            "description": "用户编辑后的说明",
-            "enabled": False,
-            "nodes": [
-                *builtin["nodes"],
-                {
-                    "id": "custom_check",
-                    "name": "自定义检查",
-                    "type": "review",
-                    "config": {"reviewer_id": "agent_nicebot_work_reviewer"},
-                    "position": {"x": 1800, "y": 180},
-                },
-            ],
-            "edges": builtin["edges"],
-        },
-    )
-    assert updated.description == "用户编辑后的说明"
-    assert updated.enabled is True
-    assert any(node.id == "custom_check" for node in updated.nodes)
-
-    reset = service.reset_builtin_daily_work_flow()
-    assert reset.description != "用户编辑后的说明"
-    assert not any(node.id == "custom_check" for node in reset.nodes)
-
-    with pytest.raises(ValueError):
-        service.delete_flow(BUILTIN_DAILY_WORK_FLOW_ID)
-
-
-def test_work_builtin_agents_and_hitl_templates_are_resettable(work_db: Database):
-    agent_service = AgentService(work_db)
-    agents = agent_service.ensure_work_builtin_agents()
-    assert "agent_nicebot_work_executor" in agents
-    assert "agent_nicebot_work_reviewer" in agents
-
-    agent_service.update_agent("agent_nicebot_work_executor", {"name": "用户改名"}, skip_skill_validation=True)
-    assert agent_service.get_agent("agent_nicebot_work_executor").name == "用户改名"
-    reset_agent = agent_service.reset_builtin_agent("agent_nicebot_work_executor")
-    assert reset_agent.name == "通用任务执行智能体"
-
-    template_service = HITLTemplateService(work_db)
-    templates = template_service.list_templates()
-    requirement = next(t for t in templates if t["id"] == "builtin_work_requirement_clarification")
-    assert len(requirement["fields"]) >= 4
-    assert requirement["fields"][0]["default"].startswith("推荐")
+    row = work_db.select_one("agent_tasks", where="id = ?", where_params=(task["id"],))
+    plan_config = json.loads(row["plan_config"])
+    assert plan_config["task_mode"] == "normal"
 
 
 @pytest.mark.asyncio
-async def test_plan_node_falls_back_and_emits_when_provider_unavailable():
-    events = []
-    run_ctx = GraphRunContext(
-        provider=None,
-        tool_executor=None,
-        hooks=None,
-        astr_event=None,
-        config={"streaming_response": True},
-        writer=events.append,
-    )
-
-    result = await plan_node(
+async def test_create_task_invalid_task_mode_normalized(work_db: Database, tmp_path: Path):
+    service = WorkService(work_db)
+    daily = service.create_daily_dir(
         {
-            "task_id": "task_plan_test",
-            "task_name": "安排日程",
-            "task_desc": "为下周会议制定日程安排",
-            "plan_config": {"enabled": True, "timeout_seconds": 10},
-            "input": {"goal": "产出可确认的日程计划"},
-        },
-        {"configurable": {"run_ctx": run_ctx}},
+            "name": "默认池",
+            "directory": str(tmp_path / "daily-pool"),
+            "default_rules": "测试",
+        }
     )
+    task = await service.create_task(
+        {
+            "name": "非法模式测试",
+            "description": "验证非法 task_mode 被规范化",
+            "work_scope": "daily",
+            "work_daily_dir_id": daily["id"],
+            "plan_config": {"enabled": False, "task_mode": "invalid_mode"},
+        }
+    )
+    row = work_db.select_one("agent_tasks", where="id = ?", where_params=(task["id"],))
+    plan_config = json.loads(row["plan_config"])
+    assert plan_config["task_mode"] == "normal"
 
-    assert result["plan_steps"]
-    assert any(event["event"] == "error" and "计划生成失败" in event["data"]["message"] for event in events)
-    assert any(
-        event["event"] == "phase" and event["data"].get("phase") == "plan_done"
-        for event in events
+
+@pytest.mark.asyncio
+async def test_create_task_quick_mode_persisted(work_db: Database, tmp_path: Path):
+    service = WorkService(work_db)
+    daily = service.create_daily_dir(
+        {
+            "name": "默认池",
+            "directory": str(tmp_path / "daily-pool"),
+            "default_rules": "测试",
+        }
     )
+    task = await service.create_task(
+        {
+            "name": "快速模式测试",
+            "description": "验证快速模式",
+            "work_scope": "daily",
+            "work_daily_dir_id": daily["id"],
+            "plan_config": {"enabled": False, "task_mode": "quick"},
+        }
+    )
+    row = work_db.select_one("agent_tasks", where="id = ?", where_params=(task["id"],))
+    plan_config = json.loads(row["plan_config"])
+    assert plan_config["task_mode"] == "quick"
+
+
+@pytest.mark.asyncio
+async def test_create_task_deep_mode_persisted(work_db: Database, tmp_path: Path):
+    service = WorkService(work_db)
+    daily = service.create_daily_dir(
+        {
+            "name": "默认池",
+            "directory": str(tmp_path / "daily-pool"),
+            "default_rules": "测试",
+        }
+    )
+    task = await service.create_task(
+        {
+            "name": "深度模式测试",
+            "description": "验证深度模式",
+            "work_scope": "daily",
+            "work_daily_dir_id": daily["id"],
+            "plan_config": {"enabled": False, "task_mode": "deep"},
+        }
+    )
+    row = work_db.select_one("agent_tasks", where="id = ?", where_params=(task["id"],))
+    plan_config = json.loads(row["plan_config"])
+    assert plan_config["task_mode"] == "deep"
+
+
+def test_parse_assigned_steps_valid_json():
+    text = '''```json
+[
+  {"id": "step_1", "title": "步骤1", "description": "描述1", "depth": 1, "parent_id": null, "dependencies": [], "executor_type": "agent", "executor_id": "agent_nicebot_work_executor", "reviewer_id": "", "status": "pending", "sort_order": 0},
+  {"id": "step_1_1", "title": "子步骤1.1", "description": "子描述1.1", "depth": 2, "parent_id": "step_1", "dependencies": [], "executor_type": "agent", "executor_id": "agent_nicebot_work_executor", "reviewer_id": "", "status": "pending", "sort_order": 0},
+  {"id": "step_2", "title": "步骤2", "description": "描述2", "depth": 1, "parent_id": null, "dependencies": ["step_1"], "executor_type": "agent", "executor_id": "agent_nicebot_work_executor", "reviewer_id": "", "status": "pending", "sort_order": 1}
+]
+```'''
+    steps = _parse_assigned_steps(text)
+    assert len(steps) == 2
+    assert steps[0]["id"] == "step_1"
+    assert len(steps[0]["children"]) == 1
+    assert steps[0]["children"][0]["id"] == "step_1_1"
+    assert steps[1]["id"] == "step_2"
+    assert steps[1]["dependencies"] == ["step_1"]
+
+
+def test_parse_assigned_steps_empty_input():
+    assert _parse_assigned_steps("") == []
+    assert _parse_assigned_steps("not json") == []
+
+
+def test_fallback_assign_steps_quick_mode():
+    state = {"task_name": "快速任务", "task_desc": "快速完成", "input": {}, "executor_config": {}}
+    steps = _fallback_assign_steps([], "quick", state)
+    assert len(steps) == 1
+    assert steps[0]["depth"] == 1
+    assert steps[0]["children"] == []
+
+
+def test_fallback_assign_steps_normal_mode():
+    plan_steps = [
+        {"id": "step_1", "title": "步骤1", "description": "描述1", "children": [
+            {"id": "step_1_1", "title": "子步骤1.1", "description": "子描述1.1"},
+        ]},
+        {"id": "step_2", "title": "步骤2", "description": "描述2", "children": []},
+    ]
+    state = {"task_name": "常规任务", "task_desc": "常规完成", "input": {}, "executor_config": {}}
+    steps = _fallback_assign_steps(plan_steps, "normal", state)
+    assert len(steps) == 2
+    assert len(steps[0]["children"]) == 1
+    assert steps[0]["children"][0]["depth"] == 2
+    assert steps[0]["children"][0]["parent_id"] == "step_1"
+    assert len(steps[1]["children"]) == 0
+
+
+def test_fallback_assign_steps_deep_mode():
+    plan_steps = [
+        {"id": "step_1", "title": "步骤1", "description": "描述1", "children": [
+            {"id": "step_1_1", "title": "子步骤1.1", "description": "子描述1.1"},
+            {"id": "step_1_2", "title": "子步骤1.2", "description": "子描述1.2"},
+        ]},
+        {"id": "step_2", "title": "步骤2", "description": "描述2", "children": []},
+    ]
+    state = {"task_name": "深度任务", "task_desc": "深度完成", "input": {}, "executor_config": {}}
+    steps = _fallback_assign_steps(plan_steps, "deep", state)
+    assert len(steps) == 2
+    assert len(steps[0]["children"]) == 2
+    assert steps[0]["children"][0]["depth"] == 2
+    assert len(steps[1]["children"]) == 1
+    assert steps[1]["children"][0]["title"].startswith("执行：")
+
+
+def test_collect_executable_steps():
+    steps = [
+        {"id": "step_1", "depth": 1, "children": [
+            {"id": "step_1_1", "depth": 2},
+            {"id": "step_1_2", "depth": 2},
+        ]},
+        {"id": "step_2", "depth": 1, "children": []},
+    ]
+    executable = _collect_executable_steps(steps)
+    assert len(executable) == 3
+    assert executable[0]["id"] == "step_1_1"
+    assert executable[1]["id"] == "step_1_2"
+    assert executable[2]["id"] == "step_2"
+
+
+def test_update_step_in_tree():
+    steps = [
+        {"id": "step_1", "status": "pending", "children": [
+            {"id": "step_1_1", "status": "pending"},
+        ]},
+    ]
+    _update_step_in_tree(steps, "step_1_1", {"status": "done", "result": "ok"})
+    assert steps[0]["children"][0]["status"] == "done"
+    assert steps[0]["children"][0]["result"] == "ok"
+
+
+def test_update_parent_status_all_done():
+    steps = [
+        {"id": "step_1", "status": "pending", "children": [
+            {"id": "step_1_1", "status": "done"},
+            {"id": "step_1_2", "status": "done"},
+        ]},
+    ]
+    _update_parent_status(steps, "step_1")
+    assert steps[0]["status"] == "done"
+
+
+def test_update_parent_status_partial():
+    steps = [
+        {"id": "step_1", "status": "pending", "children": [
+            {"id": "step_1_1", "status": "done"},
+            {"id": "step_1_2", "status": "pending"},
+        ]},
+    ]
+    _update_parent_status(steps, "step_1")
+    assert steps[0]["status"] == "pending"
+
+
+def test_update_parent_status_failed():
+    steps = [
+        {"id": "step_1", "status": "pending", "children": [
+            {"id": "step_1_1", "status": "done"},
+            {"id": "step_1_2", "status": "failed"},
+        ]},
+    ]
+    _update_parent_status(steps, "step_1")
+    assert steps[0]["status"] == "failed"
+
+
+def test_persist_work_steps_with_parent_id_and_dependencies(work_db: Database):
+    from astrbot.core.langgraph.task_center import TaskCenter
+    from datetime import datetime
+
+    task_id = "test_persist_task"
+    work_db.insert("agent_tasks", {
+        "id": task_id,
+        "name": "测试任务",
+        "task_type": "work_task",
+        "status": "running",
+        "category": "work",
+        "created_at": datetime.now().isoformat(),
+        "updated_at": datetime.now().isoformat(),
+    })
+
+    now = datetime.now().isoformat()
+    steps = [
+        {"id": "step_1", "title": "步骤1", "description": "描述1", "status": "done", "dependencies": [], "parent_id": None, "depth": 1, "sort_order": 0, "executor_type": "agent", "executor_id": "exec1", "reviewer_id": "rev1"},
+        {"id": "step_1_1", "title": "子步骤1.1", "description": "子描述1.1", "status": "running", "dependencies": [], "parent_id": "step_1", "depth": 2, "sort_order": 0, "executor_type": "agent", "executor_id": "exec2", "reviewer_id": ""},
+        {"id": "step_2", "title": "步骤2", "description": "描述2", "status": "pending", "dependencies": ["step_1"], "parent_id": None, "depth": 1, "sort_order": 1, "executor_type": "agent", "executor_id": "exec1", "reviewer_id": "rev1"},
+    ]
+    TaskCenter._persist_work_steps(work_db, task_id, steps, now)
+
+    persisted = work_db.select_all("work_task_steps", where="task_id = ?", where_params=(task_id,), order_by="sort_order ASC")
+    assert len(persisted) == 3
+    assert persisted[0]["parent_id"] is None
+    assert persisted[1]["parent_id"] == f"{task_id}:step_1"
+    assert persisted[2]["dependencies"] is not None

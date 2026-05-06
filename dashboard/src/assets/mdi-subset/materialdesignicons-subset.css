@@ -1,4 +1,4 @@
-/* Auto-generated MDI subset – 421 icons */
+/* Auto-generated MDI subset – 422 icons */
 /* Do not edit manually. Run: pnpm run subset-icons */
 
 @font-face {
@@ -750,6 +750,10 @@
 
 .mdi-flash::before {
   content: "\F0241";
+}
+
+.mdi-flash-outline::before {
+  content: "\F06D5";
 }
 
 .mdi-flask::before {

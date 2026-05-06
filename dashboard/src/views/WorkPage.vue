@@ -353,6 +353,23 @@
               hide-details
             />
           </div>
+          <div class="task-mode-row">
+            <span class="task-mode-label">任务模式</span>
+            <v-btn-toggle v-model="taskForm.plan_config.task_mode" mandatory color="primary" variant="outlined" density="compact" divided>
+              <v-btn value="quick" size="small">
+                <v-icon start size="16">mdi-flash-outline</v-icon>
+                快速
+              </v-btn>
+              <v-btn value="normal" size="small">
+                <v-icon start size="16">mdi-tune-vertical</v-icon>
+                常规
+              </v-btn>
+              <v-btn value="deep" size="small">
+                <v-icon start size="16">mdi-layers-outline</v-icon>
+                深度
+              </v-btn>
+            </v-btn-toggle>
+          </div>
         </v-card-text>
         <v-card-actions>
           <v-spacer />
@@ -496,7 +513,7 @@ function defaultTaskForm() {
     work_project_id: selectedProjectId.value,
     work_daily_dir_id: selectedDailyDirId.value,
     executor_config: { flow_id: BUILTIN_DAILY_FLOW_ID },
-    plan_config: { enabled: true, effort: 'medium' },
+    plan_config: { enabled: true, effort: 'medium', task_mode: 'normal' },
     review_config: { enabled: false, max_rework: 3 },
   };
 }
@@ -1230,6 +1247,19 @@ onBeforeUnmount(() => {
 .dialog-row,
 .option-row {
   gap: 10px;
+}
+
+.task-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.task-mode-label {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--work-muted);
 }
 
 .filter-row > *,

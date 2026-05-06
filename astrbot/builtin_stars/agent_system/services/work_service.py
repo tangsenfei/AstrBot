@@ -258,7 +258,10 @@ class WorkService:
                 flow_id = flow_id or BUILTIN_DAILY_WORK_FLOW_ID
             except Exception:
                 pass
-        plan_config = {"enabled": scope == "daily", "effort": "medium", **dict(data.get("plan_config") or {})}
+        plan_config = {"enabled": scope == "daily", "effort": "medium", "task_mode": "normal", **dict(data.get("plan_config") or {})}
+        valid_task_modes = ("quick", "normal", "deep")
+        if plan_config.get("task_mode") not in valid_task_modes:
+            plan_config["task_mode"] = "normal"
         review_config = {"enabled": False, "max_rework": 3, **dict(data.get("review_config") or {})}
         input_data = dict(data.get("input") or {})
         input_data.setdefault("goal", data.get("goal") or data.get("description") or name)
@@ -290,6 +293,7 @@ class WorkService:
             "flow_id": flow_id,
             "flow_definition": flow_definition,
             "plan_config": plan_config,
+            "task_mode": plan_config.get("task_mode", "normal"),
             "review_config": review_config,
             "clarification_config": clarification_config,
             "input": input_data,

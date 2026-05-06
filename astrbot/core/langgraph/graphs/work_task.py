@@ -22,6 +22,7 @@ class WorkTaskState(AgentGraphState, total=False):
     task_name: str
     task_desc: str
     work_task_kind: str
+    task_mode: str
     executor_config: dict[str, Any]
     plan_config: dict[str, Any]
     review_config: dict[str, Any]
@@ -89,12 +90,16 @@ async def prepare_node(state: WorkTaskState, config: RunnableConfig) -> dict:
         {"id": "stage_deliver", "title": "交付", "description": "生成最终交付物", "status": "pending", "depth": 1, "sort_order": len(stage_steps), "dependencies": [last_dep], "executor_type": "agent", "executor_id": _work_agent_id(state, "reporter")},
     )
     _emit(run_ctx, "phase", {"phase": "prepare", "label": "准备任务上下文", "progress": 5, "steps": stage_steps}, "prepare")
+    task_mode = state.get("task_mode") or (state.get("plan_config", {}) or {}).get("task_mode", "normal")
+    if task_mode not in ("quick", "normal", "deep"):
+        task_mode = "normal"
     return {
         "stage_steps": stage_steps,
         "plan_steps": state.get("plan_steps", []),
         "step_results": state.get("step_results", []),
         "current_step_index": state.get("current_step_index", 0),
         "rework_count": state.get("rework_count", 0),
+        "task_mode": task_mode,
     }
 
 
@@ -252,7 +257,7 @@ async def approve_plan_node(state: WorkTaskState, config: RunnableConfig) -> dic
     run_ctx = _get_run_ctx(config)
     steps = state.get("plan_steps", [])
     plan_text_full = state.get("plan_text_full", "")
-    plan_body = _format_plan_for_approval(steps) if steps else (plan_text_full or "无计划内容")
+    plan_body = plan_text_full if plan_text_full else (_format_plan_for_approval(steps) if steps else "无计划内容")
     card = InteractionCard(
         interaction_id=f"work_plan_{uuid.uuid4().hex[:12]}",
         type="plan_approval",
@@ -281,8 +286,7 @@ async def approve_plan_node(state: WorkTaskState, config: RunnableConfig) -> dic
         channel_extra={"task_id": state.get("task_id", ""), "sync_chatui": True},
     )
     if response.action_key == "approve":
-        stages = _update_stage_status(list(state.get("stage_steps", [])), "stage_assign", "done")
-        stages = _update_stage_status(stages, "stage_execute", "running")
+        stages = _update_stage_status(list(state.get("stage_steps", [])), "stage_assign", "running")
         _emit(run_ctx, "phase", {"phase": "plan_approved", "label": "计划已批准", "progress": 30, "status": "running", "steps": stages}, "approve_plan")
         return {"review_passed": False, "approval_action": "approve", "stage_steps": stages}
     if response.action_key == "modify":
@@ -299,22 +303,153 @@ async def approve_plan_node(state: WorkTaskState, config: RunnableConfig) -> dic
     return {"review_passed": False, "current_step_index": 999999, "approval_action": "reject", "cancelled": True}
 
 
+async def assign_node(state: WorkTaskState, config: RunnableConfig) -> dict:
+    run_ctx = _get_run_ctx(config)
+    task_mode = state.get("task_mode") or (state.get("plan_config", {}) or {}).get("task_mode", "normal")
+    if task_mode not in ("quick", "normal", "deep"):
+        task_mode = "normal"
+    _emit(run_ctx, "phase", {"phase": "assign", "label": "分配执行步骤", "progress": 28}, "assign")
+
+    plan_steps = state.get("plan_steps", [])
+    plan_text_full = state.get("plan_text_full", "")
+    if not plan_steps:
+        plan_steps = [{"id": "step_1", "title": state.get("task_desc") or state.get("task_name", ""), "description": state.get("task_desc") or state.get("task_name", ""), "status": "pending"}]
+
+    mode_instructions = {
+        "quick": (
+            "快速模式：将整个计划作为一个交付单元分配给一个执行者。\n"
+            "只输出一个一级步骤，包含全部任务内容，不拆分子步骤。\n"
+        ),
+        "normal": (
+            "常规模式：按一级子任务分配执行者。\n"
+            "保留原始计划的一级步骤结构，为每个一级步骤分配执行者。\n"
+            "如果原始计划有二级子步骤，将它们作为该一级步骤的子任务保留。\n"
+        ),
+        "deep": (
+            "深度模式：按二级子任务分配执行者。\n"
+            "完整保留原始计划的所有二级子步骤内容，不得省略或合并。\n"
+            "如果原始计划缺少二级结构，请基于原文补齐二级子步骤。\n"
+            "每个二级子步骤都必须分配独立的执行者。\n"
+        ),
+    }
+
+    prompt = (
+        f"请根据以下执行计划，为每个步骤分配执行者、审查者，并设定依赖关系。\n\n"
+        f"任务名称：{state.get('task_name', '')}\n"
+        f"任务描述：{state.get('task_desc', '')}\n\n"
+        f"原始计划文本：\n{plan_text_full or _format_plan_for_approval(plan_steps)}\n\n"
+        f"已解析步骤：\n{_format_plan_for_approval(plan_steps)}\n\n"
+        f"{mode_instructions.get(task_mode, mode_instructions['normal'])}\n"
+        f"当前任务模式：{task_mode}\n\n"
+        f"可用智能体角色：\n"
+        f"- assistant（任务助理）：负责规划、协调、分配\n"
+        f"- executor（执行者）：负责具体执行\n"
+        f"- reviewer（审查者）：负责结果审查\n"
+        f"- researcher（研究员）：负责信息收集和分析\n"
+        f"- reporter（汇报专家）：负责整理交付物\n\n"
+        f"请以 JSON 格式返回扁平步骤列表，格式如下：\n"
+        f'```json\n'
+        f'[\n'
+        f'  {{\n'
+        f'    "id": "step_1",\n'
+        f'    "title": "步骤标题",\n'
+        f'    "description": "步骤描述",\n'
+        f'    "depth": 1,\n'
+        f'    "parent_id": null,\n'
+        f'    "dependencies": [],\n'
+        f'    "executor_type": "agent",\n'
+        f'    "executor_id": "agent_nicebot_work_executor",\n'
+        f'    "reviewer_id": "agent_nicebot_work_reviewer",\n'
+        f'    "status": "pending",\n'
+        f'    "sort_order": 0\n'
+        f'  }},\n'
+        f'  {{\n'
+        f'    "id": "step_1_1",\n'
+        f'    "title": "子步骤标题",\n'
+        f'    "description": "子步骤描述",\n'
+        f'    "depth": 2,\n'
+        f'    "parent_id": "step_1",\n'
+        f'    "dependencies": [],\n'
+        f'    "executor_type": "agent",\n'
+        f'    "executor_id": "agent_nicebot_work_executor",\n'
+        f'    "reviewer_id": "",\n'
+        f'    "status": "pending",\n'
+        f'    "sort_order": 0\n'
+        f'  }}\n'
+        f']\n'
+        f'```\n\n'
+        f"要求：\n"
+        f"1. 最多两级步骤，depth 只能是 1 或 2\n"
+        f"2. 一级步骤的 parent_id 为 null，二级步骤的 parent_id 为其父步骤的 id\n"
+        f"3. dependencies 是前置步骤 id 列表，第一个步骤的 dependencies 为空\n"
+        f"4. executor_id 使用智能体角色对应的 ID（如 agent_nicebot_work_executor）\n"
+        f"5. sort_order 表示同级步骤的排序\n"
+        f"6. 只返回 JSON 数组，不要包含其他内容\n"
+    )
+
+    plan_config = state.get("plan_config", {}) or {}
+    timeout_seconds = max(10, int(plan_config.get("timeout_seconds", 30) or 30))
+    assigned_steps: list[dict[str, Any]] = []
+    try:
+        if run_ctx:
+            result = await asyncio.wait_for(
+                _agent_operator.execute(
+                    {
+                        "system_prompt": "你是 NiceBot Work 的任务分配助手，擅长根据执行计划分配执行者和设定依赖关系。只返回 JSON 数组，不要包含其他内容。",
+                        "user_prompt": prompt,
+                        "messages": [],
+                        "provider_id": state.get("provider_id"),
+                        "session_id": state.get("session_id", "work"),
+                    },
+                    run_ctx,
+                    write_stream=False,
+                ),
+                timeout=timeout_seconds,
+            )
+            text = result.get("final_text", "").strip()
+            stats = result.get("stats", {}) if isinstance(result, dict) else {}
+            if stats:
+                tok_usage = stats.get("token_usage", {}) if isinstance(stats, dict) else {}
+                _emit(run_ctx, "token", {
+                    "input": tok_usage.get("input", 0),
+                    "output": tok_usage.get("output", 0),
+                }, "assign")
+            if text:
+                assigned_steps = _parse_assigned_steps(text)
+    except asyncio.TimeoutError:
+        _emit(run_ctx, "error", {"message": f"分配步骤超过 {timeout_seconds} 秒，使用兜底分配。"}, "assign")
+    except Exception as e:
+        _emit(run_ctx, "error", {"message": f"分配步骤失败：{e}，使用兜底分配。"}, "assign")
+
+    if not assigned_steps:
+        assigned_steps = _fallback_assign_steps(plan_steps, task_mode, state)
+
+    stages = _update_stage_status(list(state.get("stage_steps", [])), "stage_assign", "done")
+    stages = _update_stage_status(stages, "stage_execute", "running")
+    assign_display = _format_plan_for_display(assigned_steps)
+    _emit(run_ctx, "text_delta", {"text": assign_display}, "assign")
+    _emit(run_ctx, "phase", {"phase": "assign_done", "label": "步骤已分配", "steps": stages, "progress": 32}, "assign")
+    return {"plan_steps": assigned_steps, "stage_steps": stages, "current_step_index": 0, "step_results": []}
+
+
 async def execute_node(state: WorkTaskState, config: RunnableConfig) -> dict:
     run_ctx = _get_run_ctx(config)
     if run_ctx is None:
         return {}
     steps = state.get("plan_steps", [])
     if not steps:
-        steps = [{"id": 1, "description": state.get("task_desc") or state.get("task_name", ""), "status": "pending"}]
+        steps = [{"id": "step_1", "description": state.get("task_desc") or state.get("task_name", ""), "status": "pending"}]
+
+    executable_steps = _collect_executable_steps(steps)
     idx = state.get("current_step_index", 0)
-    if idx >= len(steps):
+    if idx >= len(executable_steps):
         return {}
 
-    step = dict(steps[idx])
+    step = dict(executable_steps[idx])
     step["status"] = "running"
-    steps[idx] = step
-    progress = 30 + int((idx / max(len(steps), 1)) * 45)
-    _emit(run_ctx, "phase", {"phase": "execute", "label": step["description"], "steps": steps, "progress": progress}, "execute")
+    _update_step_in_tree(steps, step["id"], {"status": "running"})
+    progress = 30 + int((idx / max(len(executable_steps), 1)) * 45)
+    _emit(run_ctx, "phase", {"phase": "execute", "label": step.get("description", ""), "steps": steps, "progress": progress}, "execute")
 
     executor = state.get("executor_config", {}) or {}
     agent_id = step.get("executor_id") or executor.get("agent_id") or _work_agent_id(state, "executor")
@@ -339,7 +474,8 @@ async def execute_node(state: WorkTaskState, config: RunnableConfig) -> dict:
     )
     step["status"] = "done"
     step["result"] = result.get("final_text", "")
-    steps[idx] = step
+    _update_step_in_tree(steps, step["id"], {"status": "done", "result": step["result"]})
+    _update_parent_status(steps, step.get("parent_id"))
     _emit(run_ctx, "phase", {
         "phase": "step_done",
         "label": f"{step['description']} 已完成",
@@ -358,7 +494,7 @@ async def execute_node(state: WorkTaskState, config: RunnableConfig) -> dict:
         "stats": result.get("stats", {}),
     })
     next_idx = idx + 1
-    all_done = next_idx >= len(steps)
+    all_done = next_idx >= len(executable_steps)
     result_dict: dict[str, Any] = {"plan_steps": steps, "step_results": results, "current_step_index": next_idx}
     if all_done:
         review_enabled = (state.get("review_config", {}) or {}).get("enabled", False)
@@ -519,7 +655,7 @@ def route_after_prepare(state: WorkTaskState) -> str:
         return "end"
     if (state.get("plan_config", {}) or {}).get("enabled", False):
         return "plan"
-    return "execute"
+    return "assign"
 
 
 def route_after_clarify(state: WorkTaskState) -> str:
@@ -529,7 +665,7 @@ def route_after_clarify(state: WorkTaskState) -> str:
         return "clarify"
     if (state.get("plan_config", {}) or {}).get("enabled", False):
         return "plan"
-    return "execute"
+    return "assign"
 
 
 def route_after_approval(state: WorkTaskState) -> str:
@@ -539,11 +675,13 @@ def route_after_approval(state: WorkTaskState) -> str:
         return "end"
     if state.get("current_step_index", 0) >= 999999:
         return "end"
-    return "execute"
+    return "assign"
 
 
 def route_after_execute(state: WorkTaskState) -> str:
-    if state.get("current_step_index", 0) >= len(state.get("plan_steps", [])):
+    steps = state.get("plan_steps", [])
+    executable = _collect_executable_steps(steps)
+    if state.get("current_step_index", 0) >= len(executable):
         return "review"
     return "execute"
 
@@ -645,6 +783,224 @@ def _parse_steps(text: str) -> list[dict[str, Any]]:
     return result
 
 
+def _parse_assigned_steps(text: str) -> list[dict[str, Any]]:
+    import json as _json
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        first_newline = cleaned.find("\n")
+        if first_newline >= 0:
+            cleaned = cleaned[first_newline + 1:]
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3]
+    cleaned = cleaned.strip()
+    try:
+        data = _json.loads(cleaned)
+    except _json.JSONDecodeError:
+        start = cleaned.find("[")
+        end = cleaned.rfind("]")
+        if start >= 0 and end > start:
+            try:
+                data = _json.loads(cleaned[start:end + 1])
+            except _json.JSONDecodeError:
+                return []
+        else:
+            return []
+    if not isinstance(data, list):
+        return []
+    valid_steps: list[dict[str, Any]] = []
+    for index, item in enumerate(data):
+        if not isinstance(item, dict):
+            continue
+        step_id = str(item.get("id") or f"step_{index + 1}")
+        depth = int(item.get("depth") or 1)
+        if depth < 1 or depth > 2:
+            depth = 1
+        parent_id = item.get("parent_id") or None
+        if depth == 1:
+            parent_id = None
+        dependencies = item.get("dependencies") or []
+        if not isinstance(dependencies, list):
+            dependencies = [dependencies] if dependencies else []
+        title = str(item.get("title") or item.get("name") or item.get("description") or f"步骤 {index + 1}")
+        description = str(item.get("description") or title)
+        valid_steps.append({
+            "id": step_id,
+            "title": title[:80],
+            "description": description,
+            "status": "pending",
+            "dependencies": [str(d) for d in dependencies if d],
+            "parent_id": parent_id,
+            "depth": depth,
+            "sort_order": int(item.get("sort_order") or index),
+            "executor_type": str(item.get("executor_type") or "agent"),
+            "executor_id": str(item.get("executor_id") or "agent_nicebot_work_executor"),
+            "reviewer_id": str(item.get("reviewer_id") or ""),
+        })
+    if not valid_steps:
+        return []
+    child_by_parent: dict[str | None, list[dict[str, Any]]] = {}
+    for step in valid_steps:
+        child_by_parent.setdefault(step.get("parent_id"), []).append(step)
+    result = [s for s in valid_steps if s["depth"] == 1][:7]
+    for ps in result:
+        pid = ps["id"]
+        children = [cs for cs in valid_steps if cs.get("parent_id") == pid][:10]
+        ps["children"] = children
+    return result
+
+
+def _fallback_assign_steps(plan_steps: list[dict[str, Any]], task_mode: str, state: WorkTaskState) -> list[dict[str, Any]]:
+    executor_id = _work_agent_id(state, "executor")
+    reviewer_id = _work_agent_id(state, "reviewer")
+    if task_mode == "quick":
+        goal = ((state.get("input", {}) or {}).get("goal") or state.get("task_desc") or state.get("task_name") or "完成任务").strip()
+        return [{
+            "id": "step_1",
+            "title": goal[:80],
+            "description": goal,
+            "status": "pending",
+            "dependencies": [],
+            "parent_id": None,
+            "depth": 1,
+            "sort_order": 0,
+            "executor_type": "agent",
+            "executor_id": executor_id,
+            "reviewer_id": reviewer_id,
+            "children": [],
+        }]
+    if task_mode == "deep":
+        result: list[dict[str, Any]] = []
+        child_counter = 0
+        for parent_idx, parent in enumerate(plan_steps[:7], 1):
+            parent_id = f"step_{parent_idx}"
+            parent_step = {
+                "id": parent_id,
+                "title": str(parent.get("title") or parent.get("description") or f"步骤 {parent_idx}")[:80],
+                "description": str(parent.get("description") or parent.get("title") or ""),
+                "status": "pending",
+                "dependencies": [] if parent_idx == 1 else [f"step_{parent_idx - 1}"],
+                "parent_id": None,
+                "depth": 1,
+                "sort_order": parent_idx - 1,
+                "executor_type": "agent",
+                "executor_id": executor_id,
+                "reviewer_id": reviewer_id,
+            }
+            children = parent.get("children", [])
+            child_steps = []
+            if children:
+                for child_idx, child in enumerate(children[:10], 1):
+                    child_counter += 1
+                    child_id = f"step_{parent_idx}_{child_idx}"
+                    child_steps.append({
+                        "id": child_id,
+                        "title": str(child.get("title") or child.get("description") or f"子步骤 {parent_idx}.{child_idx}")[:80],
+                        "description": str(child.get("description") or child.get("title") or ""),
+                        "status": "pending",
+                        "dependencies": [] if child_idx == 1 else [f"step_{parent_idx}_{child_idx - 1}"],
+                        "parent_id": parent_id,
+                        "depth": 2,
+                        "sort_order": child_idx - 1,
+                        "executor_type": "agent",
+                        "executor_id": executor_id,
+                        "reviewer_id": "",
+                    })
+            else:
+                child_counter += 1
+                child_steps.append({
+                    "id": f"step_{parent_idx}_1",
+                    "title": f"执行：{parent_step['title'][:60]}",
+                    "description": parent_step["description"],
+                    "status": "pending",
+                    "dependencies": [],
+                    "parent_id": parent_id,
+                    "depth": 2,
+                    "sort_order": 0,
+                    "executor_type": "agent",
+                    "executor_id": executor_id,
+                    "reviewer_id": "",
+                })
+            parent_step["children"] = child_steps
+            result.append(parent_step)
+        if not result:
+            result.append({
+                "id": "step_1",
+                "title": state.get("task_name", "完成任务"),
+                "description": state.get("task_desc") or state.get("task_name", ""),
+                "status": "pending",
+                "dependencies": [],
+                "parent_id": None,
+                "depth": 1,
+                "sort_order": 0,
+                "executor_type": "agent",
+                "executor_id": executor_id,
+                "reviewer_id": reviewer_id,
+                "children": [{
+                    "id": "step_1_1",
+                    "title": "执行任务",
+                    "description": state.get("task_desc") or state.get("task_name", ""),
+                    "status": "pending",
+                    "dependencies": [],
+                    "parent_id": "step_1",
+                    "depth": 2,
+                    "sort_order": 0,
+                    "executor_type": "agent",
+                    "executor_id": executor_id,
+                    "reviewer_id": "",
+                }],
+            })
+        return result
+    result = []
+    for parent_idx, parent in enumerate(plan_steps[:7], 1):
+        parent_id = f"step_{parent_idx}"
+        children = parent.get("children", [])
+        child_steps = []
+        for child_idx, child in enumerate(children[:10], 1):
+            child_steps.append({
+                "id": f"step_{parent_idx}_{child_idx}",
+                "title": str(child.get("title") or child.get("description") or f"子步骤 {parent_idx}.{child_idx}")[:80],
+                "description": str(child.get("description") or child.get("title") or ""),
+                "status": "pending",
+                "dependencies": [],
+                "parent_id": parent_id,
+                "depth": 2,
+                "sort_order": child_idx - 1,
+                "executor_type": "agent",
+                "executor_id": executor_id,
+                "reviewer_id": "",
+            })
+        result.append({
+            "id": parent_id,
+            "title": str(parent.get("title") or parent.get("description") or f"步骤 {parent_idx}")[:80],
+            "description": str(parent.get("description") or parent.get("title") or ""),
+            "status": "pending",
+            "dependencies": [] if parent_idx == 1 else [f"step_{parent_idx - 1}"],
+            "parent_id": None,
+            "depth": 1,
+            "sort_order": parent_idx - 1,
+            "executor_type": "agent",
+            "executor_id": executor_id,
+            "reviewer_id": reviewer_id,
+            "children": child_steps,
+        })
+    if not result:
+        result.append({
+            "id": "step_1",
+            "title": state.get("task_name", "完成任务"),
+            "description": state.get("task_desc") or state.get("task_name", ""),
+            "status": "pending",
+            "dependencies": [],
+            "parent_id": None,
+            "depth": 1,
+            "sort_order": 0,
+            "executor_type": "agent",
+            "executor_id": executor_id,
+            "reviewer_id": reviewer_id,
+            "children": [],
+        })
+    return result
+
+
 def _update_stage_status(steps: list[dict], stage_id: str, new_status: str) -> list[dict]:
     updated = []
     for s in steps:
@@ -653,6 +1009,47 @@ def _update_stage_status(steps: list[dict], stage_id: str, new_status: str) -> l
             s["status"] = new_status
         updated.append(s)
     return updated
+
+
+def _collect_executable_steps(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for step in steps:
+        children = step.get("children", [])
+        if children:
+            for child in children:
+                result.append(child)
+        else:
+            result.append(step)
+    return result
+
+
+def _update_step_in_tree(steps: list[dict[str, Any]], step_id: str, updates: dict[str, Any]) -> None:
+    for step in steps:
+        if step.get("id") == step_id:
+            step.update(updates)
+            return
+        for child in step.get("children", []):
+            if child.get("id") == step_id:
+                child.update(updates)
+                return
+
+
+def _update_parent_status(steps: list[dict[str, Any]], parent_id: str | None) -> None:
+    if not parent_id:
+        return
+    for step in steps:
+        if step.get("id") != parent_id:
+            continue
+        children = step.get("children", [])
+        if not children:
+            continue
+        all_done = all(c.get("status") in ("done", "completed") for c in children)
+        any_failed = any(c.get("status") == "failed" for c in children)
+        if any_failed:
+            step["status"] = "failed"
+        elif all_done:
+            step["status"] = "done"
+        return
 
 
 def _work_agent_id(state: WorkTaskState, role: str) -> str:
@@ -991,16 +1388,18 @@ def build_work_task_graph(config: dict | None = None, checkpointer=None) -> Stat
     builder.add_node("clarify", clarify_node)
     builder.add_node("plan", plan_node)
     builder.add_node("approve_plan", approve_plan_node)
+    builder.add_node("assign", assign_node)
     builder.add_node("execute", execute_node)
     builder.add_node("review", review_node)
     builder.add_node("rework_hitl", rework_hitl_node)
     builder.add_node("finalize", finalize_node)
 
     builder.set_entry_point("prepare")
-    builder.add_conditional_edges("prepare", route_after_prepare, {"clarify": "clarify", "plan": "plan", "execute": "execute", "end": END})
-    builder.add_conditional_edges("clarify", route_after_clarify, {"clarify": "clarify", "plan": "plan", "execute": "execute", "end": END})
+    builder.add_conditional_edges("prepare", route_after_prepare, {"clarify": "clarify", "plan": "plan", "assign": "assign", "end": END})
+    builder.add_conditional_edges("clarify", route_after_clarify, {"clarify": "clarify", "plan": "plan", "assign": "assign", "end": END})
     builder.add_edge("plan", "approve_plan")
-    builder.add_conditional_edges("approve_plan", route_after_approval, {"plan": "plan", "execute": "execute", "end": END})
+    builder.add_conditional_edges("approve_plan", route_after_approval, {"plan": "plan", "assign": "assign", "end": END})
+    builder.add_edge("assign", "execute")
     builder.add_conditional_edges("execute", route_after_execute, {"execute": "execute", "review": "review"})
     builder.add_conditional_edges("review", route_after_review, {"execute": "execute", "hitl": "rework_hitl", "finalize": "finalize"})
     builder.add_conditional_edges("rework_hitl", route_after_rework_hitl, {"execute": "execute", "finalize": "finalize"})
