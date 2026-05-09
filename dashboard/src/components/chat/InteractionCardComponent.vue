@@ -32,20 +32,21 @@
             <div v-if="field.description" class="text-caption text-medium-emphasis mb-1" style="line-height: 1.4;">
               {{ field.description }}
             </div>
-            <v-textarea
-              v-if="field.field_type === 'textarea'"
-              v-model="fieldValues[field.key]"
-              :placeholder="field.custom_placeholder || fieldPlaceholder(field)"
-              rows="3"
-              density="compact"
-              variant="outlined"
-              hide-details
-              auto-grow
-              :ref="(el: any) => { if (field.key === 'clarify_more_text' && el) clarifyMoreRef = el }"
-            />
-            <div v-if="field.key === 'clarify_more_text'" class="text-caption text-medium-emphasis mt-1" style="line-height: 1.4;">
-              💡 填写补充信息后再次点击「补充信息」提交，系统将根据你的反馈重新生成确认卡片
-            </div>
+            <template v-if="field.field_type === 'textarea'">
+              <v-textarea
+                v-model="fieldValues[field.key]"
+                :placeholder="field.custom_placeholder || fieldPlaceholder(field)"
+                rows="3"
+                density="compact"
+                variant="outlined"
+                hide-details
+                auto-grow
+                :ref="(el: any) => { if (field.key === 'clarify_more_text' && el) clarifyMoreRef = el }"
+              />
+              <div v-if="field.key === 'clarify_more_text'" class="text-caption text-medium-emphasis mt-1" style="line-height: 1.4;">
+                填写补充信息后再次点击「补充信息」提交，系统将根据你的反馈重新生成确认卡片
+              </div>
+            </template>
             <div v-else-if="field.field_type === 'select'" class="d-flex align-center ga-2">
               <v-select
                 v-model="fieldValues[field.key]"
@@ -227,6 +228,7 @@ const statusColor = computed(() => {
     cancelled: 'grey',
     rejected: 'error',
     rejected_with_feedback: 'warning',
+    history: 'grey',
   };
   return map[resolvedStatus.value || ''] || 'grey';
 });
@@ -237,6 +239,7 @@ const statusLabel = computed(() => {
     cancelled: '已取消',
     rejected: '已驳回',
     rejected_with_feedback: '已驳回（已修改）',
+    history: '历史记录',
   };
   return map[resolvedStatus.value || ''] || '';
 });

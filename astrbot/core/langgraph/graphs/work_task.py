@@ -16,6 +16,34 @@ from astrbot.core.langgraph.state import AgentGraphState, GraphRunContext
 
 _agent_operator = AgentOperator()
 
+_NODE_STAGE_MAP = {
+    "prepare": "stage_clarify",
+    "clarify": "stage_clarify",
+    "plan": "stage_plan",
+    "approve_plan": "stage_plan",
+    "assign": "stage_assign",
+    "execute": "stage_execute",
+    "review": "stage_review",
+    "rework_hitl": "stage_review",
+    "finalize": "stage_deliver",
+}
+
+_WORK_AGENT_LABELS = {
+    "agent_nicebot_work_assistant": "NiceBot 任务助手",
+    "agent_nicebot_work_executor": "通用任务执行智能体",
+    "agent_nicebot_work_reviewer": "通用任务审查智能体",
+    "agent_nicebot_research_expert": "调查专家",
+    "agent_nicebot_report_expert": "汇报专家",
+}
+
+_WORK_ROLE_LABELS = {
+    "assistant": "NiceBot 任务助手",
+    "executor": "通用任务执行智能体",
+    "reviewer": "通用任务审查智能体",
+    "researcher": "调查专家",
+    "reporter": "汇报专家",
+}
+
 
 class WorkTaskState(AgentGraphState, total=False):
     task_id: str
@@ -48,11 +76,69 @@ def _get_run_ctx(config: RunnableConfig) -> GraphRunContext | None:
     return config.get("configurable", {}).get("run_ctx")
 
 
-def _emit(run_ctx: GraphRunContext | None, event: str, data: dict[str, Any], node_id: str = "") -> None:
+def _trace_context(
+    node_id: str,
+    *,
+    stage_id: str | None = None,
+    step_id: Any = None,
+    agent_id: str | None = None,
+    agent_label: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "node_id": node_id,
+        "stage_id": stage_id or _NODE_STAGE_MAP.get(node_id, ""),
+        "step_id": str(step_id or ""),
+        "agent_id": agent_id or "",
+        "agent_label": agent_label or agent_id or "",
+    }
+
+
+def _emit(
+    run_ctx: GraphRunContext | None,
+    event: str,
+    data: dict[str, Any],
+    node_id: str = "",
+    *,
+    stage_id: str | None = None,
+    step_id: Any = None,
+    agent_id: str | None = None,
+    agent_label: str | None = None,
+) -> None:
     writer = getattr(run_ctx, "writer", None) if run_ctx else None
     if not writer:
         return
-    writer({"event": event, "data": data, "timestamp": time.time(), "node_id": node_id})
+    payload = dict(data or {})
+    trace = _trace_context(
+        node_id,
+        stage_id=stage_id or payload.get("stage_id"),
+        step_id=step_id if step_id is not None else payload.get("step_id"),
+        agent_id=agent_id or payload.get("agent_id"),
+        agent_label=agent_label or payload.get("agent_label"),
+    )
+    for key, value in trace.items():
+        if value not in (None, "") and key not in payload:
+            payload[key] = value
+    writer({"event": event, "data": payload, "timestamp": time.time(), "node_id": node_id})
+
+
+def _emit_reasoning_from_result(
+    run_ctx: GraphRunContext | None,
+    result: dict[str, Any],
+    node_id: str,
+    *,
+    agent_id: str | None = None,
+    agent_label: str | None = None,
+) -> None:
+    reasoning_text = str((result or {}).get("reasoning_text") or "").strip()
+    if reasoning_text:
+        _emit(
+            run_ctx,
+            "reasoning",
+            {"text": reasoning_text},
+            node_id,
+            agent_id=agent_id,
+            agent_label=agent_label,
+        )
 
 
 def _context_text(state: WorkTaskState) -> str:
@@ -70,24 +156,64 @@ def _context_text(state: WorkTaskState) -> str:
     return "\n\n".join(parts)
 
 
+def _is_agent_id(value: Any) -> bool:
+    text = str(value or "")
+    return text.startswith(("agent_", "expert_"))
+
+
+def _work_agent_label(state: WorkTaskState, role: str, agent_id: str | None = None) -> str:
+    agent_id = agent_id or _work_agent_id(state, role)
+    config = state.get("executor_config", {}) or {}
+    label_map = config.get("agent_labels", {}) or config.get("default_agent_labels", {}) or {}
+    if agent_id and label_map.get(agent_id):
+        return str(label_map[agent_id])
+    if agent_id and _WORK_AGENT_LABELS.get(agent_id):
+        return _WORK_AGENT_LABELS[agent_id]
+    return _WORK_ROLE_LABELS.get(role, "") or agent_id or ""
+
+
+def _step_agent_label(state: WorkTaskState, step: dict[str, Any], role: str = "executor") -> str:
+    explicit = str(step.get("executor") or step.get("agent_label") or "").strip()
+    agent_id = str(step.get("executor_id") or step.get("agent_id") or _work_agent_id(state, role) or "").strip()
+    if explicit and not _is_agent_id(explicit):
+        return explicit
+    return _work_agent_label(state, role, agent_id)
+
+
+class _SafeFormatDict(dict):
+    def __missing__(self, key: str) -> str:
+        return "{" + key + "}"
+
+
+def _render_prompt_template(template: Any, variables: dict[str, Any], fallback: str) -> str:
+    text = str(template or "").strip()
+    if not text:
+        return fallback
+    safe_variables = _SafeFormatDict({key: "" if value is None else value for key, value in variables.items()})
+    try:
+        return text.format_map(safe_variables)
+    except Exception:
+        return fallback
+
+
 async def prepare_node(state: WorkTaskState, config: RunnableConfig) -> dict:
     run_ctx = _get_run_ctx(config)
     review_enabled = (state.get("review_config", {}) or {}).get("enabled", False)
     clarification_enabled = (state.get("clarification_config", {}) or {}).get("enabled", False)
     plan_enabled = (state.get("plan_config", {}) or {}).get("enabled", False)
     stage_steps = [
-        {"id": "stage_clarify", "title": "需求明确", "description": "确认任务目标、交付形式和完成标准", "status": "running" if clarification_enabled else "done", "depth": 1, "sort_order": 0, "dependencies": [], "executor_type": "agent", "executor_id": _work_agent_id(state, "assistant")},
-        {"id": "stage_plan", "title": "规划", "description": "生成最多二级任务树和依赖关系", "status": "running" if (not clarification_enabled and plan_enabled) else "pending", "depth": 1, "sort_order": 1, "dependencies": ["stage_clarify"], "executor_type": "agent", "executor_id": _work_agent_id(state, "assistant")},
-        {"id": "stage_assign", "title": "分配", "description": "分配执行智能体", "status": "pending", "depth": 1, "sort_order": 2, "dependencies": ["stage_plan"], "executor_type": "agent", "executor_id": _work_agent_id(state, "executor")},
-        {"id": "stage_execute", "title": "执行", "description": "按前置依赖顺序执行任务", "status": "pending", "depth": 1, "sort_order": 3, "dependencies": ["stage_assign"], "executor_type": "agent", "executor_id": _work_agent_id(state, "executor"), "reviewer_id": _work_agent_id(state, "reviewer")},
+        {"id": "stage_clarify", "title": "需求明确", "description": "确认任务目标、交付形式和完成标准", "status": "running" if clarification_enabled else "done", "depth": 1, "sort_order": 0, "dependencies": [], "executor": "需求确认助手", "executor_type": "agent", "executor_id": _work_agent_id(state, "assistant")},
+        {"id": "stage_plan", "title": "规划", "description": "生成最多二级任务树和依赖关系", "status": "running" if (not clarification_enabled and plan_enabled) else "pending", "depth": 1, "sort_order": 1, "dependencies": ["stage_clarify"], "executor": "任务规划助手", "executor_type": "agent", "executor_id": _work_agent_id(state, "assistant")},
+        {"id": "stage_assign", "title": "分配", "description": "分配执行智能体", "status": "pending", "depth": 1, "sort_order": 2, "dependencies": ["stage_plan"], "executor": "任务分配助手", "executor_type": "agent", "executor_id": _work_agent_id(state, "assistant")},
+        {"id": "stage_execute", "title": "执行", "description": "按前置依赖顺序执行任务", "status": "pending", "depth": 1, "sort_order": 3, "dependencies": ["stage_assign"], "executor": _work_agent_label(state, "executor"), "executor_type": "agent", "executor_id": _work_agent_id(state, "executor"), "reviewer_id": _work_agent_id(state, "reviewer")},
     ]
     if review_enabled:
         stage_steps.append(
-            {"id": "stage_review", "title": "审查", "description": "审查任务结果是否达标", "status": "pending", "depth": 1, "sort_order": 4, "dependencies": ["stage_execute"], "executor_type": "agent", "executor_id": _work_agent_id(state, "reviewer")},
+            {"id": "stage_review", "title": "审查", "description": "审查任务结果是否达标", "status": "pending", "depth": 1, "sort_order": 4, "dependencies": ["stage_execute"], "executor": "任务审查智能体", "executor_type": "agent", "executor_id": _work_agent_id(state, "reviewer")},
         )
     last_dep = "stage_review" if review_enabled else "stage_execute"
     stage_steps.append(
-        {"id": "stage_deliver", "title": "交付", "description": "生成最终交付物", "status": "pending", "depth": 1, "sort_order": len(stage_steps), "dependencies": [last_dep], "executor_type": "agent", "executor_id": _work_agent_id(state, "reporter")},
+        {"id": "stage_deliver", "title": "交付", "description": "生成最终交付物", "status": "pending", "depth": 1, "sort_order": len(stage_steps), "dependencies": [last_dep], "executor": _work_agent_label(state, "reporter"), "executor_type": "agent", "executor_id": _work_agent_id(state, "reporter")},
     )
     _emit(run_ctx, "phase", {"phase": "prepare", "label": "准备任务上下文", "progress": 5, "steps": stage_steps}, "prepare")
     task_mode = state.get("task_mode") or (state.get("plan_config", {}) or {}).get("task_mode", "normal")
@@ -115,6 +241,7 @@ async def clarify_node(state: WorkTaskState, config: RunnableConfig) -> dict:
     content_payload = await _resolve_clarify_content(
         content_provider_type, clarification_config, state, run_ctx, config,
     )
+    clarify_reasoning_text = str(content_payload.pop("_reasoning_text", "") or "") if isinstance(content_payload, dict) else ""
 
     card = build_hitl_card(
         template=template,
@@ -156,7 +283,25 @@ async def clarify_node(state: WorkTaskState, config: RunnableConfig) -> dict:
     values = dict(response.field_values or {})
     confirmation_summary = _format_clarification_summary(values, card)
     if confirmation_summary:
-        _emit(run_ctx, "text_delta", {"text": confirmation_summary}, "clarify")
+        clarify_agent_id = clarification_config.get("content_provider_agent_id", "agent_nicebot_work_assistant")
+        clarify_agent_label = _work_agent_label(state, "assistant", clarify_agent_id)
+        if clarify_reasoning_text:
+            _emit(
+                run_ctx,
+                "reasoning",
+                {"text": clarify_reasoning_text},
+                "clarify",
+                agent_id=clarify_agent_id,
+                agent_label=clarify_agent_label,
+            )
+        _emit(
+            run_ctx,
+            "text_delta",
+            {"text": confirmation_summary},
+            "clarify",
+            agent_id=clarify_agent_id,
+            agent_label=clarify_agent_label,
+        )
     if response.action_key == "clarify_more":
         feedback = values.pop("clarify_more_text", "") if isinstance(values, dict) else ""
         _emit(
@@ -183,7 +328,16 @@ async def plan_node(state: WorkTaskState, config: RunnableConfig) -> dict:
     effort = (state.get("plan_config", {}) or {}).get("effort", "medium")
     plan_feedback = state.get("plan_feedback", "")
     feedback_text = f"人工调整意见：{plan_feedback}\n\n" if plan_feedback else ""
-    prompt = (
+    plan_config = state.get("plan_config", {}) or {}
+    prompt_variables = {
+        "task_name": task_name,
+        "task_desc": task_desc,
+        "clarification": _clarification_text(state),
+        "work_context": _context_text(state),
+        "effort": effort,
+        "feedback_text": feedback_text,
+    }
+    default_prompt = (
         f"请为 Work 任务制定可执行计划。\n\n"
         f"任务名称：{task_name}\n"
         f"任务描述：{task_desc}\n\n"
@@ -202,18 +356,25 @@ async def plan_node(state: WorkTaskState, config: RunnableConfig) -> dict:
         "   2.1 子步骤标题\n\n"
         "二级子步骤必须使用「父步骤号.子序号」格式（如1.1、2.3），不得使用缩进或「子任务」前缀。最多两级。步骤按依赖顺序排列。"
     )
-    plan_config = state.get("plan_config", {}) or {}
+    prompt = _render_prompt_template(plan_config.get("prompt_template") or plan_config.get("prompt"), prompt_variables, default_prompt)
+    plan_agent_id = plan_config.get("agent_id") or _work_agent_id(state, "assistant")
+    system_prompt = _render_prompt_template(
+        plan_config.get("system_prompt"),
+        prompt_variables,
+        "你是 NiceBot Work 的任务规划助手，擅长把目标拆成可审查的执行步骤。",
+    )
     timeout_seconds = max(10, int(plan_config.get("timeout_seconds", 30) or 30))
     result: dict[str, Any] = {}
     try:
         result = await asyncio.wait_for(
             _agent_operator.execute(
                 {
-                    "system_prompt": "你是 NiceBot Work 的任务规划助手，擅长把目标拆成可审查的执行步骤。",
+                    "system_prompt": system_prompt,
                     "user_prompt": prompt,
                     "messages": [],
                     "provider_id": state.get("provider_id"),
                     "session_id": state.get("session_id", "work"),
+                    "trace_context": _trace_context("plan", agent_id=plan_agent_id, agent_label=_work_agent_label(state, "assistant", plan_agent_id)),
                 },
                 run_ctx,
                 write_stream=False,
@@ -245,10 +406,23 @@ async def plan_node(state: WorkTaskState, config: RunnableConfig) -> dict:
     if not text.strip():
         text = _fallback_plan_text(state)
     steps = _parse_steps(text)
-    stages = _update_stage_status(list(state.get("stage_steps", [])), "stage_plan", "done")
-    stages = _update_stage_status(stages, "stage_assign", "running")
+    stages = _update_stage_status(list(state.get("stage_steps", [])), "stage_plan", "running")
     plan_display = text
-    _emit(run_ctx, "text_delta", {"text": plan_display}, "plan")
+    _emit_reasoning_from_result(
+        run_ctx,
+        result,
+        "plan",
+        agent_id=plan_agent_id,
+        agent_label=_work_agent_label(state, "assistant", plan_agent_id),
+    )
+    _emit(
+        run_ctx,
+        "text_delta",
+        {"text": plan_display},
+        "plan",
+        agent_id=plan_agent_id,
+        agent_label=_work_agent_label(state, "assistant", plan_agent_id),
+    )
     _emit(run_ctx, "phase", {"phase": "plan_done", "label": "计划已生成", "steps": stages, "progress": 25}, "plan")
     return {"plan_steps": steps, "stage_steps": stages, "plan_text_full": text, "current_step_index": 0, "step_results": [], "approval_action": "", "plan_feedback": ""}
 
@@ -258,11 +432,17 @@ async def approve_plan_node(state: WorkTaskState, config: RunnableConfig) -> dic
     steps = state.get("plan_steps", [])
     plan_text_full = state.get("plan_text_full", "")
     plan_body = plan_text_full if plan_text_full else (_format_plan_for_approval(steps) if steps else "无计划内容")
+    plan_config = state.get("plan_config", {}) or {}
+    body = _render_prompt_template(
+        plan_config.get("approval_body_template"),
+        {"plan_body": plan_body, "task_name": state.get("task_name", ""), "task_desc": state.get("task_desc", "")},
+        f"请审批以下执行计划：\n\n{plan_body}",
+    )
     card = InteractionCard(
         interaction_id=f"work_plan_{uuid.uuid4().hex[:12]}",
         type="plan_approval",
         title=f"执行计划审批：{state.get('task_name', '')}",
-        body=f"请审批以下执行计划：\n\n{plan_body}",
+        body=body,
         fields=[
             CardField(
                 key="modify_text",
@@ -288,7 +468,8 @@ async def approve_plan_node(state: WorkTaskState, config: RunnableConfig) -> dic
     if response.action_key == "approve":
         approved_text = plan_text_full
         re_parsed_steps = _parse_steps(approved_text) if approved_text else steps
-        stages = _update_stage_status(list(state.get("stage_steps", [])), "stage_assign", "running")
+        stages = _update_stage_status(list(state.get("stage_steps", [])), "stage_plan", "done")
+        stages = _update_stage_status(stages, "stage_assign", "running")
         _emit(run_ctx, "phase", {"phase": "plan_approved", "label": "计划已批准", "progress": 30, "status": "running", "steps": stages}, "approve_plan")
         return {"review_passed": False, "approval_action": "approve", "stage_steps": stages, "plan_steps": re_parsed_steps}
     if response.action_key == "modify":
@@ -389,19 +570,39 @@ async def assign_node(state: WorkTaskState, config: RunnableConfig) -> dict:
     )
 
     plan_config = state.get("plan_config", {}) or {}
+    executor_config = state.get("executor_config", {}) or {}
+    assignment_variables = {
+        "task_name": state.get("task_name", ""),
+        "task_desc": state.get("task_desc", ""),
+        "approved_plan": plan_text_full or _format_plan_for_approval(plan_steps),
+        "task_mode": task_mode,
+        "mode_instructions": mode_instructions.get(task_mode, mode_instructions["normal"]),
+    }
+    prompt = _render_prompt_template(executor_config.get("assignment_prompt_template"), assignment_variables, prompt)
+    assignment_system_prompt = _render_prompt_template(
+        executor_config.get("assignment_system_prompt"),
+        assignment_variables,
+        "你是 NiceBot Work 的任务分配助手，擅长根据执行计划分配执行者和设定依赖关系。只返回 JSON 数组，不要包含其他内容。",
+    )
+    assign_agent_id = _work_agent_id(state, "assistant")
+    assign_agent_label = _work_agent_label(state, "assistant", assign_agent_id)
     timeout_seconds = max(10, int(plan_config.get("timeout_seconds", 30) or 30))
     assigned_steps: list[dict[str, Any]] = []
+    approved_plan = _approved_plan_text(state, plan_steps)
     try:
-        if run_ctx:
+        if task_mode == "quick":
+            assigned_steps = _fallback_assign_steps(plan_steps, task_mode, state)
+        elif run_ctx:
             result = await asyncio.wait_for(
                 _agent_operator.execute(
-                    {
-                        "system_prompt": "你是 NiceBot Work 的任务分配助手，擅长根据执行计划分配执行者和设定依赖关系。只返回 JSON 数组，不要包含其他内容。",
-                        "user_prompt": prompt,
-                        "messages": [],
-                        "provider_id": state.get("provider_id"),
-                        "session_id": state.get("session_id", "work"),
-                    },
+                {
+                    "system_prompt": assignment_system_prompt,
+                    "user_prompt": prompt,
+                    "messages": [],
+                    "provider_id": state.get("provider_id"),
+                    "session_id": state.get("session_id", "work"),
+                    "trace_context": _trace_context("assign", agent_id=assign_agent_id, agent_label=assign_agent_label),
+                },
                     run_ctx,
                     write_stream=False,
                 ),
@@ -422,15 +623,32 @@ async def assign_node(state: WorkTaskState, config: RunnableConfig) -> dict:
     except Exception as e:
         _emit(run_ctx, "error", {"message": f"分配步骤失败：{e}，使用兜底分配。"}, "assign")
 
-    if not assigned_steps:
+    if not _validate_assigned_steps(assigned_steps, plan_steps, task_mode, approved_plan):
+        if assigned_steps:
+            _emit(run_ctx, "phase", {"phase": "assign_fallback", "label": "分配结果未完整覆盖审批计划，已使用确定性分配。"}, "assign")
         assigned_steps = _fallback_assign_steps(plan_steps, task_mode, state)
+    assigned_steps = _apply_executor_labels(assigned_steps, state)
 
     stages = _update_stage_status(list(state.get("stage_steps", [])), "stage_assign", "done")
     stages = _update_stage_status(stages, "stage_execute", "running")
     assign_display = _format_plan_for_display(assigned_steps)
-    _emit(run_ctx, "text_delta", {"text": assign_display}, "assign")
+    _emit_reasoning_from_result(
+        run_ctx,
+        result if "result" in locals() else {},
+        "assign",
+        agent_id=assign_agent_id,
+        agent_label=assign_agent_label,
+    )
+    _emit(
+        run_ctx,
+        "text_delta",
+        {"text": assign_display},
+        "assign",
+        agent_id=assign_agent_id,
+        agent_label=assign_agent_label,
+    )
     _emit(run_ctx, "phase", {"phase": "assign_done", "label": "步骤已分配", "steps": stages, "progress": 32}, "assign")
-    return {"plan_steps": assigned_steps, "stage_steps": stages, "current_step_index": 0, "step_results": []}
+    return {"plan_steps": assigned_steps, "stage_steps": stages, "plan_text_full": approved_plan, "current_step_index": 0, "step_results": []}
 
 
 async def execute_node(state: WorkTaskState, config: RunnableConfig) -> dict:
@@ -441,7 +659,10 @@ async def execute_node(state: WorkTaskState, config: RunnableConfig) -> dict:
     if not steps:
         steps = [{"id": "step_1", "description": state.get("task_desc") or state.get("task_name", ""), "status": "pending"}]
 
-    executable_steps = _collect_executable_steps(steps)
+    task_mode = state.get("task_mode") or (state.get("plan_config", {}) or {}).get("task_mode", "normal")
+    if task_mode not in ("quick", "normal", "deep"):
+        task_mode = "normal"
+    executable_steps = _collect_executable_steps(steps, task_mode)
     idx = state.get("current_step_index", 0)
     if idx >= len(executable_steps):
         return {}
@@ -450,39 +671,63 @@ async def execute_node(state: WorkTaskState, config: RunnableConfig) -> dict:
     step["status"] = "running"
     _update_step_in_tree(steps, step["id"], {"status": "running"})
     progress = 30 + int((idx / max(len(executable_steps), 1)) * 45)
-    _emit(run_ctx, "phase", {"phase": "execute", "label": step.get("description", ""), "steps": steps, "progress": progress}, "execute")
-
     executor = state.get("executor_config", {}) or {}
     agent_id = step.get("executor_id") or executor.get("agent_id") or _work_agent_id(state, "executor")
-    agent_label = step.get("executor") or agent_id or "通用任务执行智能体"
-    prompt = (
-        f"请执行 Work 任务步骤。\n\n"
-        f"任务：{state.get('task_name', '')}\n"
-        f"当前步骤：{step.get('description', '')}\n\n"
-        f"{_context_text(state)}\n\n"
-        "请输出可作为任务交付依据的结果。"
+    agent_label = _step_agent_label(state, step, "executor")
+    _emit(
+        run_ctx,
+        "phase",
+        {"phase": "execute", "label": step.get("description", ""), "steps": steps, "progress": progress},
+        "execute",
+        step_id=step.get("id"),
+        agent_id=agent_id,
+        agent_label=agent_label,
+    )
+    step_scope = _step_scope_text(state, steps, step, state.get("step_results", []), task_mode)
+    prompt_variables = {
+        "task_name": state.get("task_name", ""),
+        "task_desc": state.get("task_desc", ""),
+        "requirements": _requirement_text(state),
+        "approved_plan": _approved_plan_text(state, steps),
+        "step_scope": step_scope,
+        "task_mode": task_mode,
+        "agent_label": agent_label,
+    }
+    prompt = _render_prompt_template(
+        executor.get("execute_prompt_template") or executor.get("prompt"),
+        prompt_variables,
+        _build_execute_prompt(state, steps, step, state.get("step_results", []), task_mode),
+    )
+    system_prompt = _render_prompt_template(
+        executor.get("execute_system_prompt") or executor.get("system_prompt"),
+        prompt_variables,
+        f"你是 NiceBot Work 执行智能体。当前执行者：{agent_label}。只执行当前步骤，不负责审查自己的结果。",
     )
     result = await _agent_operator.execute(
         {
-            "system_prompt": f"你是 NiceBot Work 执行智能体。当前执行者：{agent_label}。只执行当前步骤，不负责审查自己的结果。",
+            "system_prompt": system_prompt,
             "user_prompt": prompt,
             "messages": [],
             "provider_id": state.get("provider_id") or executor.get("provider_id"),
             "session_id": state.get("session_id", "work"),
+            "trace_context": _trace_context("execute", step_id=step.get("id"), agent_id=agent_id, agent_label=agent_label),
         },
         run_ctx,
         write_stream=True,
     )
     step["status"] = "done"
     step["result"] = result.get("final_text", "")
-    _update_step_in_tree(steps, step["id"], {"status": "done", "result": step["result"]})
+    updates = {"status": "done", "result": step["result"], "executor": agent_label}
+    if task_mode == "normal" and step.get("children"):
+        updates["children"] = _children_with_status(step.get("children") or [], "done")
+    _update_step_in_tree(steps, step["id"], updates)
     _update_parent_status(steps, step.get("parent_id"))
     _emit(run_ctx, "phase", {
         "phase": "step_done",
         "label": f"{step['description']} 已完成",
         "steps": steps,
         "progress": progress,
-    }, "execute")
+    }, "execute", step_id=step.get("id"), agent_id=agent_id, agent_label=agent_label)
     results = list(state.get("step_results", []))
     results.append({
         "step_id": step.get("id", idx + 1),
@@ -524,19 +769,37 @@ async def review_node(state: WorkTaskState, config: RunnableConfig) -> dict:
         f"- {r.get('description', '')}\n{r.get('result', '')}"
         for r in state.get("step_results", [])
     )
+    review_agent_id = review_config.get("reviewer_id") or _work_agent_id(state, "reviewer")
+    review_variables = {
+        "task_name": state.get("task_name", ""),
+        "task_desc": state.get("task_desc", ""),
+        "work_context": _context_text(state),
+        "results_text": results_text,
+    }
+    review_prompt = _render_prompt_template(
+        review_config.get("prompt_template") or review_config.get("prompt"),
+        review_variables,
+        (
+            f"请审查以下任务结果是否达成目标。\n\n"
+            f"任务：{state.get('task_name', '')}\n\n"
+            f"{_context_text(state)}\n\n"
+            f"执行结果：\n{results_text}\n\n"
+            "如果通过，回复 PASS。需要返工，回复 RETRY 并说明原因。"
+        ),
+    )
+    review_system_prompt = _render_prompt_template(
+        review_config.get("system_prompt"),
+        review_variables,
+        "你是 NiceBot Work 的审查智能体。只要结果明显未达成目标才判定返工。",
+    )
     result = await _agent_operator.execute(
         {
-            "system_prompt": "你是 NiceBot Work 的审查智能体。只要结果明显未达成目标才判定返工。",
-            "user_prompt": (
-                f"请审查以下任务结果是否达成目标。\n\n"
-                f"任务：{state.get('task_name', '')}\n\n"
-                f"{_context_text(state)}\n\n"
-                f"执行结果：\n{results_text}\n\n"
-                "如果通过，回复 PASS。需要返工，回复 RETRY 并说明原因。"
-            ),
+            "system_prompt": review_system_prompt,
+            "user_prompt": review_prompt,
             "messages": [],
             "provider_id": state.get("provider_id"),
             "session_id": state.get("session_id", "work"),
+            "trace_context": _trace_context("review", agent_id=review_agent_id, agent_label=_work_agent_label(state, "reviewer", review_agent_id)),
         },
         run_ctx,
         write_stream=True,
@@ -572,11 +835,12 @@ async def review_node(state: WorkTaskState, config: RunnableConfig) -> dict:
 
 async def rework_hitl_node(state: WorkTaskState, config: RunnableConfig) -> dict:
     run_ctx = _get_run_ctx(config)
+    review_config = state.get("review_config", {}) or {}
     card = InteractionCard(
         interaction_id=f"work_rework_{uuid.uuid4().hex[:12]}",
         type="error_recovery",
-        title="审查未通过",
-        body="任务审查未通过且已达到预设返工次数，请确认是否继续返工或结束任务。",
+        title=str(review_config.get("rework_title") or "审查未通过"),
+        body=str(review_config.get("rework_body") or "任务审查未通过且已达到预设返工次数，请确认是否继续返工或结束任务。"),
         fields=[
             CardField(key="guidance", label="返工要求", field_type="textarea", required=False)
         ],
@@ -610,6 +874,7 @@ async def rework_hitl_node(state: WorkTaskState, config: RunnableConfig) -> dict
 
 async def finalize_node(state: WorkTaskState, config: RunnableConfig) -> dict:
     run_ctx = _get_run_ctx(config)
+    executor = state.get("executor_config", {}) or {}
     results_text = "\n\n".join(
         f"## {r.get('description', '')}\n{r.get('result', '')}"
         for r in state.get("step_results", [])
@@ -617,16 +882,31 @@ async def finalize_node(state: WorkTaskState, config: RunnableConfig) -> dict:
     if run_ctx is None:
         return {"final_summary": results_text}
     _emit(run_ctx, "phase", {"phase": "finalize", "label": "生成交付物", "progress": 95}, "finalize")
+    reporter_id = _work_agent_id(state, "reporter")
+    finalize_variables = {
+        "task_name": state.get("task_name", ""),
+        "task_desc": state.get("task_desc", ""),
+        "results_text": results_text,
+        "reporter_id": reporter_id,
+    }
+    finalize_prompt = _render_prompt_template(
+        executor.get("finalize_prompt_template") or executor.get("finalize_prompt"),
+        finalize_variables,
+        f"请将以下任务执行结果整理成最终交付物。\n\n任务：{state.get('task_name', '')}\n\n{results_text}",
+    )
+    finalize_system_prompt = _render_prompt_template(
+        executor.get("finalize_system_prompt"),
+        finalize_variables,
+        f"你是 NiceBot Work 的汇报专家（{reporter_id}）。请只整理最终交付物，不混入过程日志。",
+    )
     result = await _agent_operator.execute(
         {
-            "system_prompt": f"你是 NiceBot Work 的汇报专家（{_work_agent_id(state, 'reporter')}）。请只整理最终交付物，不混入过程日志。",
-            "user_prompt": (
-                f"请将以下任务执行结果整理成最终交付物。\n\n"
-                f"任务：{state.get('task_name', '')}\n\n{results_text}"
-            ),
+            "system_prompt": finalize_system_prompt,
+            "user_prompt": finalize_prompt,
             "messages": [],
             "provider_id": state.get("provider_id"),
             "session_id": state.get("session_id", "work"),
+            "trace_context": _trace_context("finalize", agent_id=reporter_id, agent_label=_work_agent_label(state, "reporter", reporter_id)),
         },
         run_ctx,
         write_stream=True,
@@ -637,7 +917,7 @@ async def finalize_node(state: WorkTaskState, config: RunnableConfig) -> dict:
         "artifact",
         {
             "title": state.get("task_name", "Work 任务交付物"),
-            "artifact_type": "markdown",
+            "artifact_type": executor.get("artifact_type") or "markdown",
             "content": summary,
         },
         "finalize",
@@ -703,11 +983,24 @@ def route_after_rework_hitl(state: WorkTaskState) -> str:
     return "execute"
 
 
+def _append_step_detail(step: dict[str, Any], line: str) -> None:
+    text = str(line or "").strip()
+    if not text:
+        return
+    if text.startswith(("交付物：", "交付物:", "输出：", "输出:")):
+        value = text.split("：", 1)[-1] if "：" in text else text.split(":", 1)[-1]
+        step["deliverable"] = value.strip()
+    desc = str(step.get("description") or "").strip()
+    if text not in desc:
+        step["description"] = f"{desc}\n{text}".strip() if desc else text
+
+
 def _parse_steps(text: str) -> list[dict[str, Any]]:
     import re
     parent_steps: list[dict[str, Any]] = []
     child_steps: list[dict[str, Any]] = []
     current_parent_id: str | None = None
+    current_child_id: str | None = None
     parent_counter = 0
     child_counter = 0
     main_step_pattern = re.compile(r'^(\d+)[.、)）]\s')
@@ -729,6 +1022,7 @@ def _parse_steps(text: str) -> list[dict[str, Any]]:
         if is_sub and current_parent_id:
             child_counter += 1
             child_id = f"step_{parent_counter}_{child_counter}"
+            current_child_id = child_id
             child_steps.append({
                 "id": child_id,
                 "title": cleaned[:80],
@@ -747,6 +1041,7 @@ def _parse_steps(text: str) -> list[dict[str, Any]]:
             child_counter = 0
             step_id = f"step_{parent_counter}"
             current_parent_id = step_id
+            current_child_id = None
             parent_steps.append({
                 "id": step_id,
                 "title": cleaned[:80],
@@ -760,6 +1055,16 @@ def _parse_steps(text: str) -> list[dict[str, Any]]:
                 "executor_id": "agent_nicebot_work_executor",
                 "reviewer_id": "agent_nicebot_work_reviewer",
             })
+        elif current_child_id:
+            for child in child_steps:
+                if child.get("id") == current_child_id:
+                    _append_step_detail(child, cleaned)
+                    break
+        elif current_parent_id:
+            for parent in parent_steps:
+                if parent.get("id") == current_parent_id:
+                    _append_step_detail(parent, cleaned)
+                    break
 
     if not parent_steps:
         parent_steps.append({
@@ -833,6 +1138,7 @@ def _parse_assigned_steps(text: str) -> list[dict[str, Any]]:
             "parent_id": parent_id,
             "depth": depth,
             "sort_order": int(item.get("sort_order") or index),
+            "executor": str(item.get("executor") or item.get("agent_label") or ""),
             "executor_type": str(item.get("executor_type") or "agent"),
             "executor_id": str(item.get("executor_id") or "agent_nicebot_work_executor"),
             "reviewer_id": str(item.get("reviewer_id") or ""),
@@ -850,20 +1156,99 @@ def _parse_assigned_steps(text: str) -> list[dict[str, Any]]:
     return result
 
 
+def _approved_plan_text(state: WorkTaskState, plan_steps: list[dict[str, Any]] | None = None) -> str:
+    text = str(state.get("plan_text_full") or "").strip()
+    if text:
+        return text
+    steps = plan_steps if plan_steps is not None else state.get("plan_steps", [])
+    if steps:
+        return _format_plan_for_approval(steps).strip()
+    return _fallback_plan_text(state)
+
+
+def _step_text(step: dict[str, Any]) -> str:
+    parts = [
+        str(step.get("title") or "").strip(),
+        str(step.get("description") or "").strip(),
+        str(step.get("deliverable") or step.get("deliverables") or "").strip(),
+        str(step.get("result") or "").strip(),
+    ]
+    for child in step.get("children") or []:
+        parts.append(_step_text(child))
+    return "\n".join(part for part in parts if part)
+
+
+def _steps_text(steps: list[dict[str, Any]]) -> str:
+    return "\n".join(_step_text(step) for step in steps or [])
+
+
+def _leaf_count(steps: list[dict[str, Any]]) -> int:
+    count = 0
+    for step in steps or []:
+        children = step.get("children") or []
+        count += _leaf_count(children) if children else 1
+    return count
+
+
+def _validate_assigned_steps(
+    assigned_steps: list[dict[str, Any]],
+    plan_steps: list[dict[str, Any]],
+    task_mode: str,
+    approved_plan_text: str,
+) -> bool:
+    if not assigned_steps:
+        return False
+    if task_mode == "quick":
+        text = _steps_text(assigned_steps)
+        return len(assigned_steps) == 1 and _leaf_count(assigned_steps) == 1 and len(text) >= min(80, max(20, len(approved_plan_text) // 4))
+
+    expected_roots = len(plan_steps or [])
+    if expected_roots > 1 and len(assigned_steps) < expected_roots:
+        return False
+    if task_mode == "deep":
+        expected_leaves = _leaf_count(plan_steps)
+        if expected_leaves > 1 and _leaf_count(assigned_steps) < expected_leaves:
+            return False
+
+    source_text = (approved_plan_text or _steps_text(plan_steps)).strip()
+    assigned_text = _steps_text(assigned_steps).strip()
+    if len(source_text) > 160 and len(assigned_text) < min(140, max(80, len(source_text) // 3)):
+        return False
+    return True
+
+
+def _apply_executor_labels(steps: list[dict[str, Any]], state: WorkTaskState, role: str = "executor") -> list[dict[str, Any]]:
+    result = []
+    for raw in steps or []:
+        step = dict(raw)
+        step["executor_id"] = step.get("executor_id") or _work_agent_id(state, role)
+        step["executor"] = _step_agent_label(state, step, role)
+        step["executor_type"] = step.get("executor_type") or "agent"
+        if step.get("reviewer_id") is None:
+            step["reviewer_id"] = ""
+        step["children"] = _apply_executor_labels(step.get("children") or [], state, role)
+        result.append(step)
+    return result
+
+
 def _fallback_assign_steps(plan_steps: list[dict[str, Any]], task_mode: str, state: WorkTaskState) -> list[dict[str, Any]]:
     executor_id = _work_agent_id(state, "executor")
     reviewer_id = _work_agent_id(state, "reviewer")
+    executor_label = _work_agent_label(state, "executor", executor_id)
     if task_mode == "quick":
         goal = ((state.get("input", {}) or {}).get("goal") or state.get("task_desc") or state.get("task_name") or "完成任务").strip()
+        approved_plan = _approved_plan_text(state, plan_steps)
+        description = f"按已审批计划完整执行：\n{approved_plan}".strip()
         return [{
             "id": "step_1",
-            "title": goal[:80],
-            "description": goal,
+            "title": (state.get("task_name") or goal)[:80],
+            "description": description,
             "status": "pending",
             "dependencies": [],
             "parent_id": None,
             "depth": 1,
             "sort_order": 0,
+            "executor": executor_label,
             "executor_type": "agent",
             "executor_id": executor_id,
             "reviewer_id": reviewer_id,
@@ -1012,8 +1397,10 @@ def _update_stage_status(steps: list[dict], stage_id: str, new_status: str) -> l
     return updated
 
 
-def _collect_executable_steps(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _collect_executable_steps(steps: list[dict[str, Any]], task_mode: str = "deep") -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
+    if task_mode == "normal":
+        return [step for step in steps if not str(step.get("id") or "").startswith("stage_")]
     for step in steps:
         children = step.get("children", [])
         if children:
@@ -1022,6 +1409,129 @@ def _collect_executable_steps(steps: list[dict[str, Any]]) -> list[dict[str, Any
         else:
             result.append(step)
     return result
+
+
+def _find_step_by_id(steps: list[dict[str, Any]], step_id: Any) -> dict[str, Any] | None:
+    target = str(step_id or "")
+    if not target:
+        return None
+    for step in steps or []:
+        if str(step.get("id") or "") == target:
+            return step
+        found = _find_step_by_id(step.get("children") or [], target)
+        if found:
+            return found
+    return None
+
+
+def _format_value(value: Any) -> str:
+    if isinstance(value, list):
+        return "、".join(str(item) for item in value if item not in (None, ""))
+    if isinstance(value, dict):
+        return "\n".join(f"{key}: {_format_value(val)}" for key, val in value.items() if val not in (None, "", []))
+    return str(value or "")
+
+
+def _requirement_text(state: WorkTaskState) -> str:
+    input_data = state.get("input", {}) or {}
+    lines = []
+    if state.get("task_name"):
+        lines.append(f"- 任务名称：{state['task_name']}")
+    if state.get("task_desc"):
+        lines.append(f"- 任务描述：{state['task_desc']}")
+    if input_data.get("goal"):
+        lines.append(f"- 交付目标：{input_data['goal']}")
+    clarification = _clarification_text(state)
+    if clarification:
+        lines.append(f"- 人工确认需求：\n{clarification}")
+    context = _context_text(state)
+    if context:
+        lines.append(f"- 工作上下文：\n{context}")
+    return "\n".join(lines) or "按任务名称、任务描述和用户确认信息执行。"
+
+
+def _step_scope_text(
+    state: WorkTaskState,
+    steps: list[dict[str, Any]],
+    step: dict[str, Any],
+    step_results: list[dict[str, Any]],
+    task_mode: str,
+) -> str:
+    lines = [f"- 当前模式：{task_mode}"]
+    parent = _find_step_by_id(steps, step.get("parent_id"))
+    if parent:
+        lines.append(f"- 所属父步骤：{parent.get('title') or parent.get('description')}")
+        parent_desc = str(parent.get("description") or "").strip()
+        if parent_desc and parent_desc != (parent.get("title") or ""):
+            lines.append(f"  父步骤说明：{parent_desc}")
+    lines.append(f"- 当前步骤：{step.get('title') or step.get('description') or step.get('id')}")
+    description = str(step.get("description") or "").strip()
+    if description and description != (step.get("title") or ""):
+        lines.append(f"  步骤说明：\n{description}")
+    deliverable = step.get("deliverable") or step.get("deliverables")
+    if deliverable:
+        lines.append(f"  交付物：{_format_value(deliverable)}")
+    children = step.get("children") or []
+    if children:
+        lines.append("  子任务：")
+        for child in children:
+            lines.append(f"  - {child.get('title') or child.get('description')}")
+    dependencies = step.get("dependencies") or []
+    if dependencies:
+        dep_titles = []
+        for dep_id in dependencies:
+            dep = _find_step_by_id(steps, dep_id)
+            dep_titles.append(str(dep.get("title") or dep.get("description") or dep_id) if dep else str(dep_id))
+        lines.append(f"- 前置依赖：{'；'.join(dep_titles)}")
+    result_lines = []
+    dep_set = {str(dep) for dep in dependencies}
+    for item in step_results or []:
+        item_id = str(item.get("step_id") or "")
+        if dep_set and item_id not in dep_set:
+            continue
+        desc = item.get("description") or item.get("step_id") or "已完成步骤"
+        result = str(item.get("result") or "").strip()
+        if result:
+            result_lines.append(f"- {desc}：\n{result[:1200]}")
+    if not result_lines and step_results:
+        for item in step_results[-3:]:
+            desc = item.get("description") or item.get("step_id") or "已完成步骤"
+            result = str(item.get("result") or "").strip()
+            if result:
+                result_lines.append(f"- {desc}：\n{result[:800]}")
+    if result_lines:
+        lines.append("- 已完成结果参考：\n" + "\n".join(result_lines))
+    return "\n".join(lines)
+
+
+def _build_execute_prompt(
+    state: WorkTaskState,
+    steps: list[dict[str, Any]],
+    step: dict[str, Any],
+    step_results: list[dict[str, Any]],
+    task_mode: str,
+) -> str:
+    return (
+        "请执行 Work 任务中的当前负责部分。\n\n"
+        f"## 任务需求\n{_requirement_text(state)}\n\n"
+        f"## 已审批整体计划\n{_approved_plan_text(state, steps)}\n\n"
+        f"## 当前负责部分\n{_step_scope_text(state, steps, step, step_results, task_mode)}\n\n"
+        "## 执行要求\n"
+        "1. 先对齐任务需求和已审批整体计划，再完成当前负责部分。\n"
+        "2. 只执行当前负责部分，不重写整体计划，也不要扩展到未分配步骤。\n"
+        "3. 输出要能被后续步骤或最终交付复用，保留关键依据、结论和仍不确定的点。\n"
+        "4. 如果当前负责部分与需求或计划冲突，明确指出冲突并给出最小可行处理。"
+    )
+
+
+def _children_with_status(children: list[dict[str, Any]], status: str) -> list[dict[str, Any]]:
+    updated = []
+    for child in children or []:
+        item = dict(child)
+        item["status"] = status
+        item["children"] = _children_with_status(item.get("children") or [], status)
+        updated.append(item)
+    return updated
 
 
 def _update_step_in_tree(steps: list[dict[str, Any]], step_id: str, updates: dict[str, Any]) -> None:
@@ -1063,7 +1573,7 @@ def _work_agent_id(state: WorkTaskState, role: str) -> str:
         "researcher": "agent_nicebot_research_expert",
         "reporter": "agent_nicebot_report_expert",
     }
-    return defaults.get(role) or config.get(f"{role}_agent_id") or fallback.get(role, "")
+    return config.get(f"{role}_agent_id") or defaults.get(role) or fallback.get(role, "")
 
 
 def _load_hitl_template(template_id: str) -> dict[str, Any] | None:
@@ -1128,7 +1638,7 @@ async def _agent_clarify_content(
             "3. 对于用户已明确选择的字段，options 中应将该选择标注为推荐\n"
         )
 
-    prompt = (
+    default_prompt = (
         f"请为以下任务生成需求确认项，以 JSON 格式返回。\n\n"
         f"任务名称：{task_name}\n"
         f"任务描述：{task_desc}\n\n"
@@ -1161,6 +1671,18 @@ async def _agent_clarify_content(
         "5. 当确认项天然需要多选时（如\"关注哪些维度\"\"需要哪些数据源\"），使用 multiselect\n"
         "6. 每个 select/multiselect 类型字段必须设置 allow_custom 为 true\n"
     )
+    prompt_variables = {
+        "task_name": task_name,
+        "task_desc": task_desc,
+        "work_context": _context_text(state),
+        "history_context": history_context,
+    }
+    prompt = _render_prompt_template(clarification_config.get("content_prompt"), prompt_variables, default_prompt)
+    system_prompt = _render_prompt_template(
+        clarification_config.get("content_system_prompt"),
+        prompt_variables,
+        "你是 NiceBot Work 任务助手，擅长根据任务内容生成精准的需求确认项。只返回 JSON，不要其他内容。",
+    )
 
     if run_ctx is None:
         return _fallback_clarify_content(state)
@@ -1169,11 +1691,12 @@ async def _agent_clarify_content(
         result = await asyncio.wait_for(
             _agent_operator.execute(
                 {
-                    "system_prompt": "你是 NiceBot Work 任务助手，擅长根据任务内容生成精准的需求确认项。只返回 JSON，不要其他内容。",
+                    "system_prompt": system_prompt,
                     "user_prompt": prompt,
                     "messages": [],
                     "provider_id": state.get("provider_id"),
                     "session_id": state.get("session_id", "work"),
+                    "trace_context": _trace_context("clarify", agent_id=agent_id, agent_label=_work_agent_label(state, "assistant", agent_id)),
                 },
                 run_ctx,
                 write_stream=False,
@@ -1192,7 +1715,7 @@ async def _agent_clarify_content(
             items = _parse_confirmation_items(text)
             if items:
                 items = _ensure_allow_custom(items)
-                return {"confirmation_items": items}
+                return {"confirmation_items": items, "_reasoning_text": result.get("reasoning_text", "")}
     except (asyncio.TimeoutError, Exception):
         pass
 

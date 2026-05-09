@@ -71,6 +71,8 @@ interface ActiveConnection {
   sessionId: string;
   messageId: string;
   transport: TransportMode;
+  kind?: "chat" | "generic-agent";
+  genericRunId?: string;
   abort?: AbortController;
   ws?: WebSocket;
 }
@@ -87,6 +89,17 @@ interface SendMessageStreamOptions {
   botRecord: ChatRecord;
   skipUserHistory?: boolean;
   llmCheckpointId?: string | null;
+}
+
+interface SendGenericAgentStreamOptions {
+  sessionId: string;
+  messageId: string;
+  parts: MessagePart[];
+  userRecord?: ChatRecord;
+  botRecord: ChatRecord;
+  workspacePath?: string;
+  constraints?: string;
+  expectedOutputs?: string[];
 }
 
 interface ContinueEditedMessageOptions {
@@ -306,6 +319,28 @@ export function useMessages(options: UseMessagesOptions) {
     );
   }
 
+  function sendGenericAgentStream({
+    sessionId,
+    messageId,
+    parts,
+    botRecord,
+    userRecord,
+    workspacePath = "",
+    constraints = "",
+    expectedOutputs = [],
+  }: SendGenericAgentStreamOptions) {
+    startGenericAgentStream(
+      sessionId,
+      messageId,
+      parts,
+      botRecord,
+      userRecord,
+      workspacePath,
+      constraints,
+      expectedOutputs,
+    );
+  }
+
   async function editMessage(
     sessionId: string,
     record: ChatRecord,
@@ -404,6 +439,7 @@ export function useMessages(options: UseMessagesOptions) {
       sessionId,
       messageId: String(botRecord.id),
       transport: "sse",
+      kind: "chat",
       abort,
     };
 
@@ -447,6 +483,17 @@ export function useMessages(options: UseMessagesOptions) {
 
   async function stopSession(sessionId: string) {
     if (!sessionId) return;
+    const connection = activeConnections[sessionId];
+    if (connection?.kind === "generic-agent") {
+      if (connection.genericRunId) {
+        await axios.post(
+          `/api/plug/generic-agent/runs/${encodeURIComponent(connection.genericRunId)}/stop`,
+        );
+      } else {
+        connection.abort?.abort();
+      }
+      return;
+    }
     await axios.post("/api/chat/stop", { session_id: sessionId });
   }
 
@@ -508,6 +555,7 @@ export function useMessages(options: UseMessagesOptions) {
       sessionId,
       messageId,
       transport: "sse",
+      kind: "chat",
       abort,
     };
 
@@ -568,6 +616,7 @@ export function useMessages(options: UseMessagesOptions) {
       sessionId,
       messageId,
       transport: "websocket",
+      kind: "chat",
       ws,
     };
 
@@ -604,6 +653,72 @@ export function useMessages(options: UseMessagesOptions) {
       delete activeConnections[sessionId];
       await options.onSessionsChanged?.();
     };
+  }
+
+  function startGenericAgentStream(
+    sessionId: string,
+    messageId: string,
+    parts: MessagePart[],
+    botRecord: ChatRecord,
+    userRecord: ChatRecord | undefined,
+    workspacePath: string,
+    constraints: string,
+    expectedOutputs: string[],
+  ) {
+    const abort = new AbortController();
+    activeConnections[sessionId] = {
+      sessionId,
+      messageId,
+      transport: "sse",
+      kind: "generic-agent",
+      abort,
+    };
+
+    fetch("/api/plug/generic-agent/chat/send", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
+      },
+      body: JSON.stringify({
+        session_id: sessionId,
+        message_id: messageId,
+        message: parts.map(partToPayload),
+        workspace_path: workspacePath,
+        constraints,
+        expected_outputs: expectedOutputs,
+      }),
+      signal: abort.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok || !response.body) {
+          throw new Error(`GenericAgent stream failed: ${response.status}`);
+        }
+        await readSseStream(response.body, (payload) => {
+          const payloadType = payload?.type || payload?.t;
+          if (payloadType === "generic_agent_run") {
+            const runId = payload?.data?.id || payload?.data?.run_id || payload?.run_id;
+            if (runId && activeConnections[sessionId]) {
+              activeConnections[sessionId].genericRunId = String(runId);
+              messageContent(botRecord).refs = {
+                ...(messageContent(botRecord).refs || {}),
+                generic_agent_run_id: String(runId),
+              };
+            }
+          }
+          processStreamPayload(botRecord, payload, userRecord);
+          options.onStreamUpdate?.(sessionId);
+        });
+      })
+      .catch((error) => {
+        if (abort.signal.aborted) return;
+        appendPlain(botRecord, `\n\n${String(error?.message || error)}`);
+        console.error("GenericAgent chat failed:", error);
+      })
+      .finally(async () => {
+        delete activeConnections[sessionId];
+        await options.onSessionsChanged?.();
+      });
   }
 
   function processStreamPayload(
@@ -739,6 +854,7 @@ export function useMessages(options: UseMessagesOptions) {
     loadSessionMessages,
     createLocalExchange,
     sendMessageStream,
+    sendGenericAgentStream,
     editMessage,
     continueEditedMessage,
     regenerateMessage,

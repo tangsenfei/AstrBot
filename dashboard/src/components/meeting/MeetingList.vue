@@ -1,49 +1,49 @@
 <template>
-  <div class="work-task-list" :class="{ compact }">
+  <div class="meeting-list">
     <article
-      v-for="task in tasks"
-      :key="task.id"
-      class="work-task-card"
-      :class="{ active: selectedTaskId === task.id, 'needs-hitl': needsHuman(task) }"
+      v-for="meeting in meetings"
+      :key="meeting.id"
+      class="meeting-card"
+      :class="{ active: selectedMeetingId === meeting.id, 'needs-hitl': needsHuman(meeting) }"
     >
-      <button class="task-main" type="button" @click="emit('select', task.id)">
-        <div class="task-card-top">
-          <span class="task-status-badge" :class="`status-${task.status || 'pending'}`">
-            <v-icon :icon="statusIcon(task.status)" size="15" />
-            <span>{{ statusLabel(task.status) }}</span>
+      <button class="meeting-main" type="button" @click="emit('select', meeting.id)">
+        <div class="meeting-card-top">
+          <span class="meeting-status-badge" :class="`status-${displayStatus(meeting)}`">
+            <v-icon :icon="statusIcon(displayStatus(meeting))" size="15" />
+            <span>{{ statusLabel(displayStatus(meeting)) }}</span>
           </span>
-          <span class="task-name">{{ task.name }}</span>
-          <span class="task-top-time">{{ formatCreatedTime(task.created_at) }}</span>
-          <v-chip v-if="needsHuman(task)" color="warning" size="x-small" variant="flat">
+          <span class="meeting-name">{{ meeting.name }}</span>
+          <span class="meeting-top-time">{{ formatCreatedTime(meeting.created_at) }}</span>
+          <v-chip v-if="needsHuman(meeting)" color="warning" size="x-small" variant="flat">
             HITL
           </v-chip>
         </div>
-        <div class="task-desc">{{ task.description || taskKindLabel(task.work_task_kind || task.task_type) }}</div>
-        <v-progress-linear :model-value="task.progress || 0" :color="statusColor(task.status)" height="5" rounded />
-        <div class="task-meta">
+        <div class="meeting-desc">{{ meeting.type_info?.name || typeName(meeting.meeting_type) }}</div>
+        <v-progress-linear :model-value="meeting.progress || 0" :color="statusColor(displayStatus(meeting))" height="5" rounded />
+        <div class="meeting-meta">
           <span class="meta-icon-text">
             <v-icon size="14" icon="mdi-clock-outline" />
-            {{ formatDuration(task.started_at, task.completed_at) }}
+            {{ formatDuration(meeting.started_at, meeting.completed_at) }}
           </span>
-          <span v-if="!compact" class="meta-icon-text meta-tokens">
-            tokens {{ formatTokens(task.total_tokens) }}
+          <span class="meta-icon-text meta-tokens">
+            tokens {{ formatTokens(meeting.total_tokens) }}
           </span>
         </div>
       </button>
 
       <button
-        v-if="needsHuman(task)"
+        v-if="needsHuman(meeting)"
         class="hitl-entry"
         type="button"
-        @click.stop="emit('hitl-open', task.id)"
+        @click.stop="emit('hitl-open', meeting.id)"
       >
         <v-icon size="15" icon="mdi-hand-back-right-outline" />
-        <span>{{ task.interaction_title || '等待人工确认' }}</span>
+        <span>{{ meeting.active_hitl?.title || '等待人工确认' }}</span>
         <v-icon size="15" icon="mdi-chevron-right" />
       </button>
     </article>
 
-    <div v-if="!tasks.length && !loading" class="empty-state">暂无任务</div>
+    <div v-if="!meetings.length && !loading" class="empty-state">暂无会议</div>
     <div v-else-if="loadingMore" class="list-footer">正在加载更多...</div>
     <div v-else-if="hasMore" class="list-footer">下拉加载更多</div>
   </div>
@@ -51,42 +51,45 @@
 
 <script setup lang="ts">
 withDefaults(defineProps<{
-  tasks: any[];
-  selectedTaskId?: string | null;
+  meetings: any[];
+  selectedMeetingId?: string | null;
   loading?: boolean;
   loadingMore?: boolean;
   hasMore?: boolean;
-  compact?: boolean;
-  showHitlInline?: boolean;
   isDark?: boolean;
 }>(), {
-  tasks: () => [],
-  selectedTaskId: null,
+  meetings: () => [],
+  selectedMeetingId: null,
   loading: false,
   loadingMore: false,
   hasMore: false,
-  compact: false,
-  showHitlInline: false,
   isDark: false,
 });
 
 const emit = defineEmits<{
-  (e: 'select', taskId: string): void;
-  (e: 'hitl-open', taskId: string): void;
-  (e: 'interaction-respond', payload: { interaction_id: string; action_key: string; field_values: Record<string, any> }): void;
+  (e: 'select', meetingId: string): void;
+  (e: 'hitl-open', meetingId: string): void;
 }>();
 
-function needsHuman(task: any) {
-  return task?.status === 'waiting_feedback' || task?.has_hitl || Boolean(task?.hitl_cards?.length);
+function needsHuman(meeting: any) {
+  return Boolean(meeting?.active_hitl?.interaction_id) || Boolean(meeting?.hitl_cards?.length);
+}
+
+function displayStatus(meeting: any) {
+  if (!meeting) return 'pending';
+  if (meeting.status === 'waiting_feedback' && !needsHuman(meeting)) {
+    return Number(meeting.progress || 0) >= 100 ? 'completed' : 'running';
+  }
+  return meeting.status || 'pending';
 }
 
 function statusLabel(status: string) {
   const map: Record<string, string> = {
-    pending: '等待中',
-    running: '执行中',
-    paused: '已暂停',
+    draft: '草稿',
+    pending: '待开始',
+    running: '进行中',
     waiting_feedback: '等待确认',
-    completed: '已完成',
+    completed: '已结束',
     failed: '失败',
     cancelled: '已取消',
   };
@@ -95,7 +98,8 @@ function statusLabel(status: string) {
 
 function statusColor(status: string) {
   const map: Record<string, string> = {
-    pending: 'grey',
+    draft: 'grey',
+    pending: 'info',
     running: 'primary',
     waiting_feedback: 'warning',
     completed: 'success',
@@ -107,6 +111,7 @@ function statusColor(status: string) {
 
 function statusIcon(status: string) {
   const map: Record<string, string> = {
+    draft: 'mdi-file-outline',
     pending: 'mdi-clock-outline',
     running: 'mdi-progress-clock',
     waiting_feedback: 'mdi-account-question-outline',
@@ -117,14 +122,14 @@ function statusIcon(status: string) {
   return map[status] || 'mdi-circle-outline';
 }
 
-function taskKindLabel(kind: string) {
+function typeName(type: string) {
   const map: Record<string, string> = {
-    single_agent: '单智能体',
-    multi_agent: '多智能体',
-    workflow: '业务流',
-    work_task: 'Work 任务',
+    solution_design: '方案设计',
+    brainstorming: '头脑风暴',
+    review: '评审会议',
+    daily: '日常会议',
   };
-  return map[kind] || kind || '任务';
+  return map[type] || type || '会议';
 }
 
 function formatTokens(value: number) {
@@ -167,14 +172,14 @@ function formatDuration(started_at: string, completed_at: string) {
 </script>
 
 <style scoped>
-.work-task-list {
+.meeting-list {
   min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.work-task-card {
+.meeting-card {
   flex: 0 0 auto;
   border: 1px solid rgba(var(--v-border-color), 0.14);
   border-radius: 8px;
@@ -182,16 +187,16 @@ function formatDuration(started_at: string, completed_at: string) {
   overflow: hidden;
 }
 
-.work-task-card.active {
+.meeting-card.active {
   border-color: rgba(var(--v-theme-primary), 0.65);
   box-shadow: 0 0 0 1px rgba(var(--v-theme-primary), 0.2);
 }
 
-.work-task-card.needs-hitl {
+.meeting-card.needs-hitl {
   border-color: rgba(var(--v-theme-warning), 0.58);
 }
 
-.task-main {
+.meeting-main {
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -201,18 +206,18 @@ function formatDuration(started_at: string, completed_at: string) {
   color: inherit;
 }
 
-.task-main:hover {
+.meeting-main:hover {
   background: rgba(var(--v-theme-on-surface), 0.035);
 }
 
-.task-card-top {
+.meeting-card-top {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
 }
 
-.task-status-badge {
+.meeting-status-badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -224,37 +229,42 @@ function formatDuration(started_at: string, completed_at: string) {
   flex-shrink: 0;
 }
 
-.task-status-badge.status-pending {
+.meeting-status-badge.status-draft {
   color: rgba(var(--v-theme-on-surface), 0.55);
   background: rgba(var(--v-theme-on-surface), 0.08);
 }
 
-.task-status-badge.status-running {
+.meeting-status-badge.status-pending {
+  color: rgba(var(--v-theme-on-surface), 0.55);
+  background: rgba(var(--v-theme-on-surface), 0.08);
+}
+
+.meeting-status-badge.status-running {
   color: rgb(var(--v-theme-primary));
   background: rgba(var(--v-theme-primary), 0.1);
 }
 
-.task-status-badge.status-waiting_feedback {
+.meeting-status-badge.status-waiting_feedback {
   color: rgb(var(--v-theme-warning));
   background: rgba(var(--v-theme-warning), 0.12);
 }
 
-.task-status-badge.status-completed {
+.meeting-status-badge.status-completed {
   color: rgb(var(--v-theme-success));
   background: rgba(var(--v-theme-success), 0.1);
 }
 
-.task-status-badge.status-failed {
+.meeting-status-badge.status-failed {
   color: rgb(var(--v-theme-error));
   background: rgba(var(--v-theme-error), 0.1);
 }
 
-.task-status-badge.status-cancelled {
+.meeting-status-badge.status-cancelled {
   color: rgba(var(--v-theme-on-surface), 0.45);
   background: rgba(var(--v-theme-on-surface), 0.06);
 }
 
-.task-top-time {
+.meeting-top-time {
   flex-shrink: 0;
   font-family: 'Courier New', monospace;
   font-size: 11px;
@@ -262,7 +272,7 @@ function formatDuration(started_at: string, completed_at: string) {
   margin-left: auto;
 }
 
-.task-name {
+.meeting-name {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -272,7 +282,7 @@ function formatDuration(started_at: string, completed_at: string) {
   font-size: 14px;
 }
 
-.task-desc {
+.meeting-desc {
   color: rgba(var(--v-theme-on-surface), 0.62);
   font-size: 12px;
   line-height: 1.4;
@@ -282,7 +292,7 @@ function formatDuration(started_at: string, completed_at: string) {
   overflow: hidden;
 }
 
-.task-meta {
+.meeting-meta {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -304,10 +314,6 @@ function formatDuration(started_at: string, completed_at: string) {
 
 .meta-tokens {
   color: rgba(var(--v-theme-on-surface), 0.52);
-}
-
-.hitl-inline {
-  padding: 0 10px 10px;
 }
 
 .hitl-entry {
@@ -332,16 +338,6 @@ function formatDuration(started_at: string, completed_at: string) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.compact .task-main {
-  padding: 9px 10px;
-}
-
-.compact .hitl-inline :deep(.card-body) {
-  max-height: 110px;
-  overflow: auto;
-  font-size: 12px;
 }
 
 .empty-state {

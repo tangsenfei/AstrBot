@@ -44,6 +44,10 @@
 
         </div>
 
+        <v-alert v-if="lockedTopology" type="warning" variant="tonal" density="compact" class="mb-3">
+          内置 Work 流程已锁定节点和连线；这里只能调整节点配置。
+        </v-alert>
+
         <v-text-field
 
           v-model="localNode.data.label"
@@ -381,6 +385,24 @@
         <template v-else-if="['agent_task', 'sub_flow', 'hitl', 'review', 'deliverable'].includes(node.type)">
           <div class="text-subtitle-1 font-weight-medium mb-3 mt-4">Work 节点配置</div>
 
+          <v-text-field
+            v-model="localNode.data.config.work_stage"
+            label="work_stage"
+            variant="outlined"
+            density="compact"
+            class="mb-3"
+            @update:model-value="handleUpdate"
+          />
+          <v-text-field
+            v-if="localNode.data.config.builtin_stage"
+            v-model="localNode.data.config.builtin_stage"
+            label="内置阶段标识"
+            variant="outlined"
+            density="compact"
+            readonly
+            class="mb-3"
+          />
+
           <template v-if="node.type === 'agent_task'">
             <v-select
               v-model="localNode.data.config.assignment_mode"
@@ -408,6 +430,82 @@
               variant="outlined"
               density="compact"
               clearable
+              class="mb-3"
+              @update:model-value="handleUpdate"
+            />
+            <v-select
+              v-model="localNode.data.config.default_agent_id"
+              :items="agentOptions"
+              label="默认执行 Agent"
+              variant="outlined"
+              density="compact"
+              clearable
+              class="mb-3"
+              @update:model-value="handleUpdate"
+            />
+            <v-select
+              v-model="localNode.data.config.deep_mode_assigner_id"
+              :items="agentOptions"
+              label="深度模式分派 Agent"
+              variant="outlined"
+              density="compact"
+              clearable
+              class="mb-3"
+              @update:model-value="handleUpdate"
+            />
+            <v-select
+              v-model="localNode.data.config.research_agent_id"
+              :items="agentOptions"
+              label="研究 Agent"
+              variant="outlined"
+              density="compact"
+              clearable
+              class="mb-3"
+              @update:model-value="handleUpdate"
+            />
+            <v-text-field
+              v-model.number="localNode.data.config.max_depth"
+              type="number"
+              min="1"
+              label="规划深度"
+              variant="outlined"
+              density="compact"
+              class="mb-3"
+              @update:model-value="handleUpdate"
+            />
+            <v-text-field
+              v-model="localNode.data.config.output"
+              label="输出策略"
+              variant="outlined"
+              density="compact"
+              class="mb-3"
+              @update:model-value="handleUpdate"
+            />
+            <div class="text-subtitle-2 font-weight-medium mb-2">任务模式策略</div>
+            <v-textarea
+              v-model="localNode.data.config.task_mode_strategy.quick"
+              label="快速"
+              variant="outlined"
+              rows="2"
+              auto-grow
+              class="mb-3"
+              @update:model-value="handleUpdate"
+            />
+            <v-textarea
+              v-model="localNode.data.config.task_mode_strategy.normal"
+              label="常规"
+              variant="outlined"
+              rows="2"
+              auto-grow
+              class="mb-3"
+              @update:model-value="handleUpdate"
+            />
+            <v-textarea
+              v-model="localNode.data.config.task_mode_strategy.deep"
+              label="深度"
+              variant="outlined"
+              rows="2"
+              auto-grow
               class="mb-3"
               @update:model-value="handleUpdate"
             />
@@ -453,6 +551,32 @@
               class="mb-3"
               @update:model-value="handleUpdate"
             />
+            <v-select
+              v-model="localNode.data.config.content_provider_agent_id"
+              :items="agentOptions"
+              label="内容生成 Agent"
+              variant="outlined"
+              density="compact"
+              clearable
+              class="mb-3"
+              @update:model-value="handleUpdate"
+            />
+            <v-text-field
+              v-model="localNode.data.config.optional_config_key"
+              label="启用条件配置键"
+              variant="outlined"
+              density="compact"
+              class="mb-3"
+              @update:model-value="handleUpdate"
+            />
+            <v-checkbox
+              v-model="localNode.data.config.default_enabled"
+              label="默认启用"
+              density="compact"
+              hide-details
+              class="mb-3"
+              @update:model-value="handleUpdate"
+            />
           </template>
 
           <template v-else-if="node.type === 'review'">
@@ -476,9 +600,43 @@
               class="mb-3"
               @update:model-value="handleUpdate"
             />
+            <v-checkbox
+              v-model="localNode.data.config.default_enabled"
+              label="默认启用审查"
+              density="compact"
+              hide-details
+              class="mb-3"
+              @update:model-value="handleUpdate"
+            />
+            <v-text-field
+              v-model="localNode.data.config.optional_config_key"
+              label="启用条件配置键"
+              variant="outlined"
+              density="compact"
+              class="mb-3"
+              @update:model-value="handleUpdate"
+            />
+            <v-text-field
+              v-model="localNode.data.config.max_rework_config_key"
+              label="返工次数配置键"
+              variant="outlined"
+              density="compact"
+              class="mb-3"
+              @update:model-value="handleUpdate"
+            />
           </template>
 
           <template v-else-if="node.type === 'deliverable'">
+            <v-select
+              v-model="localNode.data.config.assistant_id"
+              :items="agentOptions"
+              label="验收助手 Agent"
+              variant="outlined"
+              density="compact"
+              clearable
+              class="mb-3"
+              @update:model-value="handleUpdate"
+            />
             <v-select
               v-model="localNode.data.config.reporter_id"
               :items="agentOptions"
@@ -509,7 +667,7 @@
 
     <!-- 操作按钮 -->
 
-    <v-card-actions v-if="node" class="pa-4 border-t">
+    <v-card-actions v-if="node && !lockedTopology" class="pa-4 border-t">
 
       <v-spacer />
 
@@ -550,6 +708,7 @@ import { useI18n } from 'vue-i18n';
 const props = defineProps<{
 
   node: any;
+  lockedTopology?: boolean;
 
 }>();
 
@@ -647,6 +806,16 @@ watch(() => props.node, (newNode) => {
   if (newNode) {
 
     localNode.value = JSON.parse(JSON.stringify(newNode));
+    localNode.value.data = localNode.value.data || {};
+    localNode.value.data.config = localNode.value.data.config || {};
+    localNode.value.data.config.work_stage = localNode.value.data.config.work_stage || localNode.value.data.label || newNode.type;
+    if (newNode.type === 'agent_task' && !localNode.value.data.config.task_mode_strategy) {
+      localNode.value.data.config.task_mode_strategy = {
+        quick: '',
+        normal: '',
+        deep: '',
+      };
+    }
 
     
 

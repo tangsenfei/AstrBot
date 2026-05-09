@@ -79,6 +79,25 @@
           </v-chip>
         </v-btn>
 
+        <v-btn
+          class="new-chat-btn generic-agent-chat-btn"
+          :class="{
+            'icon-only': isSidebarCollapsed,
+            'sidebar-workspace-btn--active': isGenericAgentWorkspace,
+          }"
+          variant="text"
+          :icon="isSidebarCollapsed"
+          @click="openGenericAgentChat"
+        >
+          <v-icon
+            size="20"
+            class="sidebar-action-icon"
+            :class="{ 'mr-2': !isSidebarCollapsed }"
+            >mdi-desktop-classic</v-icon
+          >
+          <span v-if="!isSidebarCollapsed">GenericAgent</span>
+        </v-btn>
+
         <div v-if="!isSidebarCollapsed && cliAgentClients.length" class="cli-agent-nav">
           <button
             v-for="client in cliAgentClients"
@@ -130,7 +149,7 @@
 
       <div v-if="!isSidebarCollapsed" class="session-list">
         <div
-          v-for="session in sessions"
+          v-for="session in visibleSessions"
           :key="session.session_id"
           class="session-item"
           :class="{ active: !isProviderWorkspace && currSessionId === session.session_id }"
@@ -171,7 +190,7 @@
         </div>
 
         <div
-          v-if="!isSidebarCollapsed && !sessions.length && !loadingSessions"
+          v-if="!isSidebarCollapsed && !visibleSessions.length && !loadingSessions"
           class="empty-sessions"
         >
           {{ tm("conversation.noHistory") }}
@@ -332,7 +351,7 @@
     <main
       class="chat-main"
       :class="{
-        'empty-chat': !isProviderWorkspace && !isCliAgentWorkspace &&
+        'empty-chat': !isProviderWorkspace && !isCliAgentWorkspace && !isGenericAgentWorkspace &&
           !selectedProject && !loadingMessages && !activeMessages.length,
       }"
     >
@@ -682,7 +701,7 @@ const {
   cleanupMediaCache,
 } = useMediaHandling();
 
-type WorkspaceView = "chat" | "providers" | "cli-agent";
+type WorkspaceView = "chat" | "providers" | "cli-agent" | "generic-agent";
 type CliAgentClient = {
   id: string;
   name: string;
@@ -760,6 +779,12 @@ const isProviderWorkspace = computed(
 const isCliAgentWorkspace = computed(
   () => activeWorkspace.value === "cli-agent",
 );
+const isGenericAgentWorkspace = computed(
+  () => activeWorkspace.value === "generic-agent",
+);
+const visibleSessions = computed(() =>
+  sessions.value.filter((session) => (session.display_name || "").trim() !== "GenericAgent"),
+);
 const activeReasoningParts = computed<MessagePart[]>(() => {
   if (!activeReasoningTarget.value) return [];
   const blocks = buildMessageBlocks(
@@ -788,6 +813,7 @@ const {
   loadSessionMessages,
   createLocalExchange,
   sendMessageStream,
+  sendGenericAgentStream,
   editMessage,
   continueEditedMessage,
   regenerateMessage,
@@ -867,6 +893,8 @@ onMounted(async () => {
     const routeSessionId = getRouteSessionId();
     if (routeSessionId === "models") {
       activeWorkspace.value = "providers";
+    } else if (routeSessionId === "generic-agent") {
+      await openGenericAgentRoute();
     } else if (routeSessionId.startsWith("cli-agent-")) {
       openCliAgentRoute(routeSessionId);
     } else if (routeSessionId) {
@@ -893,6 +921,10 @@ watch(
     const routeSessionId = getRouteSessionId();
     if (routeSessionId === "models") {
       activeWorkspace.value = "providers";
+      return;
+    }
+    if (routeSessionId === "generic-agent") {
+      await openGenericAgentRoute();
       return;
     }
     if (routeSessionId.startsWith("cli-agent-")) {
@@ -1063,6 +1095,46 @@ async function openNiceBotChat() {
   }
 }
 
+async function ensureGenericAgentChatSession() {
+  const existing = sessions.value.find(
+    (session) => (session.display_name || "").trim() === "GenericAgent",
+  );
+  if (existing) return existing.session_id;
+
+  const sessionId = await newSession();
+  await axios.post("/api/chat/update_session_display_name", {
+    session_id: sessionId,
+    display_name: "GenericAgent",
+  });
+  updateSessionTitle(sessionId, "GenericAgent");
+  await getSessions();
+  return sessionId;
+}
+
+async function openGenericAgentChat() {
+  closeSecondaryPanels();
+  activeWorkspace.value = "generic-agent";
+  selectedCliAgentClient.value = null;
+  selectedProjectId.value = null;
+  replyTarget.value = null;
+
+  const sessionId = await ensureGenericAgentChatSession();
+  currSessionId.value = sessionId;
+  const targetPath = `${basePath()}/generic-agent`;
+  if (route.path !== targetPath) {
+    await router.push(targetPath);
+  }
+  if (!loadedSessions[sessionId]) {
+    await loadSessionMessages(sessionId);
+  }
+  scrollToBottom();
+  closeMobileSidebar();
+}
+
+async function openGenericAgentRoute() {
+  await openGenericAgentChat();
+}
+
 async function loadPendingWorkHitlCount() {
   try {
     const response = await axios.get("/api/plug/work/tasks", {
@@ -1224,7 +1296,10 @@ async function sendCurrentMessage() {
     let sessionId = currSessionId.value;
     const targetProjectId = selectedProjectId.value;
     const targetProject = selectedProject.value;
-    if (!sessionId) {
+    if (isGenericAgentWorkspace.value) {
+      sessionId = await ensureGenericAgentChatSession();
+      currSessionId.value = sessionId;
+    } else if (!sessionId) {
       sessionId = await newSession();
       if (targetProjectId) {
         await addSessionToProject(sessionId, targetProjectId);
@@ -1243,30 +1318,44 @@ async function sendCurrentMessage() {
     const text = draft.value.trim();
     const messageId = crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`;
     const outgoingParts = buildOutgoingParts(text);
-    const selection = inputRef.value?.getCurrentSelection();
     const { userRecord, botRecord } = createLocalExchange({
       sessionId,
       messageId,
       parts: outgoingParts,
     });
-    updateTitleFromText(sessionId, text);
+    if (!isGenericAgentWorkspace.value) {
+      updateTitleFromText(sessionId, text);
+    }
 
     draft.value = "";
     replyTarget.value = null;
     clearStaged({ revokeUrls: false });
     scrollToBottom();
 
-    sendMessageStream({
-      sessionId,
-      messageId,
-      parts: outgoingParts,
-      transport: transportMode.value,
-      enableStreaming: enableStreaming.value,
-      selectedProvider: selection?.providerId || "",
-      selectedModel: selection?.modelName || "",
-      userRecord,
-      botRecord,
-    });
+    if (isGenericAgentWorkspace.value) {
+      sendGenericAgentStream({
+        sessionId,
+        messageId,
+        parts: outgoingParts,
+        userRecord,
+        botRecord,
+        constraints: "来自 Chat 的 GenericAgent 请求。只操作必要文件，遇到高风险操作请在最终回复中说明。",
+        expectedOutputs: ["在聊天中给出最终结果", "如生成或修改文件，请列出路径"],
+      });
+    } else {
+      const selection = inputRef.value?.getCurrentSelection();
+      sendMessageStream({
+        sessionId,
+        messageId,
+        parts: outgoingParts,
+        transport: transportMode.value,
+        enableStreaming: enableStreaming.value,
+        selectedProvider: selection?.providerId || "",
+        selectedModel: selection?.modelName || "",
+        userRecord,
+        botRecord,
+      });
+    }
   } catch (error) {
     console.error("Failed to send message:", error);
   } finally {

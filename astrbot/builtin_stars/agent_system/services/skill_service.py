@@ -124,6 +124,7 @@ class SkillService:
             "id": skill_id,
             "name": data["name"],
             "description": data.get("description", ""),
+            "source": data.get("source", "custom"),
             "category": data.get("category", "general"),
             "tools": tools,
             "workflow": workflow,
@@ -169,7 +170,7 @@ class SkillService:
 
         # 可更新字段
         updatable_fields = [
-            "name", "description", "category", "tools", "workflow",
+            "name", "description", "source", "category", "tools", "workflow",
             "disclosure_level", "version", "enabled", "metadata"
         ]
 
@@ -542,6 +543,7 @@ class SkillService:
             id=row["id"],
             name=row["name"],
             description=row.get("description", ""),
+            source=row.get("source", "custom"),
             category=row.get("category", "general"),
             tools=self._parse_json(row.get("tools", "[]")),
             workflow=self._parse_json(row.get("workflow", "{}")),

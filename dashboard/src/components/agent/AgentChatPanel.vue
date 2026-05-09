@@ -211,10 +211,11 @@ const messagesContainer = ref<HTMLElement | null>(null)
 const shouldStickToBottom = ref(true)
 
 function isNewRound(idx: number): boolean {
-  if (idx === 0) return true
   const current = props.messages[idx]
+  if (!current.round || current.round <= 0) return false
+  if (idx === 0) return true
   const prev = props.messages[idx - 1]
-  return current.round !== undefined && prev.round !== undefined && current.round !== prev.round
+  return !prev.round || prev.round <= 0 || current.round !== prev.round
 }
 
 function isMessageStreaming(idx: number): boolean {

@@ -9,8 +9,11 @@
       :snap-to-grid="true"
       :snap-grid="[16, 16]"
       :connection-mode="ConnectionMode.Loose"
-      :delete-key-code="['Backspace', 'Delete']"
+      :delete-key-code="lockedTopology ? [] : ['Backspace', 'Delete']"
       :connect-on-click="false"
+      :nodes-draggable="!lockedTopology"
+      :nodes-connectable="!lockedTopology"
+      :edges-updatable="!lockedTopology"
       :elevate-nodes-on-select="true"
       :auto-connect="false"
       fit-view-on-init
@@ -40,7 +43,13 @@
         <ListenNode :data="nodeProps.data" :selected="nodeProps.selected" />
       </template>
       <template #node-router="nodeProps">
-        <RouterNode :data="nodeProps.data" :selected="nodeProps.selected" />
+        <WorkNode
+          v-if="nodeProps.data?.config?.builtin_stage"
+          :data="nodeProps.data"
+          :selected="nodeProps.selected"
+          type="router"
+        />
+        <RouterNode v-else :data="nodeProps.data" :selected="nodeProps.selected" />
       </template>
       <template #node-and="nodeProps">
         <AndNode :data="nodeProps.data" :selected="nodeProps.selected" />
@@ -55,19 +64,19 @@
         <HumanNode :data="nodeProps.data" :selected="nodeProps.selected" />
       </template>
       <template #node-agent_task="nodeProps">
-        <CrewNode :data="nodeProps.data" :selected="nodeProps.selected" />
+        <WorkNode :data="nodeProps.data" :selected="nodeProps.selected" type="agent_task" />
       </template>
       <template #node-sub_flow="nodeProps">
-        <RouterNode :data="nodeProps.data" :selected="nodeProps.selected" />
+        <WorkNode :data="nodeProps.data" :selected="nodeProps.selected" type="sub_flow" />
       </template>
       <template #node-hitl="nodeProps">
-        <HumanNode :data="nodeProps.data" :selected="nodeProps.selected" />
+        <WorkNode :data="nodeProps.data" :selected="nodeProps.selected" type="hitl" />
       </template>
       <template #node-review="nodeProps">
-        <HumanNode :data="nodeProps.data" :selected="nodeProps.selected" />
+        <WorkNode :data="nodeProps.data" :selected="nodeProps.selected" type="review" />
       </template>
       <template #node-deliverable="nodeProps">
-        <HumanNode :data="nodeProps.data" :selected="nodeProps.selected" />
+        <WorkNode :data="nodeProps.data" :selected="nodeProps.selected" type="deliverable" />
       </template>
     </VueFlow>
 
@@ -96,11 +105,13 @@ import AndNode from './nodes/AndNode.vue';
 import OrNode from './nodes/OrNode.vue';
 import CrewNode from './nodes/CrewNode.vue';
 import HumanNode from './nodes/HumanNode.vue';
+import WorkNode from './nodes/WorkNode.vue';
 import CustomConnectionLine from './CustomConnectionLine.vue';
 
 const props = defineProps<{
   nodes: any[];
   edges: any[];
+  lockedTopology?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -131,6 +142,11 @@ const {
 const nodes = ref<any[]>([]);
 const edges = ref<any[]>([]);
 const isDraggingNode = ref(false);
+const lockedTopology = ref(false);
+
+watch(() => props.lockedTopology, (value) => {
+  lockedTopology.value = Boolean(value);
+}, { immediate: true });
 
 watch(() => props.nodes, (newNodes) => {
   nodes.value = newNodes;
@@ -157,14 +173,21 @@ function handlePaneClick() {
 }
 
 function handleNodesChange(changes: any[]) {
+  if (lockedTopology.value && changes.some(change => ['remove', 'add', 'position'].includes(change.type))) {
+    return;
+  }
   emit('nodes-change', changes);
 }
 
 function handleEdgesChange(changes: any[]) {
+  if (lockedTopology.value && changes.some(change => ['remove', 'add'].includes(change.type))) {
+    return;
+  }
   emit('edges-change', changes);
 }
 
 function handleNodeDragStart() {
+  if (lockedTopology.value) return;
   isDraggingNode.value = true;
 }
 
@@ -173,6 +196,8 @@ function handleNodeDragStop() {
 }
 
 function handleConnect(params: any) {
+  if (lockedTopology.value) return;
+
   const sourceNode = findNode(params.source);
   const targetNode = findNode(params.target);
 
@@ -201,6 +226,8 @@ function handleConnect(params: any) {
 }
 
 function handleDragOver(event: DragEvent) {
+  if (lockedTopology.value) return;
+
   event.preventDefault();
   if (event.dataTransfer) {
     event.dataTransfer.dropEffect = 'move';
@@ -208,6 +235,8 @@ function handleDragOver(event: DragEvent) {
 }
 
 function handleDrop(event: DragEvent) {
+  if (lockedTopology.value) return;
+
   event.preventDefault();
 
   const type = event.dataTransfer?.getData('application/vueflow');

@@ -29,7 +29,8 @@
               v-for="node in filteredStartNodes"
               :key="node.type"
               class="node-item mb-2"
-              draggable="true"
+              :class="{ disabled: lockedTopology }"
+              :draggable="!lockedTopology"
               @dragstart="handleDragStart($event, node)"
               @dragend="handleDragEnd"
             >
@@ -55,7 +56,8 @@
               v-for="node in filteredListenNodes"
               :key="node.type"
               class="node-item mb-2"
-              draggable="true"
+              :class="{ disabled: lockedTopology }"
+              :draggable="!lockedTopology"
               @dragstart="handleDragStart($event, node)"
               @dragend="handleDragEnd"
             >
@@ -81,7 +83,8 @@
               v-for="node in filteredRouterNodes"
               :key="node.type"
               class="node-item mb-2"
-              draggable="true"
+              :class="{ disabled: lockedTopology }"
+              :draggable="!lockedTopology"
               @dragstart="handleDragStart($event, node)"
               @dragend="handleDragEnd"
             >
@@ -107,7 +110,8 @@
               v-for="node in filteredParallelNodes"
               :key="node.type"
               class="node-item mb-2"
-              draggable="true"
+              :class="{ disabled: lockedTopology }"
+              :draggable="!lockedTopology"
               @dragstart="handleDragStart($event, node)"
               @dragend="handleDragEnd"
             >
@@ -133,7 +137,8 @@
               v-for="node in filteredCrewNodes"
               :key="node.type"
               class="node-item mb-2"
-              draggable="true"
+              :class="{ disabled: lockedTopology }"
+              :draggable="!lockedTopology"
               @dragstart="handleDragStart($event, node)"
               @dragend="handleDragEnd"
             >
@@ -159,7 +164,8 @@
               v-for="node in filteredHumanNodes"
               :key="node.type"
               class="node-item mb-2"
-              draggable="true"
+              :class="{ disabled: lockedTopology }"
+              :draggable="!lockedTopology"
               @dragstart="handleDragStart($event, node)"
               @dragend="handleDragEnd"
             >
@@ -185,7 +191,8 @@
               v-for="node in filteredWorkNodes"
               :key="node.type"
               class="node-item mb-2"
-              draggable="true"
+              :class="{ disabled: lockedTopology }"
+              :draggable="!lockedTopology"
               @dragstart="handleDragStart($event, node)"
               @dragend="handleDragEnd"
             >
@@ -204,7 +211,10 @@
     </v-card-text>
 
     <v-card-text class="pt-0 pb-4">
-      <v-alert type="info" variant="tonal" density="compact">
+      <v-alert v-if="lockedTopology" type="warning" variant="tonal" density="compact">
+        内置 Work 流程已锁定拓扑，可在属性面板调整节点配置。
+      </v-alert>
+      <v-alert v-else type="info" variant="tonal" density="compact">
         {{ $t('agent.flows.palette.dragHint') }}
       </v-alert>
     </v-card-text>
@@ -217,6 +227,10 @@ import { useI18n } from 'vue-i18n';
 
 const emit = defineEmits<{
   (e: 'drag-start', event: DragEvent, nodeType: string): void;
+}>();
+
+const props = defineProps<{
+  lockedTopology?: boolean;
 }>();
 
 const { t } = useI18n();
@@ -274,6 +288,11 @@ const filteredHumanNodes = computed(() => filterNodes(humanNodes.value));
 const filteredWorkNodes = computed(() => filterNodes(workNodes.value));
 
 function handleDragStart(event: DragEvent, node: any) {
+  if (props.lockedTopology) {
+    event.preventDefault();
+    return;
+  }
+
   if (event.dataTransfer) {
     event.dataTransfer.setData('application/vueflow', node.type);
     event.dataTransfer.setData('application/vueflow-label', node.label);
@@ -302,6 +321,16 @@ function handleDragEnd() {}
 .node-item {
   cursor: grab;
   transition: transform 0.15s ease;
+}
+
+.node-item.disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.node-item.disabled .node-card:hover {
+  transform: none;
+  box-shadow: none;
 }
 
 .node-item:active {

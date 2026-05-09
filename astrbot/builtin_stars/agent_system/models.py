@@ -102,6 +102,17 @@ class RoundtableStatus(Enum):
     FAILED = "failed"
 
 
+class MeetingStatus(Enum):
+    """Meeting 工作台会议状态"""
+    DRAFT = "draft"
+    PENDING = "pending"
+    RUNNING = "running"
+    WAITING_FEEDBACK = "waiting_feedback"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
 # ==================== 工具相关模型 ====================
 
 @dataclass
@@ -876,6 +887,113 @@ class WorkArtifact:
             "artifact_type": self.artifact_type,
             "content": self.content,
             "file_path": self.file_path,
+            "metadata": self.metadata,
+            "created_at": self.created_at.isoformat(),
+        }
+
+
+# ==================== Meeting 工作台相关模型 ====================
+
+@dataclass
+class Meeting:
+    """Meeting 工作台会议"""
+    id: str
+    name: str
+    goal: str
+    meeting_type: str
+    expected_output: str = ""
+    participants: list[str] = field(default_factory=list)
+    materials: dict[str, Any] = field(default_factory=dict)
+    settings: dict[str, Any] = field(default_factory=dict)
+    status: MeetingStatus = MeetingStatus.PENDING
+    stage: str = "goal"
+    progress: int = 0
+    current_round: int = 0
+    current_speaker: str = ""
+    assistant_agent_id: str = "agent_meeting_assistant"
+    result: dict[str, Any] = field(default_factory=dict)
+    task_id: str = ""
+    total_tokens: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    created_at: datetime = field(default_factory=datetime.now)
+    updated_at: datetime = field(default_factory=datetime.now)
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "goal": self.goal,
+            "meeting_type": self.meeting_type,
+            "expected_output": self.expected_output,
+            "participants": self.participants,
+            "materials": self.materials,
+            "settings": self.settings,
+            "status": self.status.value,
+            "stage": self.stage,
+            "progress": self.progress,
+            "current_round": self.current_round,
+            "current_speaker": self.current_speaker,
+            "assistant_agent_id": self.assistant_agent_id,
+            "result": self.result,
+            "task_id": self.task_id,
+            "total_tokens": self.total_tokens,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+        }
+
+
+@dataclass
+class MeetingEvent:
+    """Meeting 工作台会议事件"""
+    id: str
+    meeting_id: str
+    event_type: str
+    role: str = "assistant"
+    speaker: str = ""
+    round: int = 0
+    content: str = ""
+    payload: dict[str, Any] = field(default_factory=dict)
+    created_at: datetime = field(default_factory=datetime.now)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "meeting_id": self.meeting_id,
+            "event_type": self.event_type,
+            "role": self.role,
+            "speaker": self.speaker,
+            "round": self.round,
+            "content": self.content,
+            "payload": self.payload,
+            "created_at": self.created_at.isoformat(),
+        }
+
+
+@dataclass
+class MeetingArtifact:
+    """Meeting 工作台会议产出物"""
+    id: str
+    meeting_id: str
+    title: str
+    artifact_type: str = "minutes"
+    content: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+    created_at: datetime = field(default_factory=datetime.now)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "meeting_id": self.meeting_id,
+            "title": self.title,
+            "artifact_type": self.artifact_type,
+            "content": self.content,
             "metadata": self.metadata,
             "created_at": self.created_at.isoformat(),
         }

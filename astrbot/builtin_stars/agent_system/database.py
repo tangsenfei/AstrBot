@@ -35,10 +35,13 @@ class Database:
     def conn(self) -> sqlite3.Connection:
         """获取数据库连接"""
         if self._conn is None:
-            self._conn = sqlite3.connect(str(self.db_path))
+            self._conn = sqlite3.connect(str(self.db_path), timeout=5)
             self._conn.row_factory = sqlite3.Row
             # 启用外键约束
             self._conn.execute("PRAGMA foreign_keys = ON")
+            self._conn.execute("PRAGMA busy_timeout = 5000")
+            self._conn.execute("PRAGMA journal_mode = WAL")
+            self._conn.execute("PRAGMA synchronous = NORMAL")
         return self._conn
 
     def close(self) -> None:
@@ -381,6 +384,62 @@ class Database:
             )
         """)
 
+        # Meeting 工作台会议表
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS meetings (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                goal TEXT NOT NULL,
+                meeting_type TEXT NOT NULL,
+                expected_output TEXT DEFAULT '',
+                participants TEXT DEFAULT '[]',
+                materials TEXT DEFAULT '{}',
+                settings TEXT DEFAULT '{}',
+                status TEXT DEFAULT 'pending',
+                stage TEXT DEFAULT 'goal',
+                progress INTEGER DEFAULT 0,
+                current_round INTEGER DEFAULT 0,
+                current_speaker TEXT DEFAULT '',
+                assistant_agent_id TEXT DEFAULT 'agent_meeting_assistant',
+                result TEXT DEFAULT '{}',
+                task_id TEXT DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                started_at TEXT DEFAULT NULL,
+                completed_at TEXT DEFAULT NULL
+            )
+        """)
+
+        # Meeting 工作台事件表：消息、工具调用、HITL、阶段变化
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS meeting_events (
+                id TEXT PRIMARY KEY,
+                meeting_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                role TEXT DEFAULT 'assistant',
+                speaker TEXT DEFAULT '',
+                round INTEGER DEFAULT 0,
+                content TEXT DEFAULT '',
+                payload TEXT DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (meeting_id) REFERENCES meetings(id) ON DELETE CASCADE
+            )
+        """)
+
+        # Meeting 工作台会议产出物
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS meeting_artifacts (
+                id TEXT PRIMARY KEY,
+                meeting_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                artifact_type TEXT DEFAULT 'minutes',
+                content TEXT DEFAULT '',
+                metadata TEXT DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (meeting_id) REFERENCES meetings(id) ON DELETE CASCADE
+            )
+        """)
+
         # 通用 HITL 人工交互请求表
         self.execute("""
             CREATE TABLE IF NOT EXISTS hitl_requests (
@@ -552,6 +611,79 @@ class Database:
             )
         """)
 
+        # GenericAgent configuration storage.
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS generic_agent_config (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+
+        # GenericAgent run records.
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS generic_agent_runs (
+                id TEXT PRIMARY KEY,
+                source TEXT NOT NULL DEFAULT 'manual',
+                goal TEXT NOT NULL,
+                constraints TEXT DEFAULT '',
+                expected_outputs TEXT DEFAULT '[]',
+                workspace_path TEXT DEFAULT '',
+                parent_task_id TEXT DEFAULT '',
+                status TEXT DEFAULT 'pending',
+                queue_position INTEGER DEFAULT 0,
+                progress INTEGER DEFAULT 0,
+                summary TEXT DEFAULT '',
+                artifacts TEXT DEFAULT '[]',
+                error TEXT DEFAULT '',
+                pid INTEGER DEFAULT NULL,
+                started_at TEXT DEFAULT NULL,
+                completed_at TEXT DEFAULT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+
+        # GenericAgent event timeline.
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS generic_agent_events (
+                id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                title TEXT DEFAULT '',
+                payload TEXT DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (run_id) REFERENCES generic_agent_runs(id) ON DELETE CASCADE
+            )
+        """)
+
+        # GenericAgent global tool policies.
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS generic_agent_tool_policies (
+                tool_name TEXT PRIMARY KEY,
+                enabled INTEGER DEFAULT 1,
+                description TEXT DEFAULT '',
+                updated_at TEXT NOT NULL
+            )
+        """)
+
+        # GenericAgent skill review queue.
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS generic_agent_skill_reviews (
+                id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                content TEXT DEFAULT '',
+                source_path TEXT DEFAULT '',
+                status TEXT DEFAULT 'pending',
+                synced_skill_id TEXT DEFAULT '',
+                created_at TEXT NOT NULL,
+                reviewed_at TEXT DEFAULT NULL,
+                FOREIGN KEY (run_id) REFERENCES generic_agent_runs(id) ON DELETE CASCADE
+            )
+        """)
+
         # 智能体记忆表
         self.execute("""
             CREATE TABLE IF NOT EXISTS agent_memories (
@@ -621,6 +753,9 @@ class Database:
             ("agent_tasks", "total_tokens", "INTEGER DEFAULT 0"),
             ("agent_tasks", "input_tokens", "INTEGER DEFAULT 0"),
             ("agent_tasks", "output_tokens", "INTEGER DEFAULT 0"),
+            ("meetings", "total_tokens", "INTEGER DEFAULT 0"),
+            ("meetings", "input_tokens", "INTEGER DEFAULT 0"),
+            ("meetings", "output_tokens", "INTEGER DEFAULT 0"),
             ("roundtables", "discussion_records", "TEXT DEFAULT '[]'"),
             ("roundtables", "current_round", "INTEGER DEFAULT 0"),
             ("roundtables", "current_speaker", "TEXT DEFAULT ''"),
@@ -654,6 +789,14 @@ class Database:
             ("work_task_steps", "executor_id", "TEXT DEFAULT ''"),
             ("work_task_steps", "reviewer_id", "TEXT DEFAULT ''"),
             ("work_task_steps", "result_ref", "TEXT DEFAULT ''"),
+            ("meetings", "expected_output", "TEXT DEFAULT ''"),
+            ("meetings", "materials", "TEXT DEFAULT '{}'"),
+            ("meetings", "settings", "TEXT DEFAULT '{}'"),
+            ("meetings", "assistant_agent_id", "TEXT DEFAULT 'agent_meeting_assistant'"),
+            ("meetings", "result", "TEXT DEFAULT '{}'"),
+            ("meetings", "task_id", "TEXT DEFAULT ''"),
+            ("meetings", "started_at", "TEXT DEFAULT NULL"),
+            ("meetings", "completed_at", "TEXT DEFAULT NULL"),
         ]
 
         for table, column, col_type in migrations:
@@ -714,6 +857,10 @@ class Database:
             "CREATE INDEX IF NOT EXISTS idx_work_projects_status ON work_projects(status)",
             "CREATE INDEX IF NOT EXISTS idx_work_daily_dirs_status ON work_daily_dirs(status)",
             "CREATE INDEX IF NOT EXISTS idx_work_artifacts_task ON work_artifacts(task_id)",
+            "CREATE INDEX IF NOT EXISTS idx_meetings_status ON meetings(status)",
+            "CREATE INDEX IF NOT EXISTS idx_meetings_type ON meetings(meeting_type)",
+            "CREATE INDEX IF NOT EXISTS idx_meeting_events_meeting ON meeting_events(meeting_id)",
+            "CREATE INDEX IF NOT EXISTS idx_meeting_artifacts_meeting ON meeting_artifacts(meeting_id)",
             "CREATE INDEX IF NOT EXISTS idx_hitl_requests_task ON hitl_requests(task_id)",
             "CREATE INDEX IF NOT EXISTS idx_hitl_requests_status ON hitl_requests(status)",
             "CREATE INDEX IF NOT EXISTS idx_hitl_templates_type ON hitl_templates(template_type)",
@@ -728,6 +875,12 @@ class Database:
             "CREATE INDEX IF NOT EXISTS idx_cli_agent_events_session ON cli_agent_events(session_id)",
             "CREATE INDEX IF NOT EXISTS idx_cli_agent_permissions_session ON cli_agent_permissions(session_id)",
             "CREATE INDEX IF NOT EXISTS idx_cli_agent_permissions_status ON cli_agent_permissions(status)",
+            "CREATE INDEX IF NOT EXISTS idx_generic_agent_runs_status ON generic_agent_runs(status)",
+            "CREATE INDEX IF NOT EXISTS idx_generic_agent_runs_created ON generic_agent_runs(created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_generic_agent_runs_parent_task ON generic_agent_runs(parent_task_id)",
+            "CREATE INDEX IF NOT EXISTS idx_generic_agent_events_run ON generic_agent_events(run_id)",
+            "CREATE INDEX IF NOT EXISTS idx_generic_agent_events_type ON generic_agent_events(event_type)",
+            "CREATE INDEX IF NOT EXISTS idx_generic_agent_skill_reviews_status ON generic_agent_skill_reviews(status)",
         ]
 
         for index_sql in indexes:

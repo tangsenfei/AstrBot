@@ -183,6 +183,7 @@ class LiveChatRoute(Route):
             # 清理会话
             if session_id in self.sessions:
                 await self._cleanup_chat_subscriptions(live_session)
+                webchat_queue_mgr.remove_queues(live_session.conversation_id)
                 live_session.cleanup()
                 del self.sessions[session_id]
             logger.info(f"[Live Chat] WebSocket 连接关闭: {username}")

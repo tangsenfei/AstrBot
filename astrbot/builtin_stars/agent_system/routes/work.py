@@ -30,6 +30,7 @@ def register_work_routes(plugin: AgentSystemPlugin) -> None:
         ("/work/daily-dirs/<daily_dir_id>", _update_daily_dir, ["PATCH"], "更新 Work 日常目录"),
         ("/work/daily-dirs/<daily_dir_id>", _delete_daily_dir, ["DELETE"], "归档 Work 日常目录"),
         ("/work/tasks", _list_tasks, ["GET"], "Work 任务列表"),
+        ("/work/tasks/summaries", _list_task_summaries, ["GET"], "Work 任务摘要列表"),
         ("/work/tasks", _create_task, ["POST"], "创建 Work 任务"),
         ("/work/tasks/<task_id>", _get_task, ["GET"], "获取 Work 任务详情"),
         ("/work/tasks/<task_id>/logs", _list_task_logs, ["GET"], "获取 Work 任务日志"),
@@ -145,6 +146,14 @@ async def _list_tasks():
         return Response().error(str(e)).__dict__
 
 
+async def _list_task_summaries():
+    try:
+        return Response().ok({"tasks": _get_work_service().list_task_summaries(_ids_from_request())}).__dict__
+    except Exception as e:
+        logger.error(f"Failed to list work task summaries: {e}", exc_info=True)
+        return Response().error(str(e)).__dict__
+
+
 async def _create_task():
     try:
         data = await request.get_json() or {}
@@ -251,11 +260,13 @@ async def _list_artifacts(task_id: str):
 
 
 async def _task_events(task_id: str):
+    requested_after_seq = request.args.get("after_seq", type=int) or 0
+
     async def event_generator():
         service = _get_work_service()
         try:
             task = _task_event_snapshot(service, task_id)
-            after_seq = request.args.get("after_seq", type=int) or 0
+            after_seq = requested_after_seq
             seen_artifacts: set[str] = set(_artifact_ids(service, task_id))
             last_status = task.get("status", "")
             yield _sse("phase", {"status": last_status, "progress": task.get("progress", 0)})
@@ -327,3 +338,13 @@ def _artifact_ids(service, task_id: str) -> list[str]:
 
 def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _ids_from_request() -> list[str]:
+    values = request.args.getlist("ids")
+    if not values:
+        values = [request.args.get("ids", "")]
+    ids: list[str] = []
+    for value in values:
+        ids.extend(item.strip() for item in str(value).split(",") if item.strip())
+    return list(dict.fromkeys(ids))

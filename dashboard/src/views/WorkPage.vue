@@ -103,7 +103,10 @@
         :tasks="filteredTasks"
         :selected-task-id="selectedTaskId"
         :loading="loading"
+        :loading-more="loadingMore"
+        :has-more="hasMore"
         :is-dark="isDark"
+        @scroll.passive="handleTaskListScroll"
         @select="selectTask"
         @hitl-open="openTaskHitl"
         @interaction-respond="handleInteractionRespond"
@@ -138,36 +141,98 @@
           </div>
         </header>
 
-        <v-tabs v-model="detailTab" density="compact" class="detail-tabs">
-          <v-tab value="logs">
-            <v-icon start size="16">mdi-text-box-search-outline</v-icon>
-            日志
-          </v-tab>
-          <v-tab value="artifacts" :disabled="!isCompleted(selectedTask)">
-            <v-icon start size="16">mdi-package-variant-closed</v-icon>
-            交付物
-          </v-tab>
-        </v-tabs>
-
-        <section class="detail-body">
-          <div v-if="detailTab === 'artifacts'" class="artifact-list">
-            <article v-for="artifact in displayArtifacts" :key="artifact.id" class="artifact-item">
-              <div class="artifact-title">
-                <v-icon size="18">mdi-file-document-outline</v-icon>
-                <span>{{ artifactTitle(artifact) }}</span>
-              </div>
-              <pre>{{ artifactText(artifact) }}</pre>
-            </article>
-            <div v-if="!displayArtifacts.length" class="empty-state">任务完成后会在这里显示交付结果</div>
+        <div v-if="stageSteps.length" class="detail-stage-strip">
+          <div
+            v-for="(stage, idx) in stageSteps"
+            :key="stage.id"
+            class="stage-chip"
+            :class="{
+              'stage-done': stage.status === 'done' || stage.status === 'completed',
+              'stage-running': stage.status === 'running',
+              'stage-pending': stage.status === 'pending',
+              'stage-failed': stage.status === 'failed',
+              active: selectedStageIndex === idx,
+            }"
+            @click="selectStage(idx)"
+          >
+            <v-icon :icon="stage.status === 'done' || stage.status === 'completed' ? 'mdi-check-circle' : stage.status === 'running' ? 'mdi-progress-clock' : stage.status === 'failed' ? 'mdi-alert-circle' : 'mdi-circle-outline'" size="14" />
+            <span class="stage-label">{{ stage.title || stage.description || stage.name }}</span>
           </div>
+        </div>
 
-          <div v-else class="raw-log-list">
-            <div v-for="log in displayLogs" :key="log.id" class="raw-log-row" :class="{ wide: log.kind === 'text' }">
-              <span>{{ formatDate(log.created_at) }}</span>
-              <strong>{{ log.label }}</strong>
-              <p>{{ log.message }}</p>
+        <section class="detail-body node-detail-body">
+          <div v-if="selectedNode" class="node-detail">
+            <div class="node-agent-strip">
+              <div class="node-agent-main">
+                <v-icon size="16">mdi-account-cog-outline</v-icon>
+                <span>{{ nodeAgentText(selectedNode) }}</span>
+              </div>
+              <div class="node-time-meta">
+                <span>进入 {{ formatDate(selectedNode.entered_at || selectedNode.started_at) }}</span>
+                <span>完成 {{ formatDate(selectedNode.completed_at) }}</span>
+                <span>耗时 {{ formatDuration(selectedNode.duration_ms) }}</span>
+              </div>
+              <v-chip :color="stepColor(selectedNode.status)" size="small" variant="tonal">
+                {{ stepStatusLabel(selectedNode.status) }}
+              </v-chip>
+            </div>
+
+            <div v-if="selectedStage?.id === 'stage_execute'" class="execution-detail-grid">
+              <div class="execution-tree-panel">
+                <div class="section-title">依赖执行树</div>
+                <div v-if="executionGraph.length" class="execution-tree">
+                  <template v-for="node in executionGraph" :key="node.id">
+                    <button
+                      class="execution-node"
+                      :class="{ active: selectedExecutionNode?.id === node.id }"
+                      type="button"
+                      @click="selectedExecutionNode = node"
+                    >
+                      <v-icon :color="stepColor(node.status)" :icon="stepIcon(node.status)" size="16" />
+                      <span>{{ stepPreviewText(node.title || node.description) }}</span>
+                    </button>
+                    <button
+                      v-for="child in node.children || []"
+                      :key="child.id"
+                      class="execution-node child"
+                      :class="{ active: selectedExecutionNode?.id === child.id }"
+                      type="button"
+                      @click="selectedExecutionNode = child"
+                    >
+                      <span class="tree-branch" />
+                      <v-icon :color="stepColor(child.status)" :icon="stepIcon(child.status)" size="16" />
+                      <span>{{ stepPreviewText(child.title || child.description) }}</span>
+                    </button>
+                  </template>
+                </div>
+                <div v-else class="empty-state compact">暂无依赖树</div>
+              </div>
+              <div v-if="selectedExecutionNode?.result" class="execution-result-panel">
+                <div class="section-title">节点输出</div>
+                <pre>{{ selectedExecutionNode.result }}</pre>
+              </div>
+            </div>
+
+            <WorkProgressTimeline
+              :logs="selectedNodeLogs"
+              :active-cards="selectedStage?.id === 'stage_execute' ? [] : interactionCards"
+              :is-dark="isDark"
+              :agent-label="nodeAgentLabel(selectedNode)"
+              :loading="detailLoading"
+              @interaction-respond="handleInteractionRespond"
+            />
+
+            <div v-if="selectedStage?.id === 'stage_deliver'" class="artifact-list node-artifacts">
+              <article v-for="artifact in displayArtifacts" :key="artifact.id" class="artifact-item">
+                <div class="artifact-title">
+                  <v-icon size="18">mdi-file-document-outline</v-icon>
+                  <span>{{ artifactTitle(artifact) }}</span>
+                </div>
+                <pre>{{ artifactText(artifact) }}</pre>
+              </article>
             </div>
           </div>
+          <div v-else class="empty-state">暂无节点详情</div>
         </section>
 
         <section class="input-panel">
@@ -193,60 +258,6 @@
         <div>选择一个任务查看执行进展</div>
       </div>
     </main>
-
-    <aside class="work-progress-pane">
-      <div class="progress-pane-header">
-        <div class="pane-title small">任务进度</div>
-      </div>
-      <div v-if="selectedTask" class="step-list-wrap">
-        <div v-if="stageSteps.length" class="stage-progress-bar">
-          <div
-            v-for="(stage, idx) in stageSteps"
-            :key="stage.id"
-            class="stage-chip"
-            :class="{
-              'stage-done': stage.status === 'done' || stage.status === 'completed',
-              'stage-running': stage.status === 'running',
-              'stage-pending': stage.status === 'pending',
-              'stage-failed': stage.status === 'failed',
-            }"
-            @click="selectedStageIndex = idx"
-          >
-            <v-icon :icon="stage.status === 'done' || stage.status === 'completed' ? 'mdi-check-circle' : stage.status === 'running' ? 'mdi-progress-clock' : stage.status === 'failed' ? 'mdi-alert-circle' : 'mdi-circle-outline'" size="14" />
-            <span class="stage-label">{{ stage.title || stage.description || stage.name }}</span>
-          </div>
-        </div>
-        <div class="step-list">
-          <transition-group name="step-list" tag="div">
-            <button
-              v-for="step in executionSteps"
-              :key="step.id || step.description"
-              class="step-row"
-              :class="{ child: step.depth === 2, blocked: hasUnfinishedDependencies(step), running: step.status === 'running' }"
-              type="button"
-              @click="selectedStep = step"
-            >
-              <span v-if="step.depth === 2" class="tree-branch" />
-              <v-icon :color="stepColor(step.status)" :icon="stepIcon(step.status)" size="18" />
-              <div>
-                <div class="step-title">{{ stepPreviewText(step.title || step.description || step.name) }}</div>
-                <div v-if="step.dependencies?.length" class="step-deps">
-                  <v-icon size="13" icon="mdi-arrow-right-thin" />
-                  前置：{{ dependencyLabels(step.dependencies) }}
-                </div>
-                <div v-if="executorDisplay(step)" class="step-deps">
-                  <v-icon size="13" icon="mdi-account-cog-outline" />
-                  {{ executorDisplay(step) }}
-                </div>
-                <div v-if="step.result" class="step-result">{{ stepPreviewText(step.result) }}</div>
-              </div>
-            </button>
-          </transition-group>
-          <div v-if="!executionSteps.length" class="empty-state compact">暂无执行步骤</div>
-        </div>
-      </div>
-      <div v-else class="empty-state compact progress-empty">选择任务后查看步骤</div>
-    </aside>
 
     <v-dialog v-model="stepDialog" max-width="760">
       <v-card v-if="selectedStep">
@@ -382,20 +393,21 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import axios from 'axios';
 import WorkTaskList from '@/components/work/WorkTaskList.vue';
+import WorkProgressTimeline from '@/components/work/WorkProgressTimeline.vue';
 import HitlDialog from '@/components/chat/HitlDialog.vue';
+import { usePagedTaskList } from '@/composables/usePagedTaskList';
+import { useSelectedEventStream } from '@/composables/useSelectedEventStream';
 import { useCustomizerStore } from '@/stores/customizer';
 
 const customizer = useCustomizerStore();
 const isDark = computed(() => customizer.uiTheme === 'PurpleThemeDark');
 
-const loading = ref(false);
 const detailLoading = ref(false);
 const projects = ref<any[]>([]);
 const dailyDirs = ref<any[]>([]);
-const tasks = ref<any[]>([]);
 const selectedScope = ref<'daily' | 'project'>('daily');
 const selectedProjectId = ref<string | null>(null);
 const selectedDailyDirId = ref<string | null>(null);
@@ -406,19 +418,34 @@ const artifacts = ref<any[]>([]);
 const interactionCards = ref<any[]>([]);
 const hitlDialog = ref(false);
 const selectedStep = ref<any | null>(null);
+const selectedExecutionNode = ref<any | null>(null);
 const detailTab = ref('logs');
 const searchQuery = ref('');
 const statusFilter = ref<string | null>(null);
 const kindFilter = ref<string | null>(null);
 const supplementText = ref('');
 const submittingInput = ref(false);
-let pollTimer: ReturnType<typeof setInterval> | null = null;
-let eventSource: EventSource | null = null;
-let sseDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let summaryRefreshTimer: ReturnType<typeof setInterval> | null = null;
+let selectedRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 let selectedTaskRequestId = 0;
-let taskListRequestId = 0;
 let selectedTaskLoading = false;
 let pendingSelectedReload = false;
+const taskList = usePagedTaskList<any>({
+  pageSize: 30,
+  loadPage: loadTaskPage,
+});
+const tasks = taskList.items;
+const loading = taskList.loading;
+const loadingMore = taskList.loadingMore;
+const hasMore = taskList.hasMore;
+const workStream = useSelectedEventStream({
+  eventNames: ['phase', 'text_delta', 'tool_call', 'tool_result', 'reasoning', 'token', 'artifact', 'interaction', 'hitl_resolved', 'error', 'done', 'log'],
+  streamUrl: (taskId, afterSeq) => `/api/plug/work/tasks/${encodeURIComponent(taskId)}/events?after_seq=${afterSeq}`,
+  getAfterSeq: maxLogSeq,
+  onEvent: handleWorkStreamEvent,
+  onFallback: taskId => loadTaskLogs(taskId, maxLogSeq()),
+  shouldReconnect: taskId => selectedTaskId.value === taskId && !isCompleted(selectedTask.value),
+});
 
 const agents = ref<any[]>([]);
 const crews = ref<any[]>([]);
@@ -458,13 +485,7 @@ const scopeOptions = [
 ];
 
 const filteredTasks = computed(() => {
-  const q = searchQuery.value.trim().toLowerCase();
-  return tasks.value.filter((task) => {
-    if (statusFilter.value && task.status !== statusFilter.value) return false;
-    if (kindFilter.value && task.work_task_kind !== kindFilter.value) return false;
-    if (q && !`${task.name} ${task.description || ''}`.toLowerCase().includes(q)) return false;
-    return true;
-  });
+  return tasks.value;
 });
 
 const steps = computed(() => {
@@ -497,13 +518,22 @@ const activeHitlCard = computed(() =>
 );
 const flattenedSteps = computed(() => flattenSteps(steps.value));
 const selectedStageIndex = ref(0);
-const stageSteps = computed(() =>
-  flattenedSteps.value.filter((step: any) => /(?:^|:)stage_/.test(String(step.id || '')))
-);
+const timeline = computed(() => selectedTask.value?.timeline || { stages: [], execution_graph: [], unclassified_events: [] });
+const stageSteps = computed(() => {
+  const stages = Array.isArray(timeline.value?.stages) ? timeline.value.stages : [];
+  if (stages.length) return stages;
+  return flattenedSteps.value.filter((step: any) => /(?:^|:)stage_/.test(String(step.id || '')));
+});
 const executionSteps = computed(() =>
   flattenedSteps.value.filter((step: any) => !/(?:^|:)stage_/.test(String(step.id || '')))
 );
-
+const executionGraph = computed(() => Array.isArray(timeline.value?.execution_graph) ? timeline.value.execution_graph : []);
+const selectedStage = computed(() => stageSteps.value[selectedStageIndex.value] || stageSteps.value[0] || null);
+const selectedNode = computed(() => {
+  if (selectedStage.value?.id === 'stage_execute' && selectedExecutionNode.value) return selectedExecutionNode.value;
+  return selectedStage.value;
+});
+const selectedNodeLogs = computed(() => normalizeTimelineEvents(selectedNode.value?.events || []));
 function defaultTaskForm() {
   return {
     name: '',
@@ -523,7 +553,8 @@ async function refreshAll() {
   try {
     await Promise.all([loadProjects(), loadDailyDirs(), loadResources()]);
     await loadTasks();
-    if (selectedTaskId.value) await loadSelectedTask();
+    await ensureSelectedTask();
+    if (selectedTaskId.value) await loadSelectedTask(true);
   } finally {
     loading.value = false;
   }
@@ -561,15 +592,94 @@ async function loadResources() {
 }
 
 async function loadTasks() {
-  const requestId = ++taskListRequestId;
-  const params: any = { page_size: 100, work_scope: selectedScope.value, include_hitl_cards: false };
+  await taskList.loadFirstPage();
+}
+
+async function loadTaskPage(page: number, pageSize: number) {
+  const params: any = {
+    page,
+    page_size: pageSize,
+    work_scope: selectedScope.value,
+    include_hitl_cards: false,
+    q: searchQuery.value.trim() || undefined,
+    status: statusFilter.value || undefined,
+    work_task_kind: kindFilter.value || undefined,
+  };
   if (selectedScope.value === 'project' && selectedProjectId.value) params.project_id = selectedProjectId.value;
   if (selectedScope.value === 'daily' && selectedDailyDirId.value) params.daily_dir_id = selectedDailyDirId.value;
   const response = await axios.get('/api/plug/work/tasks', { params });
-  if (requestId !== taskListRequestId) return;
-  if (response.data?.status === 'ok') {
-    tasks.value = response.data.data?.tasks || [];
+  const data = response.data?.data || {};
+  return {
+    items: data.tasks || [],
+    pagination: data.pagination,
+  };
+}
+
+watch([searchQuery, statusFilter, kindFilter], () => {
+  reloadTasksForFilters().catch(() => undefined);
+});
+
+watch(stageSteps, (stages) => {
+  if (!stages.length) return;
+  if (selectedStageIndex.value >= stages.length) selectedStageIndex.value = 0;
+  if (stages[selectedStageIndex.value]?.id === 'stage_execute' && !selectedExecutionNode.value) {
+    selectedExecutionNode.value = firstExecutionNode(executionGraph.value);
   }
+});
+
+async function reloadTasksForFilters() {
+  clearSelection();
+  await loadTasks();
+  await ensureSelectedTask();
+}
+
+async function ensureSelectedTask() {
+  if (selectedTaskId.value && tasks.value.some(task => task.id === selectedTaskId.value)) return;
+  const first = tasks.value[0];
+  if (first) {
+    await selectTask(first.id);
+    return;
+  }
+  clearSelection();
+}
+
+function handleTaskListScroll(event: Event) {
+  const target = event.target as HTMLElement | null;
+  if (!target) return;
+  if (target.scrollTop + target.clientHeight >= target.scrollHeight - 120) {
+    taskList.loadMore().catch(() => undefined);
+  }
+}
+
+function startSummaryRefresh() {
+  if (summaryRefreshTimer) clearInterval(summaryRefreshTimer);
+  summaryRefreshTimer = setInterval(() => {
+    if (!document.hidden) refreshTaskSummaries().catch(() => undefined);
+  }, 5000);
+}
+
+async function refreshTaskSummaries() {
+  const ids = taskList.loadedIds.value;
+  if (!ids.length) return;
+  const response = await axios.get('/api/plug/work/tasks/summaries', {
+    params: { ids: ids.join(',') },
+  });
+  if (response.data?.status !== 'ok') return;
+  const summaries = response.data.data?.tasks || [];
+  taskList.mergeSummaries(summaries);
+  const selectedSummary = summaries.find((task: any) => task.id === selectedTaskId.value);
+  if (selectedSummary && selectedTask.value) {
+    selectedTask.value = { ...selectedTask.value, ...selectedSummary };
+  }
+}
+
+async function loadTaskLogs(taskId: string, afterSeq = 0) {
+  if (!taskId) return;
+  const response = await axios.get(`/api/plug/work/tasks/${encodeURIComponent(taskId)}/logs`, {
+    params: { after_seq: afterSeq || undefined, limit: 500 },
+  });
+  if (response.data?.status !== 'ok') return;
+  for (const log of response.data.data || []) appendTaskLog(log);
 }
 
 async function loadSelectedTask(mergeLogs = false) {
@@ -589,7 +699,7 @@ async function loadSelectedTask(mergeLogs = false) {
     if (requestId !== selectedTaskRequestId || taskId !== selectedTaskId.value) return;
     if (response.data?.status === 'ok') {
       selectedTask.value = response.data.data;
-      if (!mergeLogs || !eventSource) logs.value = selectedTask.value.logs || [];
+      if (!mergeLogs) logs.value = selectedTask.value.logs || [];
       artifacts.value = selectedTask.value.artifacts || [];
       interactionCards.value = selectedTask.value.hitl_cards || [];
     }
@@ -608,7 +718,7 @@ function selectDaily(id: string | null) {
   selectedDailyDirId.value = id;
   selectedProjectId.value = null;
   clearSelection();
-  loadTasks();
+  loadTasks().then(ensureSelectedTask).catch(() => undefined);
 }
 
 function selectProject(id: string | null) {
@@ -616,7 +726,7 @@ function selectProject(id: string | null) {
   selectedProjectId.value = id;
   selectedDailyDirId.value = null;
   clearSelection();
-  loadTasks();
+  loadTasks().then(ensureSelectedTask).catch(() => undefined);
 }
 
 function clearSelection() {
@@ -628,18 +738,29 @@ function clearSelection() {
   artifacts.value = [];
   interactionCards.value = [];
   selectedStep.value = null;
+  selectedExecutionNode.value = null;
   selectedStageIndex.value = 0;
   closeEventSource();
+  if (selectedRefreshTimer) {
+    clearTimeout(selectedRefreshTimer);
+    selectedRefreshTimer = null;
+  }
 }
 
 async function selectTask(taskId: string) {
-  if (selectedTaskId.value === taskId) return;
+  if (selectedTaskId.value === taskId) {
+    await loadSelectedTask(true);
+    await loadTaskLogs(taskId, maxLogSeq());
+    if (!workStream.connected.value && !isCompleted(selectedTask.value)) openEventSource(taskId);
+    return;
+  }
   selectedTaskRequestId += 1;
   pendingSelectedReload = false;
   selectedTaskId.value = taskId;
   detailTab.value = 'logs';
   interactionCards.value = [];
   selectedStep.value = null;
+  selectedExecutionNode.value = null;
   closeEventSource();
   await loadSelectedTask();
   openEventSource(taskId);
@@ -655,49 +776,100 @@ async function openTaskHitl(taskId: string) {
 }
 
 function openEventSource(taskId: string) {
-  closeEventSource();
-  try {
-    eventSource = new EventSource(`/api/plug/work/tasks/${encodeURIComponent(taskId)}/events`);
-    const reload = () => {
-      if (sseDebounceTimer) clearTimeout(sseDebounceTimer);
-      sseDebounceTimer = setTimeout(() => loadSelectedTask(true), 500);
-    };
-
-    const appendLog = (event: MessageEvent) => {
-      try {
-        const log = JSON.parse(event.data);
-        if (!log || !log.id) { reload(); return; }
-        if (logs.value.find(l => l.id === log.id)) return;
-        logs.value = [...logs.value, log].sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0));
-      } catch { reload(); }
-    };
-
-    eventSource.addEventListener('done', reload);
-    eventSource.addEventListener('phase', (e: MessageEvent) => {
-      try {
-        const data = JSON.parse(e.data);
-        if (data?.status) selectedTask.value = { ...selectedTask.value, status: data.status, progress: data.progress || selectedTask.value?.progress };
-      } catch {}
-      reload();
-    });
-    for (const name of ['text_delta', 'tool_call', 'tool_result', 'reasoning', 'token', 'artifact', 'interaction']) {
-      eventSource.addEventListener(name, appendLog);
-    }
-    eventSource.onerror = () => closeEventSource();
-  } catch {
-    closeEventSource();
-  }
+  if (isCompleted(selectedTask.value)) return;
+  workStream.open(taskId);
 }
 
 function closeEventSource() {
-  if (sseDebounceTimer) {
-    clearTimeout(sseDebounceTimer);
-    sseDebounceTimer = null;
+  workStream.close();
+}
+
+function handleWorkStreamEvent(name: string, payload: any) {
+  if (name === 'heartbeat') return;
+  if (name === 'phase') {
+    if (payload?.id) {
+      appendTaskLog(payload);
+      const data = payload.data || {};
+      if (selectedTask.value) {
+        selectedTask.value = {
+          ...selectedTask.value,
+          status: data.status || selectedTask.value.status,
+          progress: data.progress ?? selectedTask.value.progress,
+        };
+        taskList.mergeSummaries([{ id: selectedTask.value.id, status: selectedTask.value.status, progress: selectedTask.value.progress }]);
+      }
+      if (data.steps || data.phase === 'assign_done' || data.phase === 'step_done' || data.phase === 'completed') {
+        scheduleSelectedTaskRefresh(data.phase === 'step_done' ? 250 : 500);
+      }
+      return;
+    }
+    if (payload?.status && selectedTask.value) {
+      selectedTask.value = {
+        ...selectedTask.value,
+        status: payload.status,
+        progress: payload.progress ?? selectedTask.value?.progress,
+      };
+      taskList.mergeSummaries([{ id: selectedTask.value.id, status: selectedTask.value.status, progress: selectedTask.value.progress }]);
+      if (isCompleted(selectedTask.value)) {
+        scheduleSelectedTaskRefresh(500);
+        workStream.close();
+      }
+    }
+    if (payload?.steps) {
+      scheduleSelectedTaskRefresh(500);
+    }
+    return;
   }
-  if (eventSource) {
-    eventSource.close();
-    eventSource = null;
+  if (name === 'done') {
+    if (selectedTask.value) {
+      selectedTask.value = {
+        ...selectedTask.value,
+        status: payload?.status || selectedTask.value.status || 'completed',
+        progress: payload?.status === 'completed' ? 100 : selectedTask.value.progress,
+      };
+      taskList.mergeSummaries([{ id: selectedTask.value.id, status: selectedTask.value.status, progress: selectedTask.value.progress }]);
+    }
+    scheduleSelectedTaskRefresh(500);
+    workStream.close();
+    return;
   }
+  if (name === 'artifact' || name === 'interaction' || name === 'hitl_resolved' || name === 'token' || name === 'tool_result') {
+    scheduleSelectedTaskRefresh(500);
+  }
+  if (payload?.id) appendTaskLog(payload);
+}
+
+function appendTaskLog(log: any) {
+  if (!log?.id) return;
+  if (logs.value.some(item => item.id === log.id)) return;
+  logs.value = [...logs.value, log].sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0)).slice(-5000);
+}
+
+function maxLogSeq() {
+  return logs.value.reduce((max, log) => Math.max(max, Number(log.seq || 0)), 0);
+}
+
+function selectStage(index: number) {
+  selectedStageIndex.value = index;
+  selectedExecutionNode.value = null;
+  if (stageSteps.value[index]?.id === 'stage_execute') {
+    selectedExecutionNode.value = firstExecutionNode(executionGraph.value);
+  }
+}
+
+function selectExecutionStep(step: any) {
+  const id = shortTimelineId(step?.id);
+  selectedStageIndex.value = Math.max(0, stageSteps.value.findIndex((stage: any) => stage.id === 'stage_execute'));
+  selectedExecutionNode.value = findExecutionNodeById(executionGraph.value, id) || step;
+}
+
+function scheduleSelectedTaskRefresh(delay = 500) {
+  if (selectedRefreshTimer) clearTimeout(selectedRefreshTimer);
+  selectedRefreshTimer = setTimeout(() => {
+    selectedRefreshTimer = null;
+    if (selectedTaskId.value) loadSelectedTask(true).catch(() => undefined);
+    refreshTaskSummaries().catch(() => undefined);
+  }, delay);
 }
 
 function openProjectDialog(project?: any) {
@@ -753,9 +925,15 @@ async function createTask() {
     const payload = JSON.parse(JSON.stringify(taskForm));
     payload.flow_id = payload.executor_config?.flow_id;
     payload.work_task_kind = 'workflow';
-    await axios.post('/api/plug/work/tasks', payload);
+    const response = await axios.post('/api/plug/work/tasks', payload);
     taskDialog.value = false;
-    await loadTasks();
+    if (response.data?.data?.id) {
+      taskList.replaceItem(response.data.data);
+      await selectTask(response.data.data.id);
+    } else {
+      await loadTasks();
+      await ensureSelectedTask();
+    }
   } finally {
     creatingTask.value = false;
   }
@@ -767,7 +945,7 @@ async function submitSupplement() {
   try {
     await axios.post(`/api/plug/work/tasks/${selectedTaskId.value}/input`, { text: supplementText.value.trim() });
     supplementText.value = '';
-    await loadSelectedTask();
+    await loadSelectedTask(true);
   } finally {
     submittingInput.value = false;
   }
@@ -775,7 +953,11 @@ async function submitSupplement() {
 
 async function handleInteractionRespond() {
   hitlDialog.value = false;
-  await Promise.all([loadTasks(), loadSelectedTask(true)]);
+  if (selectedTask.value) {
+    selectedTask.value = { ...selectedTask.value, active_hitl: null, has_hitl: false, hitl_cards: [], status: 'running' };
+    taskList.mergeSummaries([{ id: selectedTask.value.id, active_hitl: null, has_hitl: false, hitl_cards: [], status: 'running' }]);
+  }
+  await Promise.all([refreshTaskSummaries(), loadSelectedTask(true)]);
 }
 
 function isCompleted(task: any) {
@@ -903,6 +1085,87 @@ function formatTokens(value: number) {
 function formatDate(value: string) {
   if (!value) return '-';
   return new Date(value).toLocaleString();
+}
+
+function formatDuration(ms: number) {
+  const value = Number(ms || 0);
+  if (!value) return '-';
+  if (value < 1000) return `${value}ms`;
+  const seconds = Math.floor(value / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return rest ? `${minutes}m${rest}s` : `${minutes}m`;
+}
+
+function nodeAgentText(node: any) {
+  const label = nodeAgentLabel(node);
+  return label ? `执行者：${label}` : '执行者：系统';
+}
+
+function nodeAgentLabel(node: any) {
+  const agent = node?.agent || {};
+  if (agent.label && !looksLikeAgentId(agent.label)) return agent.label;
+  if (agent.id) return resourceNameById(agents.value, agent.id) || agent.id;
+  if (agent.label) return resourceNameById(agents.value, agent.label) || agent.label;
+  const text = executorDisplay(node) || '';
+  return text.replace(/^执行者[:：]\s*/, '');
+}
+
+function looksLikeAgentId(value: unknown) {
+  const text = String(value || '');
+  return text.startsWith('agent_') || text.startsWith('expert_');
+}
+
+function normalizeTimelineEvents(events: any[]) {
+  return (events || []).map((event, index) => {
+    if (event?.raw?.data?.event) return event.raw;
+    const raw = event?.raw || {};
+    const data = {
+      ...(raw.data || {}),
+      ...(event.raw && !event.raw.data ? {} : {}),
+      event: event.event || event.kind || raw.event || 'log',
+      text: event.content || raw.content || raw.message || '',
+      title: event.title || raw.title || '',
+      result: event.kind === 'tool_result' ? event.content : raw.result,
+      input_tokens: event.token_usage?.input_tokens,
+      output_tokens: event.token_usage?.output_tokens,
+      total_tokens: event.token_usage?.total_tokens,
+    };
+    if (event.kind === 'hitl_call') data.event = 'interaction';
+    if (event.kind === 'hitl_result') data.event = 'hitl_resolved';
+    if (event.kind === 'artifact') data.event = 'artifact';
+    return {
+      id: event.id || `timeline-${index}`,
+      seq: event.seq || index,
+      level: data.event === 'error' ? 'error' : 'info',
+      message: event.title || event.content || '',
+      data,
+      created_at: event.created_at,
+    };
+  });
+}
+
+function shortTimelineId(value: string) {
+  const raw = String(value || '');
+  const prefix = `${selectedTaskId.value}:`;
+  return raw.startsWith(prefix) ? raw.slice(prefix.length) : raw;
+}
+
+function firstExecutionNode(nodes: any[]): any | null {
+  for (const node of nodes || []) {
+    if (node) return node;
+  }
+  return null;
+}
+
+function findExecutionNodeById(nodes: any[], id: string): any | null {
+  for (const node of nodes || []) {
+    if (shortTimelineId(node?.id) === id) return node;
+    const child = findExecutionNodeById(node?.children || [], id);
+    if (child) return child;
+  }
+  return null;
 }
 
 function aggregateLogs(rawLogs: any[]) {
@@ -1091,17 +1354,12 @@ function cleanPreviewText(value: unknown, maxLength = 180) {
 }
 
 onMounted(() => {
-  refreshAll();
-  pollTimer = setInterval(() => {
-    if (document.hidden) return;
-    loadTasks();
-    if (!eventSource) loadSelectedTask();
-  }, 5000);
+  refreshAll().then(startSummaryRefresh).catch(() => undefined);
 });
 
 onBeforeUnmount(() => {
-  if (pollTimer) clearInterval(pollTimer);
-  if (sseDebounceTimer) clearTimeout(sseDebounceTimer);
+  if (summaryRefreshTimer) clearInterval(summaryRefreshTimer);
+  if (selectedRefreshTimer) clearTimeout(selectedRefreshTimer);
   closeEventSource();
 });
 </script>
@@ -1114,7 +1372,7 @@ onBeforeUnmount(() => {
   --work-border: rgba(var(--v-border-color), 0.18);
   --work-muted: rgba(var(--v-theme-on-surface), 0.62);
   display: grid;
-  grid-template-columns: 210px 320px minmax(360px, 1fr) 380px;
+  grid-template-columns: 210px 320px minmax(360px, 1fr);
   height: 100%;
   min-height: 0;
   overflow: hidden;
@@ -1130,8 +1388,7 @@ onBeforeUnmount(() => {
 }
 
 .work-category-pane,
-.work-task-pane,
-.work-progress-pane {
+.work-task-pane {
   min-height: 0;
   border-right: 1px solid var(--work-border);
   background: var(--work-panel);
@@ -1141,17 +1398,8 @@ onBeforeUnmount(() => {
   overflow: auto;
 }
 
-.work-category-pane,
-.work-progress-pane {
+.work-category-pane {
   padding: 14px;
-}
-
-.work-progress-pane {
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  border-right: 0;
-  border-left: 1px solid var(--work-border);
 }
 
 .pane-header,
@@ -1392,7 +1640,128 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 18px max(18px, calc((100% - 880px) / 2));
+  padding: 18px 28px;
+}
+
+.node-detail-body {
+  padding-top: 16px;
+}
+
+.node-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.section-title {
+  color: var(--work-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.node-agent-strip,
+.execution-tree-panel,
+.execution-result-panel {
+  padding: 12px;
+  border: 1px solid var(--work-border);
+  border-radius: 8px;
+  background: var(--work-panel);
+}
+
+.node-agent-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--work-muted);
+  font-size: 13px;
+}
+
+.node-agent-main,
+.node-time-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.node-agent-main {
+  color: rgba(var(--v-theme-on-surface), 0.78);
+  font-weight: 600;
+}
+
+.node-time-meta {
+  margin-left: auto;
+  color: var(--work-muted);
+}
+
+.node-time-meta span:not(:last-child)::after {
+  content: "·";
+  margin-left: 8px;
+  color: rgba(var(--v-theme-on-surface), 0.32);
+}
+
+.execution-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(260px, 1fr);
+  gap: 12px;
+}
+
+.execution-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.execution-node {
+  position: relative;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 8px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--work-border);
+  border-radius: 8px;
+  background: var(--work-panel-soft);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.execution-node.child {
+  margin-left: 18px;
+  width: calc(100% - 18px);
+  border-style: dashed;
+}
+
+.execution-node.active,
+.stage-chip.active {
+  border-color: rgba(var(--v-theme-primary), 0.6);
+  box-shadow: inset 3px 0 0 rgba(var(--v-theme-primary), 0.6);
+}
+
+.execution-node span:last-child {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.execution-result-panel pre {
+  max-height: 260px;
+  overflow: auto;
+  margin: 10px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  line-height: 1.6;
+}
+
+.node-artifacts {
+  margin-top: 0;
 }
 
 .input-panel {
@@ -1441,6 +1810,17 @@ onBeforeUnmount(() => {
   margin-bottom: 12px;
   padding: 6px 0;
   overflow-x: auto;
+}
+
+.detail-stage-strip {
+  display: flex;
+  gap: 8px;
+  padding: 10px 22px 8px;
+  border-top: 1px solid var(--work-border);
+  border-bottom: 1px solid var(--work-border);
+  background: var(--work-panel);
+  overflow-x: auto;
+  flex-shrink: 0;
 }
 
 .stage-chip {
@@ -1519,21 +1899,6 @@ onBeforeUnmount(() => {
     opacity: 1;
     transform: translateX(0);
   }
-}
-
-.progress-pane-header {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  padding-bottom: 8px;
-  background: var(--work-panel);
-}
-
-.step-list-wrap {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding-right: 2px;
 }
 
 .step-row {
@@ -1716,20 +2081,16 @@ onBeforeUnmount(() => {
   line-height: 1.6;
 }
 
-.progress-empty {
-  flex: 1;
-}
-
 @media (max-width: 1180px) {
   .work-shell {
-    grid-template-columns: 170px 260px minmax(300px, 1fr) 320px;
+    grid-template-columns: 170px 260px minmax(300px, 1fr);
   }
 }
 
 @media (max-width: 820px) {
   .work-shell {
     grid-template-columns: 1fr;
-    grid-template-rows: auto auto 1fr auto;
+    grid-template-rows: auto auto 1fr;
   }
 
   .work-category-pane,
@@ -1759,10 +2120,8 @@ onBeforeUnmount(() => {
     grid-template-columns: 1fr;
   }
 
-  .work-progress-pane {
-    max-height: 240px;
-    border-left: 0;
-    border-top: 1px solid var(--work-border);
+  .execution-detail-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

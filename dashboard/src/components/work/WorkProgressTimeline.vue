@@ -35,14 +35,14 @@
         <div v-if="!isCollapsed(item.id)" class="tl-content">
           <template v-if="item.kind === 'tool_call' && item.args">
             <div class="tl-section">
-              <div class="tl-section-title">Args</div>
+              <div class="tl-section-title">内容</div>
               <pre class="tl-json">{{ item.args }}</pre>
             </div>
           </template>
 
           <template v-if="item.kind === 'tool_result' && item.result">
             <div class="tl-section">
-              <div class="tl-section-title">Result</div>
+              <div class="tl-section-title">结果</div>
               <pre class="tl-json">{{ item.result }}</pre>
             </div>
           </template>
@@ -52,6 +52,17 @@
           </template>
 
           <template v-if="item.kind === 'text_delta'">
+            <button
+              v-if="item.reasoning"
+              class="reasoning-toggle"
+              type="button"
+              @click.stop="toggleReasoning(item.id)"
+            >
+              <v-icon size="15" icon="mdi-brain" />
+              <span>思考过程</span>
+              <v-icon size="15" :icon="isReasoningCollapsed(item.id) ? 'mdi-chevron-right' : 'mdi-chevron-down'" />
+            </button>
+            <pre v-if="item.reasoning && !isReasoningCollapsed(item.id)" class="tl-text reasoning-text">{{ item.reasoning }}</pre>
             <pre class="tl-text output-text">{{ item.text }}</pre>
           </template>
 
@@ -59,24 +70,10 @@
             <pre class="tl-text error-text">{{ item.text }}</pre>
           </template>
 
-          <pre v-if="item.kind === 'token'" class="tl-text token-text">{{ item.text }}</pre>
-
-          <pre v-if="item.kind === 'log' || item.kind === 'phase'" class="tl-text log-text">{{ item.text }}</pre>
-
           <div v-if="item.kind === 'artifact' && item.content" class="tl-artifact">
             <div class="tl-section-title">交付内容</div>
             <pre class="tl-text">{{ item.content }}</pre>
           </div>
-
-          <div v-if="item.kind === 'interaction' && item.card" class="tl-interaction">
-            <InteractionCardComponent
-              :card="item.card"
-              :is-dark="isDark"
-              @respond="onRespond"
-            />
-          </div>
-
-          <pre v-if="item.kind === 'hitl_resolved' && item.text" class="tl-text log-text">{{ item.text }}</pre>
         </div>
       </div>
     </div>
@@ -99,6 +96,7 @@ const props = withDefaults(defineProps<{
   isDark?: boolean;
   maxItems?: number;
   loading?: boolean;
+  agentLabel?: string;
 }>(), {
   task: null,
   logs: () => [],
@@ -106,6 +104,7 @@ const props = withDefaults(defineProps<{
   isDark: false,
   maxItems: 0,
   loading: false,
+  agentLabel: '',
 });
 
 const emit = defineEmits<{
@@ -113,6 +112,7 @@ const emit = defineEmits<{
 }>();
 
 const collapsedIds = ref<Set<string>>(new Set());
+const collapsedReasoningIds = ref<Set<string>>(new Set());
 let prevLogCount = 0;
 
 watch(() => props.logs, (newLogs) => {
@@ -129,6 +129,16 @@ function toggleCollapse(id: string) {
 
 function isCollapsed(id: string) {
   return collapsedIds.value.has(id);
+}
+
+function toggleReasoning(id: string) {
+  const next = new Set(collapsedReasoningIds.value);
+  if (next.has(id)) next.delete(id); else next.add(id);
+  collapsedReasoningIds.value = next;
+}
+
+function isReasoningCollapsed(id: string) {
+  return collapsedReasoningIds.value.has(id);
 }
 
 function onRespond(payload: { interaction_id: string; action_key: string; field_values: Record<string, any> }) {
@@ -157,13 +167,14 @@ interface TimelineItem {
   created_at: string;
   duration_ms?: number;
   collapsible: boolean;
+  reasoning?: string;
+  traceKey?: string;
 }
 
 function kindLabel(kind: string) {
   const map: Record<string, string> = {
-    text_delta: '输出', reasoning: '推理', tool_call: '工具调用',
-    tool_result: '工具结果', token: 'Token', phase: '阶段',
-    error: '错误', artifact: '交付物', interaction: '交互',
+    text_delta: '输出', reasoning: '思考', tool_call: '使用工具',
+    tool_result: '工具结果', error: '错误', artifact: '交付物',
   };
   return map[kind] || kind;
 }
@@ -185,17 +196,29 @@ function formatDur(ms: number) {
   return rs > 0 ? `${m}m${rs}s` : `${m}m`;
 }
 
-function formatTokens(n: number) {
-  const v = Number(n || 0);
-  if (v >= 1000000) return `${(v / 1000000).toFixed(1)}M`;
-  if (v >= 1000) return `${(v / 1000).toFixed(1)}K`;
-  return `${v}`;
-}
-
 const items = computed<TimelineItem[]>(() => {
   const logs = props.logs || [];
   const result: TimelineItem[] = [];
   let prevTs: number | null = null;
+  let textBuffer: TimelineItem | null = null;
+  const pendingReasoning = new Map<string, { text: string; created_at: string; duration_ms?: number; title: string; id: string }>();
+
+  const pushItem = (item: TimelineItem) => {
+    if (item.kind !== 'text_delta' && item.collapsible) {
+      collapsedIds.value.add(item.id);
+    }
+    if (item.kind === 'text_delta' && item.reasoning) {
+      collapsedReasoningIds.value.add(item.id);
+    }
+    result.push(item);
+  };
+
+  const flushTextBuffer = () => {
+    if (textBuffer && textBuffer.text.trim()) {
+      pushItem(textBuffer);
+    }
+    textBuffer = null;
+  };
 
   for (let i = 0; i < logs.length; i++) {
     const log = logs[i];
@@ -207,30 +230,67 @@ const items = computed<TimelineItem[]>(() => {
     if (event === 'text_delta') {
       const text = String(data.text || log.message || '');
       if (!text) continue;
-      result.push({
-        id: log.id || `log-${i}`, kind: 'text_delta', icon: 'mdi-message-text-outline',
-        title: data.step_label || data.agent || '智能体输出', text, created_at: log.created_at,
-        duration_ms: dur ? Math.min(dur, 30000) : undefined, collapsible: false,
-      });
+      const key = [
+        data.stage_id || '',
+        data.step_id || '',
+        data.agent_id || '',
+        data.agent_label || data.agent || '',
+        data.step_label || '',
+      ].join('|');
+      if (!textBuffer || textBuffer.traceKey !== key) {
+        flushTextBuffer();
+        const agentLabel = agentDisplay(data);
+        const pending = pendingReasoning.get(key);
+        textBuffer = {
+          id: log.id || `log-${i}`,
+          kind: 'text_delta',
+          icon: 'mdi-message-text-outline',
+          title: `${agentLabel} 输出`,
+          subtitle: data.step_label || '',
+          text: '',
+          created_at: log.created_at,
+          duration_ms: dur ? Math.min(dur, 30000) : undefined,
+          collapsible: false,
+          reasoning: pending?.text || '',
+          traceKey: key,
+        };
+        if (pending) pendingReasoning.delete(key);
+      }
+      textBuffer.text += text;
     } else if (event === 'reasoning') {
       const text = String(data.text || log.message || '');
-      const item: TimelineItem = {
-        id: log.id || `log-${i}`, kind: 'reasoning', icon: 'mdi-brain',
-        title: '推理过程', text, created_at: log.created_at,
-        duration_ms: dur ? Math.min(dur, 30000) : undefined, collapsible: true,
-      };
-      collapsedIds.value.add(item.id);
-      result.push(item);
+      if (!text) continue;
+      const key = [
+        data.stage_id || '',
+        data.step_id || '',
+        data.agent_id || '',
+        data.agent_label || data.agent || '',
+        data.step_label || '',
+      ].join('|');
+      if (textBuffer && textBuffer.traceKey === key) {
+        textBuffer.reasoning = `${textBuffer.reasoning || ''}${text}`;
+      } else {
+        const current = pendingReasoning.get(key);
+        pendingReasoning.set(key, {
+          id: current?.id || log.id || `log-${i}`,
+          title: `${agentDisplay(data)} 思考过程`,
+          text: `${current?.text || ''}${text}`,
+          created_at: current?.created_at || log.created_at,
+          duration_ms: current?.duration_ms || (dur ? Math.min(dur, 30000) : undefined),
+        });
+      }
     } else if (event === 'tool_call') {
+      flushTextBuffer();
       const name = data.name || data.tool || 'tool';
       const argsObj = { ...data };
-      delete argsObj.event; delete argsObj.name; delete argsObj.tool; delete argsObj.ts; delete argsObj.id;
-      result.push({
+      stripTraceFields(argsObj);
+      pushItem({
         id: log.id || `log-${i}`, kind: 'tool_call', icon: 'mdi-wrench-outline',
         title: `调用工具：${name}`, args: JSON.stringify(argsObj, null, 2),
         text: '', created_at: log.created_at, duration_ms: dur ? Math.min(dur, 30000) : undefined, collapsible: true,
       });
     } else if (event === 'tool_result') {
+      flushTextBuffer();
       const name = data.name || data.tool || 'tool';
       let resultStr = '';
       if (data.result !== undefined) {
@@ -240,87 +300,136 @@ const items = computed<TimelineItem[]>(() => {
       }
       const bytes = new TextEncoder().encode(resultStr).length;
       const lines = resultStr.split('\n').length;
-      result.push({
+      pushItem({
         id: log.id || `log-${i}`, kind: 'tool_result', icon: 'mdi-check-circle-outline',
         title: `工具结果：${name}`, subtitle: `${formatDur(dur || 0)} · ${lines}行 · ${bytes >= 1024 ? (bytes / 1024).toFixed(1) + 'KB' : bytes + 'B'}`,
         result: resultStr, text: '', created_at: log.created_at,
         duration_ms: dur ? Math.min(dur, 30000) : undefined, collapsible: true,
       });
     } else if (event === 'token') {
-      const counts = tokenCounts(data);
-      result.push({
-        id: log.id || `log-${i}`, kind: 'token', icon: 'mdi-cash-multiple',
-        title: 'Token 统计',
-        text: [`入 ${formatTokens(counts.input)}`, `出 ${formatTokens(counts.output)}`, `共 ${formatTokens(counts.total)}`].join(' · '),
-        created_at: log.created_at, collapsible: false,
-      });
+      flushTextBuffer();
+      continue;
     } else if (event === 'phase') {
-      result.push({
-        id: log.id || `log-${i}`, kind: 'phase', icon: 'mdi-timeline-clock-outline',
-        title: phaseTitle(data), text: data.message || log.message || '',
-        created_at: log.created_at, collapsible: false,
-      });
+      flushTextBuffer();
+      continue;
     } else if (event === 'interaction') {
-      const card = data.interaction_id ? data : null;
-      result.push({
-        id: log.id || `log-${i}`, kind: 'interaction', icon: 'mdi-account-question-outline',
-        title: data.title || '等待人工确认', text: data.body || log.message || '',
-        card, created_at: log.created_at, collapsible: Boolean(card),
+      flushTextBuffer();
+      const args = formatInteractionArgs(data);
+      pushItem({
+        id: log.id || `log-${i}`,
+        kind: 'tool_call',
+        icon: 'mdi-account-question-outline',
+        title: `HITL 请求：${data.title || '人工确认'}`,
+        args,
+        text: '',
+        created_at: log.created_at,
+        duration_ms: dur ? Math.min(dur, 30000) : undefined,
+        collapsible: Boolean(args),
       });
     } else if (event === 'hitl_resolved') {
+      flushTextBuffer();
       const actionLabels: Record<string, string> = { approve: '批准执行', modify: '调整计划', reject: '拒绝', retry: '继续返工', finish: '接受当前结果', cancel: '取消任务' };
       const label = actionLabels[data.action_key] || data.action_key || '';
-      const fields = data.field_values || {};
-      const feedback = fields.modify_text || fields.guidance || fields.feedback || '';
-      result.push({
-        id: log.id || `log-${i}`, kind: 'hitl_resolved', icon: 'mdi-account-check-outline',
-        title: `已处理：${label}`, text: feedback,
-        created_at: log.created_at, collapsible: false,
+      pushItem({
+        id: log.id || `log-${i}`,
+        kind: 'tool_result',
+        icon: 'mdi-account-check-outline',
+        title: `HITL 结果：${label || '已处理'}`,
+        result: formatHitlResult(data),
+        text: '',
+        created_at: log.created_at,
+        duration_ms: dur ? Math.min(dur, 30000) : undefined,
+        collapsible: true,
       });
     } else if (event === 'error' || log.level === 'error') {
-      result.push({
+      flushTextBuffer();
+      pushItem({
         id: log.id || `log-${i}`, kind: 'error', icon: 'mdi-alert-circle-outline',
         title: '错误', text: data.message || log.message || '',
-        created_at: log.created_at, collapsible: false,
+        created_at: log.created_at, collapsible: true,
       });
     } else if (event === 'artifact') {
-      result.push({
+      flushTextBuffer();
+      pushItem({
         id: log.id || `log-${i}`, kind: 'artifact', icon: 'mdi-file-document-outline',
         title: data.title || '交付物', content: data.content || log.message || '',
-        text: '', created_at: log.created_at, collapsible: false,
+        text: '', created_at: log.created_at, collapsible: true,
       });
     } else {
-      const text = data.message || log.message || '';
-      if (text) {
-        result.push({
-          id: log.id || `log-${i}`, kind: 'log', icon: 'mdi-text-box-outline',
-          title: '日志', text, created_at: log.created_at, collapsible: false,
-        });
-      }
+      flushTextBuffer();
+      continue;
     }
     prevTs = ts;
+  }
+  flushTextBuffer();
+  for (const pending of pendingReasoning.values()) {
+    pushItem({
+      id: pending.id,
+      kind: 'reasoning',
+      icon: 'mdi-brain',
+      title: pending.title,
+      text: pending.text,
+      created_at: pending.created_at,
+      duration_ms: pending.duration_ms,
+      collapsible: true,
+    });
+  }
+
+  for (const item of result) {
+    if (item.kind === 'text_delta') {
+      item.traceKey = undefined;
+      if (!item.subtitle) item.subtitle = undefined;
+    }
   }
 
   if (props.maxItems && props.maxItems > 0) return result.slice(-props.maxItems);
   return result;
 });
 
-function tokenCounts(data: any) {
-  return {
-    input: Number(data.input_tokens || data.prompt_tokens || 0),
-    output: Number(data.output_tokens || data.completion_tokens || 0),
-    total: Number(data.total_tokens || (data.input_tokens || 0) + (data.output_tokens || 0)),
-  };
+function stripTraceFields(data: Record<string, any>) {
+  for (const key of ['event', 'name', 'tool', 'ts', 'id', 'stage_id', 'step_id', 'agent_id', 'agent_label', 'tool_call_id']) {
+    delete data[key];
+  }
 }
 
-function phaseTitle(data: any) {
-  const map: Record<string, string> = {
-    prepare: '准备阶段', plan: '规划阶段', execute: '执行阶段',
-    review: '审查阶段', finalize: '交付', done: '已完成',
-    approval: '等待审批', rework: '返工',
-  };
-  const phase = data.phase || data.stage || '';
-  return map[phase] || phase || '阶段更新';
+function agentDisplay(data: any) {
+  const label = data.agent_label || data.agent || data.executor || '';
+  if (label && !looksLikeAgentId(label)) return label;
+  return props.agentLabel || label || '智能体';
+}
+
+function looksLikeAgentId(value: unknown) {
+  const text = String(value || '');
+  return text.startsWith('agent_') || text.startsWith('expert_');
+}
+
+function formatInteractionArgs(data: any) {
+  const parts: string[] = [];
+  if (data.body) parts.push(String(data.body));
+  const fields = Array.isArray(data.fields) ? data.fields : [];
+  if (fields.length) {
+    const lines = fields.map((field: any) => {
+      const suffix = field.required ? '（必填）' : '';
+      const recommended = field.recommended ? `，推荐：${field.recommended}` : '';
+      return `- ${field.label || field.key}${suffix}${recommended}`;
+    });
+    parts.push(`需要用户填写：\n${lines.join('\n')}`);
+  }
+  const actions = Array.isArray(data.actions) ? data.actions : [];
+  if (actions.length) {
+    parts.push(`可选操作：${actions.map((action: any) => action.label || action.key).join(' / ')}`);
+  }
+  return parts.join('\n\n');
+}
+
+function formatHitlResult(data: any) {
+  const fields = data.field_values || {};
+  const lines = [`操作：${data.action_key || '已处理'}`];
+  const fieldLines = Object.entries(fields)
+    .filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== '')
+    .map(([key, value]) => `${key}：${Array.isArray(value) ? value.join('、') : String(value)}`);
+  if (fieldLines.length) lines.push(`用户输入：\n${fieldLines.join('\n')}`);
+  return lines.join('\n');
 }
 </script>
 
@@ -440,6 +549,26 @@ function phaseTitle(data: any) {
   margin-bottom: 8px;
 }
 
+.reasoning-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border: 1px solid rgba(var(--v-border-color), 0.18);
+  border-radius: 8px;
+  background: rgba(var(--v-theme-on-surface), 0.03);
+  color: rgba(var(--v-theme-on-surface), 0.62);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.reasoning-toggle:hover {
+  background: rgba(var(--v-theme-on-surface), 0.06);
+}
+
 .tl-section-title {
   font-size: 10px;
   font-weight: 650;
@@ -493,16 +622,6 @@ function phaseTitle(data: any) {
 .error-text {
   color: rgb(var(--v-theme-error));
   font-weight: 550;
-}
-
-.token-text {
-  text-align: center;
-  font-family: 'Courier New', monospace;
-  font-size: 11px;
-}
-
-.tl-interaction {
-  padding: 4px 0;
 }
 
 .tl-loading {

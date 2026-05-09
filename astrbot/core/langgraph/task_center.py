@@ -220,14 +220,23 @@ class TaskCenter:
 
             if event_type == "interaction" and isinstance(data, dict):
                 try:
-                    from astrbot.builtin_stars.agent_system.services.hitl_service import HITLService
+                    from astrbot.builtin_stars.agent_system.services.hitl_service import (
+                        HITLService,
+                    )
 
                     HITLService(db).upsert_from_card(
                         data,
                         task_id=task_id,
                         session_id=task.session_id,
                         channel="chatui",
-                        metadata={"thread_id": task.thread_id, "node_id": event.get("node_id", "")},
+                        metadata={
+                            "thread_id": task.thread_id,
+                            "node_id": event.get("node_id", ""),
+                            "stage_id": data.get("stage_id", ""),
+                            "step_id": data.get("step_id", ""),
+                            "agent_id": data.get("agent_id", ""),
+                            "agent_label": data.get("agent_label", ""),
+                        },
                     )
                 except Exception as e_hitl:
                     _debug_log(f"hitl upsert failed: {e_hitl}")
@@ -275,40 +284,41 @@ class TaskCenter:
 
     @staticmethod
     def _persist_work_steps(db, task_id: str, steps: list[dict[str, Any]], now: str) -> None:
-        for index, step in enumerate(steps):
+        def scoped_id(value: Any) -> str:
+            raw = str(value or "").strip()
+            if not raw:
+                return ""
+            return raw if raw.startswith(f"{task_id}:") else f"{task_id}:{raw}"
+
+        def persist_step(step: dict[str, Any], index: int, parent_id: str | None = None, depth: int | None = None) -> None:
             if not isinstance(step, dict):
-                continue
+                return
             raw_step_id = str(step.get("id") or f"step_{index + 1}")
-            step_id = raw_step_id if raw_step_id.startswith(f"{task_id}:") else f"{task_id}:{raw_step_id}"
+            step_id = scoped_id(raw_step_id)
+            raw_parent_id = step.get("parent_id") or step.get("parent") or parent_id
+            scoped_parent_id = scoped_id(raw_parent_id) if raw_parent_id else None
             dependencies = step.get("dependencies")
             if dependencies is None:
                 dependencies = step.get("depends_on") or []
             if not isinstance(dependencies, list):
                 dependencies = [dependencies] if dependencies else []
+            effective_depth = min(2, int(depth or step.get("depth") or (2 if scoped_parent_id else 1)))
             row = {
                 "id": step_id,
                 "task_id": task_id,
-                "parent_id": (
-                    f"{task_id}:{step.get('parent_id') or step.get('parent')}"
-                    if (step.get("parent_id") or step.get("parent")) and not str(step.get("parent_id") or step.get("parent")).startswith(f"{task_id}:")
-                    else (step.get("parent_id") or step.get("parent") or None)
-                ),
+                "parent_id": scoped_parent_id,
                 "title": step.get("title") or step.get("name") or step.get("description") or f"步骤 {index + 1}",
                 "description": step.get("description") or step.get("title") or "",
                 "status": step.get("status", "pending"),
-                "dependencies": [
-                    str(dep) if str(dep).startswith(f"{task_id}:") else f"{task_id}:{dep}"
-                    for dep in dependencies
-                    if dep
-                ],
+                "dependencies": [scoped_id(dep) for dep in dependencies if dep],
                 "executor": step.get("executor") or step.get("agent") or "",
                 "executor_type": step.get("executor_type") or "",
                 "executor_id": step.get("executor_id") or "",
                 "reviewer_id": step.get("reviewer_id") or "",
                 "result": step.get("result", ""),
                 "result_ref": step.get("result_ref", ""),
-                "depth": min(2, int(step.get("depth") or (2 if step.get("parent_id") else 1))),
-                "sort_order": int(step.get("sort_order") or index),
+                "depth": effective_depth,
+                "sort_order": int(step.get("sort_order") if step.get("sort_order") is not None else index),
                 "updated_at": now,
             }
             existing = db.select_one("work_task_steps", where="id = ? AND task_id = ?", where_params=(step_id, task_id))
@@ -323,6 +333,12 @@ class TaskCenter:
                 row["started_at"] = now if row["status"] == "running" else None
                 row["completed_at"] = now if row["status"] in {"done", "completed", "failed", "cancelled"} else None
                 db.insert("work_task_steps", row)
+            for child_index, child in enumerate(step.get("children") or []):
+                if isinstance(child, dict):
+                    persist_step(child, child_index, raw_step_id, 2)
+
+        for index, step in enumerate(steps):
+            persist_step(step, index)
 
     @staticmethod
     def _event_message(event_type: str, data: dict[str, Any]) -> str:
@@ -525,6 +541,8 @@ class TaskCenter:
                 ),
             )
             await self._sync_to_db(task)
+        finally:
+            self._running_graphs.pop(task.task_id, None)
 
     async def resume_task(self, task_id: str, resume_value: Any):
         task = self._tasks.get(task_id)
@@ -599,6 +617,8 @@ class TaskCenter:
                 ),
             )
             await self._sync_to_db(task)
+        finally:
+            self._running_graphs.pop(task.task_id, None)
 
     async def cancel_task(self, task_id: str):
         task = self._tasks.get(task_id)

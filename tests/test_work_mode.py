@@ -4,11 +4,15 @@ from pathlib import Path
 import pytest
 
 from astrbot.builtin_stars.agent_system.database import Database
+from astrbot.builtin_stars.agent_system.services.flow_service import BUILTIN_DAILY_WORK_FLOW_ID, FlowService
 from astrbot.builtin_stars.agent_system.services.work_service import WorkService
 from astrbot.core.langgraph.graphs.work_task import (
+    _build_execute_prompt,
     _collect_executable_steps,
     _fallback_assign_steps,
     _parse_assigned_steps,
+    _parse_steps,
+    _validate_assigned_steps,
     _update_parent_status,
     _update_step_in_tree,
 )
@@ -70,6 +74,47 @@ def test_daily_dirs_are_created_and_archived(work_db: Database, tmp_path: Path):
     assert all(item["id"] != created["id"] for item in service.list_daily_dirs())
 
 
+def test_builtin_daily_work_flow_schema_v3_exposes_runtime_nodes(work_db: Database):
+    flow_service = FlowService(work_db)
+    flow_service.ensure_builtin_daily_work_flow()
+    flow = flow_service.get_flow(BUILTIN_DAILY_WORK_FLOW_ID)
+
+    assert flow is not None
+    assert flow.metadata["schema_version"] == 3
+    assert flow.metadata["topology_locked"] is True
+    node_ids = {node.id for node in flow.nodes}
+    assert {"daily_mode_strategy", "daily_review_gate", "daily_rework_hitl"}.issubset(node_ids)
+    validation = flow_service.validate_flow(BUILTIN_DAILY_WORK_FLOW_ID)
+    assert validation["success"] is True
+
+
+def test_builtin_daily_work_flow_locks_topology(work_db: Database):
+    flow_service = FlowService(work_db)
+    flow_service.ensure_builtin_daily_work_flow()
+    flow = flow_service.get_flow(BUILTIN_DAILY_WORK_FLOW_ID)
+    assert flow is not None
+
+    data = flow_service._flow_to_definition(flow)
+    data["nodes"] = data["nodes"][:-1]
+
+    with pytest.raises(ValueError, match="拓扑已锁定"):
+        flow_service.update_flow(BUILTIN_DAILY_WORK_FLOW_ID, data)
+
+
+def test_work_service_extracts_flow_runtime_config(work_db: Database):
+    flow_service = FlowService(work_db)
+    flow_service.ensure_builtin_daily_work_flow()
+    work_service = WorkService(work_db)
+    definition = work_service._get_flow_definition(BUILTIN_DAILY_WORK_FLOW_ID)
+    runtime = work_service._extract_work_flow_runtime_config(definition)
+
+    assert runtime["clarification_config"]["template_id"] == "builtin_work_requirement_clarification"
+    assert runtime["plan_config"]["task_mode"] == "normal"
+    assert runtime["executor_config"]["execute_prompt_template"]
+    assert runtime["executor_config"]["executor_agent_id"] == "agent_nicebot_work_executor"
+    assert runtime["review_config"]["rework_title"] == "审查未通过"
+
+
 @pytest.mark.asyncio
 async def test_create_work_task_persists_scope_configs_and_input(work_db: Database, tmp_path: Path):
     service = WorkService(work_db)
@@ -102,7 +147,9 @@ async def test_create_work_task_persists_scope_configs_and_input(work_db: Databa
     assert row["work_task_kind"] == "single_agent"
     assert json.loads(row["executor_config"])["agent_id"] == "assistant"
     assert json.loads(row["plan_config"])["enabled"] is False
-    assert json.loads(row["review_config"]) == {"enabled": True, "max_rework": 2}
+    review_config = json.loads(row["review_config"])
+    assert review_config["enabled"] is True
+    assert review_config["max_rework"] == 2
     assert json.loads(row["input"])["work_context"]["rules"] == "保留执行记录。"
 
     supplemental = service.submit_input(task["id"], "补充：交付物要包含风险清单。")
@@ -230,12 +277,31 @@ def test_parse_assigned_steps_empty_input():
     assert _parse_assigned_steps("not json") == []
 
 
+def test_parse_steps_preserves_deliverable_lines():
+    steps = _parse_steps(
+        "1. 确定行程框架与核心区域\n"
+        "   交付物：3-5天成都旅游行程框架\n"
+        "   1.1 根据天数划分每日节奏\n"
+    )
+
+    assert steps[0]["deliverable"] == "3-5天成都旅游行程框架"
+    assert "交付物：3-5天成都旅游行程框架" in steps[0]["description"]
+
+
 def test_fallback_assign_steps_quick_mode():
-    state = {"task_name": "快速任务", "task_desc": "快速完成", "input": {}, "executor_config": {}}
+    state = {
+        "task_name": "快速任务",
+        "task_desc": "快速完成",
+        "input": {},
+        "executor_config": {},
+        "plan_text_full": "1. 确定行程框架\n   交付物：完整攻略框架",
+    }
     steps = _fallback_assign_steps([], "quick", state)
     assert len(steps) == 1
     assert steps[0]["depth"] == 1
     assert steps[0]["children"] == []
+    assert "确定行程框架" in steps[0]["description"]
+    assert "完整攻略框架" in steps[0]["description"]
 
 
 def test_fallback_assign_steps_normal_mode():
@@ -284,6 +350,74 @@ def test_collect_executable_steps():
     assert executable[0]["id"] == "step_1_1"
     assert executable[1]["id"] == "step_1_2"
     assert executable[2]["id"] == "step_2"
+
+
+def test_validate_assigned_steps_rejects_collapsed_normal_plan():
+    plan_text = (
+        "1. 确定行程框架\n"
+        "   交付物：3-5天行程框架\n"
+        "2. 规划美食体验\n"
+        "   交付物：美食清单\n"
+        "3. 设计文化路线\n"
+        "   交付物：文化景点计划"
+    )
+    plan_steps = _parse_steps(plan_text)
+    assigned = [{"id": "step_1", "title": "成都旅游攻略", "description": "成都旅游攻略", "children": []}]
+
+    assert _validate_assigned_steps(assigned, plan_steps, "normal", plan_text) is False
+
+
+def test_build_execute_prompt_contains_requirements_plan_and_normal_scope():
+    plan_text = (
+        "1. 确定行程框架与核心区域\n"
+        "   交付物：3-5天成都旅游行程框架\n"
+        "   1.1 根据travel_duration划分每日节奏\n"
+    )
+    steps = _parse_steps(plan_text)
+    state = {
+        "task_name": "成都旅游攻略",
+        "task_desc": "做一份适合首次到成都的攻略",
+        "task_mode": "normal",
+        "input": {"goal": "交付可直接使用的旅游攻略", "work_context": {"rules": "预算要清楚"}},
+        "clarification": {"travel_duration": "3-5天", "interest_focus": ["美食", "文化历史"]},
+        "plan_text_full": plan_text,
+    }
+
+    prompt = _build_execute_prompt(state, steps, steps[0], [], "normal")
+
+    assert "## 任务需求" in prompt
+    assert "做一份适合首次到成都的攻略" in prompt
+    assert "3-5天" in prompt
+    assert "美食" in prompt
+    assert "## 已审批整体计划" in prompt
+    assert "3-5天成都旅游行程框架" in prompt
+    assert "## 当前负责部分" in prompt
+    assert "根据travel_duration划分每日节奏" in prompt
+
+
+def test_build_execute_prompt_contains_parent_scope_for_deep_step():
+    plan_text = (
+        "1. 确定行程框架与核心区域\n"
+        "   交付物：3-5天成都旅游行程框架\n"
+        "   1.1 根据travel_duration划分每日节奏\n"
+    )
+    steps = _parse_steps(plan_text)
+    child = steps[0]["children"][0]
+    state = {
+        "task_name": "成都旅游攻略",
+        "task_desc": "做一份攻略",
+        "task_mode": "deep",
+        "input": {"goal": "交付攻略"},
+        "clarification": {"travel_duration": "3-5天"},
+        "plan_text_full": plan_text,
+    }
+
+    prompt = _build_execute_prompt(state, steps, child, [], "deep")
+
+    assert "所属父步骤" in prompt
+    assert "确定行程框架与核心区域" in prompt
+    assert "当前步骤" in prompt
+    assert "根据travel_duration划分每日节奏" in prompt
 
 
 def test_update_step_in_tree():

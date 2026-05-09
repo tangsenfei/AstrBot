@@ -60,7 +60,10 @@
           class="node-palette-container border-e"
           style="width: 280px; min-width: 280px; overflow-y: auto; background: rgb(var(--v-theme-surface));"
         >
-          <NodePalette @drag-start="handleDragStart" />
+          <NodePalette
+            :locked-topology="lockedTopology"
+            @drag-start="handleDragStart"
+          />
         </div>
 
         <div class="flex-grow-1 d-flex flex-column">
@@ -78,7 +81,14 @@
               <v-icon icon="mdi-refresh" />
             </v-btn>
             <v-divider vertical class="mx-2" />
-            <v-btn icon variant="text" @click="autoLayout" color="primary" :title="$t('agent.flows.editor.autoLayout')">
+            <v-btn
+              icon
+              variant="text"
+              @click="autoLayout"
+              color="primary"
+              :disabled="lockedTopology"
+              :title="$t('agent.flows.editor.autoLayout')"
+            >
               <v-icon icon="mdi-sitemap-outline" />
             </v-btn>
             <v-divider vertical class="mx-2" />
@@ -86,12 +96,17 @@
               icon
               variant="text"
               @click="deleteSelected"
-              :disabled="!hasSelection"
+              :disabled="!hasSelection || lockedTopology"
               color="error"
+              :title="lockedTopology ? '内置 Work 流程不允许删除节点' : ''"
             >
               <v-icon icon="mdi-delete" />
             </v-btn>
             <v-spacer />
+            <v-chip v-if="lockedTopology" size="small" variant="tonal" color="warning" class="mr-2">
+              <v-icon start icon="mdi-lock-outline" />
+              Work 内置拓扑
+            </v-chip>
             <v-chip size="small" variant="tonal" color="primary">
               {{ $t('agent.flows.editor.nodes') }}: {{ nodes.length }}
             </v-chip>
@@ -104,6 +119,7 @@
             ref="canvasRef"
             v-model:nodes="nodes"
             v-model:edges="edges"
+            :locked-topology="lockedTopology"
             @node-click="handleNodeClick"
             @pane-click="handlePaneClick"
             @nodes-change="handleNodesChange"
@@ -126,6 +142,7 @@
           <v-card-text class="pa-4" style="max-height: 60vh; overflow-y: auto;">
             <PropertyPanel
               :node="selectedNode"
+              :locked-topology="lockedTopology"
               @update:node="handleUpdateNode"
             />
           </v-card-text>
@@ -152,6 +169,7 @@ import NodePalette from './NodePalette.vue';
 import FlowCanvas from './FlowCanvas.vue';
 import PropertyPanel from './PropertyPanel.vue';
 import { useI18n } from 'vue-i18n';
+import { isBuiltinDailyWorkFlow, normalizeDailyWorkFlow } from './workDailyFlow';
 
 const props = defineProps<{
   modelValue: boolean;
@@ -177,25 +195,37 @@ const edges = ref<any[]>([]);
 const selectedNode = ref<any>(null);
 
 const hasSelection = computed(() => selectedNode.value !== null);
+const lockedTopology = computed(() => isBuiltinDailyWorkFlow(props.flow));
 
 watch(() => props.flow, (newFlow) => {
   if (newFlow) {
-    flowName.value = newFlow.name || '';
-    flowDescription.value = newFlow.description || '';
-    nodes.value = (newFlow.nodes || []).map((n: any) => ({
+    const normalizedFlow = normalizeDailyWorkFlow(newFlow);
+    const isLocked = isBuiltinDailyWorkFlow(normalizedFlow);
+    flowName.value = normalizedFlow.name || '';
+    flowDescription.value = normalizedFlow.description || '';
+    nodes.value = (normalizedFlow.nodes || []).map((n: any) => ({
       ...n,
       id: n.id || `node-${n.type}-${Date.now()}`,
       type: n.type,
       position: n.position || { x: 0, y: 0 },
-      data: n.data || { label: n.name || n.type, config: n.config || {} },
+      data: {
+        ...(n.data || {}),
+        label: n.data?.label || n.name || n.type,
+        config: n.data?.config || n.config || {},
+        lockedTopology: isLocked,
+      },
+      draggable: isLocked ? false : n.draggable,
+      connectable: isLocked ? false : n.connectable,
+      deletable: isLocked ? false : n.deletable,
     }));
-    edges.value = (newFlow.edges || []).map((e: any) => ({
+    edges.value = (normalizedFlow.edges || []).map((e: any) => ({
       ...e,
       id: e.id || `edge-${e.source}-${e.target}`,
       type: 'smoothstep',
       animated: true,
-      style: { stroke: '#6366f1', strokeWidth: 2 },
-      markerEnd: { type: 'arrowclosed', color: '#6366f1' },
+      style: e.style || { stroke: '#6366f1', strokeWidth: 2 },
+      markerEnd: e.markerEnd || { type: 'arrowclosed', color: '#6366f1' },
+      updatable: isLocked ? false : e.updatable,
     }));
   } else {
     resetEditor();
@@ -212,6 +242,11 @@ function resetEditor() {
 }
 
 function handleDragStart(event: DragEvent, nodeType: string) {
+  if (lockedTopology.value) {
+    event.preventDefault();
+    return;
+  }
+
   if (event.dataTransfer) {
     event.dataTransfer.setData('application/vueflow', nodeType);
     event.dataTransfer.effectAllowed = 'move';
@@ -228,9 +263,17 @@ function handlePaneClick() {
   showPropertyDialog.value = false;
 }
 
-function handleNodesChange(changes: any[]) {}
+function handleNodesChange(changes: any[]) {
+  if (lockedTopology.value && changes.some(change => ['remove', 'add', 'position'].includes(change.type))) {
+    return;
+  }
+}
 
-function handleEdgesChange(changes: any[]) {}
+function handleEdgesChange(changes: any[]) {
+  if (lockedTopology.value && changes.some(change => ['remove', 'add'].includes(change.type))) {
+    return;
+  }
+}
 
 function handleUpdateNode(updatedNode: any) {
   const index = nodes.value.findIndex(n => n.id === updatedNode.id);
@@ -265,10 +308,13 @@ function resetView() {
 }
 
 function autoLayout() {
+  if (lockedTopology.value) return;
   canvasRef.value?.autoLayout();
 }
 
 function deleteSelected() {
+  if (lockedTopology.value) return;
+
   if (selectedNode.value) {
     nodes.value = nodes.value.filter(n => n.id !== selectedNode.value.id);
     edges.value = edges.value.filter(e =>
@@ -334,6 +380,17 @@ async function handleSave() {
         condition: e.condition || e.data?.condition || {},
       })),
       enabled: true,
+      metadata: lockedTopology.value
+        ? {
+          ...(props.flow?.metadata || {}),
+          is_builtin: true,
+          locked: true,
+          non_deletable: true,
+          resettable: true,
+          editable: true,
+          kind: 'work_daily_task',
+        }
+        : props.flow?.metadata,
     };
     emit('save', flowData);
   } finally {

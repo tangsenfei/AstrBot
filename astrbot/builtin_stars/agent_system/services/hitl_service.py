@@ -92,7 +92,7 @@ class HITLService:
                 "id": interaction_id,
                 "task_id": state.card.meta.get("task_id") or state.thread_id,
                 "session_id": state.card.meta.get("session_id", ""),
-                "scope": "work",
+                "scope": state.card.meta.get("scope", "work"),
                 "interaction_type": state.card.type,
                 "title": state.card.title,
                 "body": state.card.body,
@@ -105,12 +105,15 @@ class HITLService:
                 "created_at": datetime.now().isoformat(),
                 "resolved_at": None,
             }
-            self.upsert_from_card(state.card, task_id=row["task_id"], channel=state.channel, metadata=state["metadata"])
+            self.upsert_from_card(state.card, task_id=row["task_id"], channel=state.channel, metadata=row["metadata"])
 
         if row.get("status") != "pending":
-            raise ValueError(f"交互 '{interaction_id}' 已处理")
+            result = self._resolved_result(row, action_key)
+            self._sync_meeting_resolution(row, result, datetime.now().isoformat())
+            return result
 
         field_values = field_values or {}
+        metadata = self._parse_json(row.get("metadata"), {})
         response = InteractionResponse(
             interaction_id=interaction_id,
             action_key=action_key,
@@ -167,11 +170,17 @@ class HITLService:
                         "interaction_id": interaction_id,
                         "action_key": action_key,
                         "field_values": field_values,
+                        "stage_id": metadata.get("stage_id", ""),
+                        "step_id": metadata.get("step_id", ""),
+                        "agent_id": metadata.get("agent_id", ""),
+                        "agent_label": metadata.get("agent_label", ""),
                     },
                     "created_at": now,
                 },
             )
-        return {"interaction_id": interaction_id, "action_key": action_key, "status": status, "task_id": task_id}
+        result = {"interaction_id": interaction_id, "action_key": action_key, "status": status, "task_id": task_id}
+        self._sync_meeting_resolution(row, result, now)
+        return result
 
     @staticmethod
     def _resolved_status(action_key: str) -> str:
@@ -182,6 +191,61 @@ class HITLService:
         if action_key in {"modify", "retry", "clarify_more"}:
             return "modified"
         return "approved"
+
+    def _resolved_result(self, row: dict[str, Any], fallback_action: str) -> dict[str, Any]:
+        response = self._parse_json(row.get("response"), {})
+        return {
+            "interaction_id": row.get("id", ""),
+            "action_key": response.get("action_key") or fallback_action,
+            "status": row.get("status", "approved"),
+            "task_id": row.get("task_id") or "",
+        }
+
+    def _sync_meeting_resolution(self, row: dict[str, Any], result: dict[str, Any], now: str) -> None:
+        metadata = self._parse_json(row.get("metadata"), {})
+        meeting_id = metadata.get("meeting_id")
+        if not meeting_id and row.get("scope") != "meeting":
+            return
+        if not meeting_id:
+            return
+
+        current = self.db.select_one("meetings", where="id = ?", where_params=(meeting_id,))
+        if current and current.get("status") not in {"completed", "failed", "cancelled"}:
+            next_status = "cancelled" if result.get("action_key") == "cancel" else "running"
+            self.db.update(
+                "meetings",
+                {"status": next_status, "updated_at": now},
+                where="id = ?",
+                where_params=(meeting_id,),
+            )
+
+        existing = self.db.execute(
+            """
+            SELECT id
+            FROM meeting_events
+            WHERE meeting_id = ?
+              AND event_type = 'hitl_resolved'
+              AND payload LIKE ?
+            LIMIT 1
+            """,
+            (meeting_id, f"%{row.get('id', '')}%"),
+        ).fetchone()
+        if existing:
+            return
+        self.db.insert(
+            "meeting_events",
+            {
+                "id": f"mevt_hitl_{str(row.get('id', ''))[:12]}",
+                "meeting_id": meeting_id,
+                "event_type": "hitl_resolved",
+                "role": "user",
+                "speaker": "用户",
+                "round": 0,
+                "content": f"已处理人工确认：{result.get('action_key')}",
+                "payload": result,
+                "created_at": now,
+            },
+        )
 
     def _row_to_card(self, row: dict[str, Any]) -> dict[str, Any]:
         fields = self._parse_json(row.get("fields"), [])

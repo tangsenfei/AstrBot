@@ -192,6 +192,7 @@ class FlowService:
             if field in data:
                 update_data[field] = data[field]
         if is_builtin:
+            self._validate_builtin_daily_work_flow_update(flow_id, data)
             update_data["enabled"] = 1
             current_metadata = self._parse_json(row.get("metadata", "{}"))
             next_metadata = data.get("metadata") if "metadata" in data else current_metadata
@@ -205,6 +206,9 @@ class FlowService:
                 "non_deletable": True,
                 "resettable": True,
                 "editable": True,
+                "topology_locked": True,
+                "allows_cycles": True,
+                "schema_version": max(int(current_metadata.get("schema_version") or 0), 3),
             }
 
         # 更新节点
@@ -309,7 +313,12 @@ class FlowService:
                 "resettable": True,
                 "editable": True,
                 "kind": "work_daily_task",
+                "topology_locked": True,
+                "allows_cycles": True,
             }
+            if int(upgraded.get("schema_version") or 0) < 3:
+                self.reset_builtin_daily_work_flow()
+                return
             if upgraded != metadata or not existing.get("enabled"):
                 self.db.update(
                     "flows",
@@ -332,7 +341,7 @@ class FlowService:
         flow_data = {
             "id": BUILTIN_DAILY_WORK_FLOW_ID,
             "name": "NiceBot 日常任务执行流程",
-            "description": "Work 日常任务内置流程：需求明确、任务规划、计划审批、依赖执行、可选审查、验收与交付。",
+            "description": "Work 日常任务内置流程：需求明确、任务模式策略、任务规划、计划审批、依赖执行、审查分支、返工 HITL 与验收交付。",
             "enabled": 1,
             "metadata": {
                 "is_builtin": True,
@@ -341,98 +350,17 @@ class FlowService:
                 "resettable": True,
                 "editable": True,
                 "kind": "work_daily_task",
-                "schema_version": 2,
+                "schema_version": 3,
+                "topology_locked": True,
+                "allows_cycles": True,
             },
             "created_at": now.isoformat(),
             "updated_at": now.isoformat(),
         }
-        nodes = [
-            {"id": "daily_start", "name": "开始", "type": "start", "position": {"x": 80, "y": 180}, "config": {}},
-            {
-                "id": "daily_clarify",
-                "name": "需求明确",
-                "type": "hitl",
-                "position": {"x": 320, "y": 180},
-                "config": {
-                    "builtin_stage": "clarification",
-                    "agent_id": "agent_nicebot_work_assistant",
-                    "template_id": "builtin_work_requirement_clarification",
-                    "repeat_until_clear": True,
-                    "content_provider_type": "agent",
-                    "content_provider_agent_id": "agent_nicebot_work_assistant",
-                },
-            },
-            {
-                "id": "daily_plan",
-                "name": "任务规划",
-                "type": "agent_task",
-                "position": {"x": 560, "y": 180},
-                "config": {
-                    "builtin_stage": "plan",
-                    "agent_id": "agent_nicebot_work_assistant",
-                    "max_depth": 2,
-                    "output": "task_tree_with_dependencies",
-                },
-            },
-            {
-                "id": "daily_plan_approval",
-                "name": "计划审批",
-                "type": "hitl",
-                "position": {"x": 800, "y": 180},
-                "config": {
-                    "builtin_stage": "plan_hitl",
-                    "template_id": "builtin_work_plan_approval",
-                    "optional_config_key": "plan_config.enabled",
-                    "default_enabled": True,
-                },
-            },
-            {
-                "id": "daily_execute",
-                "name": "依赖执行",
-                "type": "agent_task",
-                "position": {"x": 1040, "y": 180},
-                "config": {
-                    "builtin_stage": "execute_dag",
-                    "default_agent_id": "agent_nicebot_work_executor",
-                    "deep_mode_assigner_id": "agent_nicebot_work_assistant",
-                    "research_agent_id": "agent_nicebot_research_expert",
-                },
-            },
-            {
-                "id": "daily_review",
-                "name": "执行审查",
-                "type": "review",
-                "position": {"x": 1280, "y": 180},
-                "config": {
-                    "builtin_stage": "review",
-                    "reviewer_id": "agent_nicebot_work_reviewer",
-                    "optional_config_key": "review_config.enabled",
-                    "default_enabled": False,
-                    "max_rework_config_key": "review_config.max_rework",
-                    "default_max_rework": 3,
-                },
-            },
-            {
-                "id": "daily_deliver",
-                "name": "验收与交付",
-                "type": "deliverable",
-                "position": {"x": 1520, "y": 180},
-                "config": {
-                    "builtin_stage": "deliverable",
-                    "assistant_id": "agent_nicebot_work_assistant",
-                    "reporter_id": "agent_nicebot_report_expert",
-                    "artifact_type": "markdown",
-                },
-            },
-        ]
-        edges = [
-            {"id": "edge_daily_start_clarify", "source": "daily_start", "target": "daily_clarify", "condition": {}},
-            {"id": "edge_daily_clarify_plan", "source": "daily_clarify", "target": "daily_plan", "condition": {}},
-            {"id": "edge_daily_plan_approval", "source": "daily_plan", "target": "daily_plan_approval", "condition": {}},
-            {"id": "edge_daily_approval_execute", "source": "daily_plan_approval", "target": "daily_execute", "condition": {}},
-            {"id": "edge_daily_execute_review", "source": "daily_execute", "target": "daily_review", "condition": {}},
-            {"id": "edge_daily_review_deliver", "source": "daily_review", "target": "daily_deliver", "condition": {}},
-        ]
+        nodes, edges = self._builtin_daily_work_flow_topology()
+        if existing:
+            nodes = self._merge_builtin_daily_work_nodes(nodes)
+            edges = self._merge_builtin_daily_work_edges(edges)
         if existing:
             self.db.delete("flow_edges", where="flow_id = ?", where_params=(BUILTIN_DAILY_WORK_FLOW_ID,))
             self.db.delete("flow_nodes", where="flow_id = ?", where_params=(BUILTIN_DAILY_WORK_FLOW_ID,))
@@ -473,6 +401,250 @@ class FlowService:
         if not flow:
             raise ValueError("内置日常任务流程初始化失败")
         return flow
+
+    def _builtin_daily_work_flow_topology(self) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        nodes = [
+            {"id": "daily_start", "name": "开始", "type": "start", "position": {"x": 80, "y": 220}, "config": {}},
+            {
+                "id": "daily_clarify",
+                "name": "需求明确",
+                "type": "hitl",
+                "position": {"x": 420, "y": 220},
+                "config": {
+                    "builtin_stage": "clarification",
+                    "runtime_config_key": "clarification_config",
+                    "agent_id": "agent_nicebot_work_assistant",
+                    "template_id": "builtin_work_requirement_clarification",
+                    "repeat_until_clear": True,
+                    "content_provider_type": "agent",
+                    "content_provider_agent_id": "agent_nicebot_work_assistant",
+                    "content_system_prompt": "你是 NiceBot Work 任务助手，擅长根据任务内容生成精准的需求确认项。只返回 JSON，不要其他内容。",
+                    "content_prompt": "请为任务「{task_name}」生成 2-5 个需求确认项。任务描述：{task_desc}\n\n{work_context}\n\n请返回 confirmation_items JSON。",
+                },
+            },
+            {
+                "id": "daily_mode_strategy",
+                "name": "任务模式策略",
+                "type": "router",
+                "position": {"x": 760, "y": 220},
+                "config": {
+                    "builtin_stage": "task_mode_strategy",
+                    "runtime_config_key": "plan_config.task_mode",
+                    "default_mode": "normal",
+                    "modes": {
+                        "quick": {"label": "快速", "description": "将任务作为一个交付单元执行。", "assignment_strategy": "single_unit", "planning_effort": "low"},
+                        "normal": {"label": "常规", "description": "按一级任务拆分执行。", "assignment_strategy": "parent_steps", "planning_effort": "medium"},
+                        "deep": {"label": "深度", "description": "按二级子任务细粒度执行。", "assignment_strategy": "leaf_steps", "planning_effort": "high"},
+                    },
+                    "conditions": [
+                        {"key": "quick", "label": "快速任务", "expression": "plan_config.task_mode == 'quick'"},
+                        {"key": "normal", "label": "常规任务", "expression": "plan_config.task_mode == 'normal'"},
+                        {"key": "deep", "label": "深度任务", "expression": "plan_config.task_mode == 'deep'"},
+                    ],
+                },
+            },
+            {
+                "id": "daily_plan",
+                "name": "任务规划",
+                "type": "agent_task",
+                "position": {"x": 1100, "y": 220},
+                "config": {
+                    "builtin_stage": "plan",
+                    "runtime_config_key": "plan_config",
+                    "agent_id": "agent_nicebot_work_assistant",
+                    "max_depth": 2,
+                    "output": "task_tree_with_dependencies",
+                    "system_prompt": "你是 NiceBot Work 的任务规划助手，擅长把目标拆成可审查的执行步骤。",
+                    "prompt": "请为 Work 任务制定可执行计划。\n\n任务名称：{task_name}\n任务描述：{task_desc}\n\n已确认需求：\n{clarification}\n\n{work_context}\n\n规划深度：{effort}\n\n{feedback_text}请输出 3-7 个一级步骤，每个步骤包含清晰交付物。如果步骤较复杂，可拆出 1-3 个二级子步骤。二级子步骤必须使用「父步骤号.子序号」格式，最多两级。",
+                },
+            },
+            {
+                "id": "daily_plan_approval",
+                "name": "计划审批",
+                "type": "hitl",
+                "position": {"x": 1440, "y": 220},
+                "config": {
+                    "builtin_stage": "plan_hitl",
+                    "runtime_config_key": "plan_config",
+                    "template_id": "builtin_work_plan_approval",
+                    "optional_config_key": "plan_config.enabled",
+                    "default_enabled": True,
+                    "body_template": "请审批以下执行计划：\n\n{plan_body}",
+                },
+            },
+            {
+                "id": "daily_execute",
+                "name": "依赖执行",
+                "type": "agent_task",
+                "position": {"x": 1780, "y": 220},
+                "config": {
+                    "builtin_stage": "execute_dag",
+                    "runtime_config_key": "executor_config",
+                    "default_agent_id": "agent_nicebot_work_executor",
+                    "assigner_agent_id": "agent_nicebot_work_assistant",
+                    "research_agent_id": "agent_nicebot_research_expert",
+                    "system_prompt": "你是 NiceBot Work 执行智能体。当前执行者：{agent_label}。只执行当前步骤，不负责审查自己的结果。",
+                    "prompt": "请执行 Work 任务中的当前负责部分。\n\n## 任务需求\n{requirements}\n\n## 已审批整体计划\n{approved_plan}\n\n## 当前负责部分\n{step_scope}\n\n## 执行要求\n1. 先对齐任务需求和已审批整体计划，再完成当前负责部分。\n2. 只执行当前负责部分，不重写整体计划，也不要扩展到未分配步骤。\n3. 输出要能被后续步骤或最终交付复用，保留关键依据、结论和仍不确定的点。\n4. 如果当前负责部分与需求或计划冲突，明确指出冲突并给出最小可行处理。",
+                    "assignment_system_prompt": "你是 NiceBot Work 的任务分配助手，擅长根据执行计划分配执行者和设定依赖关系。只返回 JSON 数组，不要包含其他内容。",
+                },
+            },
+            {
+                "id": "daily_review_gate",
+                "name": "是否启用审查",
+                "type": "router",
+                "position": {"x": 2120, "y": 120},
+                "config": {
+                    "builtin_stage": "review_gate",
+                    "runtime_config_key": "review_config.enabled",
+                    "conditions": [
+                        {"key": "enabled", "label": "需要审查", "expression": "review_config.enabled == true", "target": "daily_review"},
+                        {"key": "disabled", "label": "跳过审查", "expression": "review_config.enabled == false", "target": "daily_deliver"},
+                    ],
+                },
+            },
+            {
+                "id": "daily_review",
+                "name": "执行审查",
+                "type": "review",
+                "position": {"x": 2460, "y": 120},
+                "config": {
+                    "builtin_stage": "review",
+                    "runtime_config_key": "review_config",
+                    "reviewer_id": "agent_nicebot_work_reviewer",
+                    "optional_config_key": "review_config.enabled",
+                    "default_enabled": False,
+                    "max_rework_config_key": "review_config.max_rework",
+                    "default_max_rework": 3,
+                    "system_prompt": "你是 NiceBot Work 的审查智能体。只要结果明显未达成目标才判定返工。",
+                    "prompt": "请审查以下任务结果是否达成目标。\n\n任务：{task_name}\n\n{work_context}\n\n执行结果：\n{results_text}\n\n如果通过，回复 PASS。需要返工，回复 RETRY 并说明原因。",
+                },
+            },
+            {
+                "id": "daily_rework_gate",
+                "name": "审查分支判断",
+                "type": "router",
+                "position": {"x": 2800, "y": 120},
+                "config": {
+                    "builtin_stage": "review_branch",
+                    "runtime_config_key": "review_config",
+                    "conditions": [
+                        {"key": "pass", "label": "审查通过", "expression": "review_passed == true", "target": "daily_deliver"},
+                        {"key": "retry", "label": "未达返工上限", "expression": "review_passed == false && rework_count <= review_config.max_rework", "target": "daily_execute"},
+                        {"key": "hitl", "label": "达到返工上限", "expression": "review_passed == false && rework_count > review_config.max_rework", "target": "daily_rework_hitl"},
+                    ],
+                },
+            },
+            {
+                "id": "daily_rework_hitl",
+                "name": "返工人工决策",
+                "type": "hitl",
+                "position": {"x": 3140, "y": 320},
+                "config": {
+                    "builtin_stage": "rework_hitl",
+                    "runtime_config_key": "review_config",
+                    "template_id": "builtin_work_rework_decision",
+                    "title": "审查未通过",
+                    "body": "任务审查未通过且已达到预设返工次数，请确认是否继续返工或结束任务。",
+                },
+            },
+            {
+                "id": "daily_deliver",
+                "name": "验收与交付",
+                "type": "deliverable",
+                "position": {"x": 3480, "y": 120},
+                "config": {
+                    "builtin_stage": "deliverable",
+                    "runtime_config_key": "deliverable_config",
+                    "assistant_id": "agent_nicebot_work_assistant",
+                    "reporter_id": "agent_nicebot_report_expert",
+                    "artifact_type": "markdown",
+                    "system_prompt": "你是 NiceBot Work 的汇报专家（{reporter_id}）。请只整理最终交付物，不混入过程日志。",
+                    "prompt": "请将以下任务执行结果整理成最终交付物。\n\n任务：{task_name}\n\n{results_text}",
+                },
+            },
+        ]
+        edges = [
+            {"id": "edge_daily_start_clarify", "source": "daily_start", "target": "daily_clarify", "condition": {}},
+            {"id": "edge_daily_clarify_mode", "source": "daily_clarify", "target": "daily_mode_strategy", "condition": {}},
+            {"id": "edge_daily_mode_plan", "source": "daily_mode_strategy", "target": "daily_plan", "condition": {"expression": "task_mode in ['quick', 'normal', 'deep']"}},
+            {"id": "edge_daily_plan_approval", "source": "daily_plan", "target": "daily_plan_approval", "condition": {}},
+            {"id": "edge_daily_approval_execute", "source": "daily_plan_approval", "target": "daily_execute", "condition": {}},
+            {"id": "edge_daily_execute_review_gate", "source": "daily_execute", "target": "daily_review_gate", "condition": {}},
+            {"id": "edge_daily_review_gate_review", "source": "daily_review_gate", "target": "daily_review", "condition": {"expression": "review_config.enabled == true"}},
+            {"id": "edge_daily_review_gate_deliver", "source": "daily_review_gate", "target": "daily_deliver", "condition": {"expression": "review_config.enabled == false"}},
+            {"id": "edge_daily_review_branch", "source": "daily_review", "target": "daily_rework_gate", "condition": {}},
+            {"id": "edge_daily_branch_retry", "source": "daily_rework_gate", "target": "daily_execute", "condition": {"expression": "review_passed == false && rework_count <= review_config.max_rework"}},
+            {"id": "edge_daily_branch_hitl", "source": "daily_rework_gate", "target": "daily_rework_hitl", "condition": {"expression": "review_passed == false && rework_count > review_config.max_rework"}},
+            {"id": "edge_daily_branch_deliver", "source": "daily_rework_gate", "target": "daily_deliver", "condition": {"expression": "review_passed == true"}},
+            {"id": "edge_daily_rework_hitl_execute", "source": "daily_rework_hitl", "target": "daily_execute", "condition": {"expression": "action == 'retry'"}},
+            {"id": "edge_daily_rework_hitl_deliver", "source": "daily_rework_hitl", "target": "daily_deliver", "condition": {"expression": "action in ['finish', 'cancel']"}},
+        ]
+        return nodes, edges
+
+    def _merge_builtin_daily_work_nodes(self, nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        current_rows = self.db.select_all("flow_nodes", where="flow_id = ?", where_params=(BUILTIN_DAILY_WORK_FLOW_ID,))
+        by_id = {row["id"]: row for row in current_rows}
+        by_stage: dict[str, dict[str, Any]] = {}
+        for row in current_rows:
+            config = self._parse_json(row.get("config", "{}"))
+            if isinstance(config, dict) and config.get("builtin_stage"):
+                by_stage[str(config["builtin_stage"])] = row
+
+        merged: list[dict[str, Any]] = []
+        for node in nodes:
+            template = dict(node)
+            template_config = dict(template.get("config") or {})
+            row = by_id.get(template["id"]) or by_stage.get(str(template_config.get("builtin_stage") or ""))
+            if not row:
+                merged.append(template)
+                continue
+            existing_config = self._parse_json(row.get("config", "{}"))
+            if not isinstance(existing_config, dict):
+                existing_config = {}
+            next_config = {**template_config, **existing_config}
+            for key in ("builtin_stage", "runtime_config_key"):
+                if template_config.get(key):
+                    next_config[key] = template_config[key]
+            if template_config.get("conditions") and not existing_config.get("conditions"):
+                next_config["conditions"] = template_config["conditions"]
+            template["name"] = row.get("name") or template["name"]
+            template["config"] = next_config
+            merged.append(template)
+        return merged
+
+    def _merge_builtin_daily_work_edges(self, edges: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        current_rows = self.db.select_all("flow_edges", where="flow_id = ?", where_params=(BUILTIN_DAILY_WORK_FLOW_ID,))
+        by_id = {row["id"]: row for row in current_rows}
+        merged: list[dict[str, Any]] = []
+        for edge in edges:
+            template = dict(edge)
+            row = by_id.get(template["id"])
+            if row:
+                condition = self._parse_json(row.get("condition", "{}"))
+                if isinstance(condition, dict):
+                    template["condition"] = {**(template.get("condition") or {}), **condition}
+            merged.append(template)
+        return merged
+
+    def _validate_builtin_daily_work_flow_update(self, flow_id: str, data: dict[str, Any]) -> None:
+        if flow_id != BUILTIN_DAILY_WORK_FLOW_ID:
+            return
+        if "nodes" in data:
+            current_nodes = self.db.select_all("flow_nodes", where="flow_id = ?", where_params=(flow_id,))
+            current_by_id = {row["id"]: row.get("type") for row in current_nodes}
+            next_by_id = {node.get("id"): node.get("type", "start") for node in data.get("nodes", []) if isinstance(node, dict)}
+            if current_by_id and next_by_id != current_by_id:
+                raise ValueError("内置日常任务 Flow 拓扑已锁定，仅允许编辑节点配置、名称和位置")
+        if "edges" in data:
+            current_edges = self.db.select_all("flow_edges", where="flow_id = ?", where_params=(flow_id,))
+            current_topology = {(row["id"], row["source"], row["target"]) for row in current_edges}
+            next_topology = {
+                (edge.get("id"), edge.get("source"), edge.get("target"))
+                for edge in data.get("edges", [])
+                if isinstance(edge, dict)
+            }
+            if current_topology and next_topology != current_topology:
+                raise ValueError("内置日常任务 Flow 拓扑已锁定，仅允许编辑边条件配置")
 
     def _is_builtin_row(self, row: dict[str, Any]) -> bool:
         metadata = self._parse_json(row.get("metadata", "{}"))
@@ -623,8 +795,10 @@ class FlowService:
         if not result["errors"]:
             result["checks"]["nodes_connected"] = True
 
-        # 检查是否有环
-        if not self._has_cycle(flow):
+        # 检查是否有环。Work 内置流程需要展示真实的审查返工回路，允许显式标记的循环。
+        if flow.metadata.get("allows_cycles"):
+            result["checks"]["no_cycles"] = True
+        elif not self._has_cycle(flow):
             result["checks"]["no_cycles"] = True
         else:
             result["errors"].append("Flow 存在循环依赖")

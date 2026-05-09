@@ -19,7 +19,9 @@ const route = useRoute();
 const routerLoadingStore = useRouterLoadingStore();
 const isCurrentChatRoute = computed(() => route.path === '/chat' || route.path.startsWith('/chat/'));
 const isCurrentWorkRoute = computed(() => route.path === '/work' || route.path.startsWith('/work/'));
-const isImmersiveRoute = computed(() => isCurrentChatRoute.value || isCurrentWorkRoute.value);
+const isCurrentMeetingRoute = computed(() => route.path === '/meeting' || route.path.startsWith('/meeting/'));
+const isCurrentGenericAgentRoute = computed(() => route.path === '/generic-agent');
+const isImmersiveRoute = computed(() => isCurrentChatRoute.value || isCurrentWorkRoute.value || isCurrentMeetingRoute.value || isCurrentGenericAgentRoute.value);
 const shouldMountChat = ref(isCurrentChatRoute.value);
 
 const showSidebar = computed(() => !isImmersiveRoute.value)

@@ -48,13 +48,23 @@ class AgentGraphState(TypedDict, total=False):
 
 class AgentGraphResult(TypedDict, total=False):
     final_text: str
+    reasoning_text: NotRequired[str]
     tool_calls: list[dict[str, Any]]
     error: NotRequired[str]
     stats: NotRequired[dict[str, Any]]
 
 
 class MeetingState(AgentGraphState):
+    meeting_id: NotRequired[str]
+    task_id: NotRequired[str]
     topic: str
+    goal: NotRequired[str]
+    expected_output: NotRequired[str]
+    meeting_type: NotRequired[str]
+    materials: NotRequired[dict[str, Any]]
+    settings: NotRequired[dict[str, Any]]
+    materials_brief: NotRequired[str]
+    last_user_event_seq: NotRequired[int]
     participants: list[dict[str, Any]]
     host: NotRequired[dict[str, Any]]
     strategy: str

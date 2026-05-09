@@ -109,12 +109,17 @@ class AgentOperator:
 
             tool_calls = []
             final_text = ""
+            reasoning_text = ""
             writer = run_ctx.writer
 
+            trace_context = state.get("trace_context", {}) or {}
+
             async for resp in runner.step_until_done(max_steps):
-                event = self._to_stream_event(resp)
+                event = self._with_trace_context(self._to_stream_event(resp), trace_context)
                 if write_stream and writer and event:
                     writer(event)
+                if event and event.get("event") == "reasoning":
+                    reasoning_text += str((event.get("data") or {}).get("text") or "")
 
                 if resp.type == "tool_call":
                     tool_calls.append(resp.data)
@@ -130,13 +135,15 @@ class AgentOperator:
                     data={
                         "input": getattr(tok, "input", getattr(tok, "prompt_tokens", 0) or 0),
                         "output": getattr(tok, "output", getattr(tok, "completion_tokens", 0) or 0),
+                        **trace_context,
                     },
                     timestamp=time.time(),
-                    node_id="agent_operator",
+                    node_id=str(trace_context.get("node_id") or "agent_operator"),
                 ))
 
             return AgentGraphResult(
                 final_text=final_text,
+                reasoning_text=reasoning_text,
                 tool_calls=tool_calls,
                 stats=runner.stats.to_dict() if runner.stats else {},
             )
@@ -202,3 +209,14 @@ class AgentOperator:
                 node_id="",
             )
         return None
+
+    @staticmethod
+    def _with_trace_context(event: StreamEvent | None, trace_context: dict[str, Any]) -> StreamEvent | None:
+        if not event or not trace_context:
+            return event
+        data = dict(event.get("data") or {})
+        for key, value in trace_context.items():
+            if value not in (None, "") and key not in data:
+                data[key] = value
+        node_id = event.get("node_id") or str(trace_context.get("node_id") or "")
+        return StreamEvent(event=event["event"], data=data, timestamp=event["timestamp"], node_id=node_id)

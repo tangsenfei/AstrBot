@@ -260,6 +260,10 @@ async def _execute_roundtable(roundtable_id: str):
         service = _get_roundtable_service()
         data = await request.get_json() or {}
 
+        # 清理可能残留的旧 SSE 状态，避免重复执行时旧队列常驻内存。
+        _sse_queues.pop(roundtable_id, None)
+        _sse_connections.pop(roundtable_id, None)
+
         # 创建 SSE 队列
         _sse_queues[roundtable_id] = asyncio.Queue()
         _sse_connections[roundtable_id] = True
@@ -320,22 +324,27 @@ async def _stream_roundtable(roundtable_id: str):
             yield f"event: error\ndata: {json.dumps({'message': '没有正在进行的执行'})}\n\n"
             return
 
-        while _sse_connections.get(roundtable_id, False):
-            try:
-                # 等待事件，超时 30 秒
-                event = await asyncio.wait_for(queue.get(), timeout=30.0)
-                data = json.dumps(event, ensure_ascii=False)
-                yield f"event: message\ndata: {data}\n\n"
+        try:
+            while _sse_connections.get(roundtable_id, False):
+                try:
+                    # 等待事件，超时 30 秒
+                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    data = json.dumps(event, ensure_ascii=False)
+                    yield f"event: message\ndata: {data}\n\n"
 
-                # 如果是完成或错误事件，结束流
-                if event["type"] in ("completed", "error"):
+                    # 如果是完成或错误事件，结束流
+                    if event["type"] in ("completed", "error"):
+                        break
+                except asyncio.TimeoutError:
+                    # 发送心跳保持连接
+                    yield f"event: heartbeat\ndata: {{}}\n\n"
+                except Exception as e:
+                    logger.error(f"SSE stream error: {e}")
                     break
-            except asyncio.TimeoutError:
-                # 发送心跳保持连接
-                yield f"event: heartbeat\ndata: {{}}\n\n"
-            except Exception as e:
-                logger.error(f"SSE stream error: {e}")
-                break
+        finally:
+            # 客户端提前断开时主动回收队列，避免执行任务长时间持有事件缓冲。
+            _sse_connections.pop(roundtable_id, None)
+            _sse_queues.pop(roundtable_id, None)
 
     response = QuartResponse(
         event_generator(),

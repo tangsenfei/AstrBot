@@ -834,7 +834,9 @@ class ConfigRoute(Route):
             }
             return Response().ok(ret).__dict__
         except Exception as e:
-            logger.error(traceback.format_exc())
+            logger.warning(
+                f"Failed to fetch model list for provider {provider_id}: {e}"
+            )
             return Response().error(str(e)).__dict__
 
     async def get_embedding_dim(self):

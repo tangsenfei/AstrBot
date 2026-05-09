@@ -103,6 +103,8 @@ class AgentSystemPlugin(Star):
             register_task_routes,
             register_tool_routes,
             register_work_routes,
+            register_meeting_routes,
+            register_generic_agent_routes,
         )
         register_tool_routes(self)
         register_knowledge_routes(self)
@@ -113,7 +115,9 @@ class AgentSystemPlugin(Star):
         register_roundtable_routes(self)
         register_task_routes(self)
         register_work_routes(self)
+        register_meeting_routes(self)
         register_cli_agent_routes(self)
+        register_generic_agent_routes(self)
 
         logger.info("AgentSystemPlugin APIs registered")
 

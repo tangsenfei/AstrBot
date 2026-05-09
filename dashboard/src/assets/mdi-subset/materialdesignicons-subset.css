@@ -1,4 +1,4 @@
-/* Auto-generated MDI subset – 422 icons */
+/* Auto-generated MDI subset – 428 icons */
 /* Do not edit manually. Run: pnpm run subset-icons */
 
 @font-face {
@@ -118,10 +118,6 @@
 
 .mdi-arrow-right::before {
   content: "\F0054";
-}
-
-.mdi-arrow-right-thin::before {
-  content: "\F19B0";
 }
 
 .mdi-arrow-top-right-thick::before {
@@ -258,10 +254,6 @@
 
 .mdi-card-account-details::before {
   content: "\F05D2";
-}
-
-.mdi-cash-multiple::before {
-  content: "\F0116";
 }
 
 .mdi-cellphone::before {
@@ -568,6 +560,10 @@
   content: "\F0C62";
 }
 
+.mdi-desktop-classic::before {
+  content: "\F07C0";
+}
+
 .mdi-diamond-stone::before {
   content: "\F01C8";
 }
@@ -686,6 +682,10 @@
 
 .mdi-file-document-outline::before {
   content: "\F09EE";
+}
+
+.mdi-file-edit-outline::before {
+  content: "\F11E8";
 }
 
 .mdi-file-excel-box::before {
@@ -948,6 +948,10 @@
   content: "\F0315";
 }
 
+.mdi-lan-pending::before {
+  content: "\F031A";
+}
+
 .mdi-language-css3::before {
   content: "\F031C";
 }
@@ -994,6 +998,10 @@
 
 .mdi-lightbulb-on::before {
   content: "\F06E8";
+}
+
+.mdi-lightbulb-on-outline::before {
+  content: "\F06E9";
 }
 
 .mdi-lightbulb-outline::before {
@@ -1244,6 +1252,10 @@
   content: "\F0415";
 }
 
+.mdi-plus-box-outline::before {
+  content: "\F0704";
+}
+
 .mdi-plus-circle::before {
   content: "\F0417";
 }
@@ -1424,6 +1436,10 @@
   content: "\F099D";
 }
 
+.mdi-shield-search::before {
+  content: "\F0D9A";
+}
+
 .mdi-shield-star::before {
   content: "\F113B";
 }
@@ -1504,6 +1520,10 @@
   content: "\F0666";
 }
 
+.mdi-stop-circle-outline::before {
+  content: "\F0667";
+}
+
 .mdi-store::before {
   content: "\F04DC";
 }
@@ -1534,6 +1554,10 @@
 
 .mdi-text-box::before {
   content: "\F021A";
+}
+
+.mdi-text-box-check-outline::before {
+  content: "\F0EA7";
 }
 
 .mdi-text-box-edit::before {

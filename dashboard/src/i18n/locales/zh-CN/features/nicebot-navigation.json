@@ -2,7 +2,12 @@
   "tool_provider": "工具管理",
   "tool_skills": "工具技能",
   "task_management": "任务管理",
+  "cli_agent": "CLI Agent",
+  "generic_agent": "GenericAgent",
+  "generic_agent_run": "GenericAgent 运行",
+  "generic_agent_config": "GenericAgent 配置",
   "work": "Work 工作台",
+  "meeting": "Meeting 会议",
   "memory_management": "记忆管理",
   "evolution_center": "进化中心"
 }

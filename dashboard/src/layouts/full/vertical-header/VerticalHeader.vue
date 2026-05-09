@@ -32,6 +32,8 @@ const route = useRoute();
 const LAST_BOT_ROUTE_KEY = 'astrbot:last_bot_route';
 const LAST_CHAT_ROUTE_KEY = 'astrbot:last_chat_route';
 const LAST_WORK_ROUTE_KEY = 'astrbot:last_work_route';
+const LAST_MEETING_ROUTE_KEY = 'astrbot:last_meeting_route';
+const LAST_GENERIC_AGENT_ROUTE_KEY = 'astrbot:last_generic_agent_route';
 let dialog = ref(false);
 let accountWarning = ref(false)
 let updateStatusDialog = ref(false);
@@ -68,7 +70,11 @@ const isChatPath = computed(() =>
 const isWorkPath = computed(() =>
   route.path === '/work' || route.path.startsWith('/work/')
 );
-const isImmersivePath = computed(() => isChatPath.value || isWorkPath.value);
+const isMeetingPath = computed(() =>
+  route.path === '/meeting' || route.path.startsWith('/meeting/')
+);
+const isGenericAgentPath = computed(() => route.path === '/generic-agent');
+const isImmersivePath = computed(() => isChatPath.value || isWorkPath.value || isMeetingPath.value || isGenericAgentPath.value);
 const getAppUpdaterBridge = (): AstrBotAppUpdaterBridge | null => {
   if (typeof window === 'undefined') {
     return null;
@@ -418,6 +424,10 @@ onMounted(() => {
       }
     } else if (isWorkPath.value) {
       sessionStorage.setItem(LAST_WORK_ROUTE_KEY, route.fullPath);
+    } else if (isMeetingPath.value) {
+      sessionStorage.setItem(LAST_MEETING_ROUTE_KEY, route.fullPath);
+    } else if (isGenericAgentPath.value) {
+      sessionStorage.setItem(LAST_GENERIC_AGENT_ROUTE_KEY, route.fullPath);
     } else {
       // 保存 bot 路由（非 chat 頁面）
       sessionStorage.setItem(LAST_BOT_ROUTE_KEY, route.fullPath);
@@ -440,9 +450,11 @@ watch(() => route.fullPath, (newPath) => {
     // 使用現有的 isChatPath 計算屬性來避免名稱衝突
     const isChat = isChatPath.value; // 這裡使用已經計算好的 isChatPath
     const isWork = isWorkPath.value;
+    const isMeeting = isMeetingPath.value;
+    const isGenericAgent = isGenericAgentPath.value;
 
     // ✅ bot：只存「非 chat 頁」
-    if (!isChat && !isWork) {
+    if (!isChat && !isWork && !isMeeting && !isGenericAgent) {
       sessionStorage.setItem(LAST_BOT_ROUTE_KEY, newPath);
     }
 
@@ -460,14 +472,22 @@ watch(() => route.fullPath, (newPath) => {
       sessionStorage.setItem(LAST_WORK_ROUTE_KEY, newPath);
     }
 
+    if (isMeeting) {
+      sessionStorage.setItem(LAST_MEETING_ROUTE_KEY, newPath);
+    }
+
+    if (isGenericAgent) {
+      sessionStorage.setItem(LAST_GENERIC_AGENT_ROUTE_KEY, newPath);
+    }
+
   } catch (e) {
     console.error('Failed to save route:', e);
   }
 });
 
 const currentMode = computed({
-  get: () => (isWorkPath.value ? 'work' : isChatPath.value ? 'chat' : 'bot'),
-  set: (val: 'chat' | 'bot' | 'work') => {
+  get: () => (isGenericAgentPath.value ? 'generic-agent' : isMeetingPath.value ? 'meeting' : isWorkPath.value ? 'work' : isChatPath.value ? 'chat' : 'bot'),
+  set: (val: 'chat' | 'bot' | 'work' | 'meeting' | 'generic-agent') => {
     try {
       // 檢查 window 和 sessionStorage 是否存在
       if (typeof window === 'undefined' || typeof sessionStorage === 'undefined') {
@@ -482,9 +502,15 @@ const currentMode = computed({
       } else if (val === 'work') {
         const lastWorkRoute = sessionStorage.getItem(LAST_WORK_ROUTE_KEY) || '/work';
         router.push(lastWorkRoute.startsWith('/work') ? lastWorkRoute : '/work');
+      } else if (val === 'meeting') {
+        const lastMeetingRoute = sessionStorage.getItem(LAST_MEETING_ROUTE_KEY) || '/meeting';
+        router.push(lastMeetingRoute.startsWith('/meeting') ? lastMeetingRoute : '/meeting');
+      } else if (val === 'generic-agent') {
+        const lastGenericAgentRoute = sessionStorage.getItem(LAST_GENERIC_AGENT_ROUTE_KEY) || '/generic-agent';
+        router.push(lastGenericAgentRoute === '/generic-agent' ? lastGenericAgentRoute : '/generic-agent');
       } else {
         let lastBotRoute = sessionStorage.getItem(LAST_BOT_ROUTE_KEY) || '/';
-        if (lastBotRoute.startsWith('/chat') || lastBotRoute.startsWith('/work')) {
+        if (lastBotRoute.startsWith('/chat') || lastBotRoute.startsWith('/work') || lastBotRoute.startsWith('/meeting') || lastBotRoute === '/generic-agent') {
           lastBotRoute = '/';
         }
         router.push(lastBotRoute);
@@ -575,6 +601,8 @@ onMounted(async () => {
       </span></span>
       <span class="logo-text logo-text-light Outfit" style="color: grey;" v-if="isChatPath">ChatUI</span>
       <span class="logo-text logo-text-light Outfit" style="color: grey;" v-else-if="isWorkPath">Work</span>
+      <span class="logo-text logo-text-light Outfit" style="color: grey;" v-else-if="isMeetingPath">Meeting</span>
+      <span class="logo-text logo-text-light Outfit" style="color: grey;" v-else-if="isGenericAgentPath">GenericAgent</span>
       <span class="version-text hidden-xs">{{ botCurrVersion }}</span>
     </div>
 
@@ -610,6 +638,14 @@ onMounted(async () => {
   <v-btn value="work" size="small">
     <v-icon start>mdi-briefcase-outline</v-icon>
     Work
+  </v-btn>
+  <v-btn value="meeting" size="small">
+    <v-icon start>mdi-table-chair</v-icon>
+    Meeting
+  </v-btn>
+  <v-btn value="generic-agent" size="small">
+    <v-icon start>mdi-desktop-classic</v-icon>
+    GenericAgent
   </v-btn>
 </v-btn-toggle>
 
@@ -652,6 +688,14 @@ onMounted(async () => {
             <v-btn value="work" size="small">
               <v-icon start>mdi-briefcase-outline</v-icon>
               Work
+            </v-btn>
+            <v-btn value="meeting" size="small">
+              <v-icon start>mdi-table-chair</v-icon>
+              Meeting
+            </v-btn>
+            <v-btn value="generic-agent" size="small">
+              <v-icon start>mdi-desktop-classic</v-icon>
+              GenericAgent
             </v-btn>
           </v-btn-toggle>
         </div>

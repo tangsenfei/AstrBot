@@ -63,6 +63,11 @@ const sidebarItems: menu[] = [
         title: 'agent.navigation.flows',
         icon: 'mdi-graph',
         to: '/flows'
+      },
+      {
+        title: 'nicebot.navigation.generic_agent_config',
+        icon: 'mdi-desktop-classic',
+        to: '/generic-agent/config'
       }
     ]
   },
@@ -72,7 +77,7 @@ const sidebarItems: menu[] = [
     to: '/task-management'
   },
   {
-    title: 'CLI Agent',
+    title: 'nicebot.navigation.cli_agent',
     icon: 'mdi-console',
     to: '/cli-agents'
   },
@@ -80,6 +85,11 @@ const sidebarItems: menu[] = [
     title: 'nicebot.navigation.work',
     icon: 'mdi-briefcase-outline',
     to: '/work'
+  },
+  {
+    title: 'nicebot.navigation.meeting',
+    icon: 'mdi-table-chair',
+    to: '/meeting'
   },
   {
     title: 'nicebot.navigation.memory_management',

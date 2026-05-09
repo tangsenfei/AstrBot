@@ -88,7 +88,10 @@
         :meetings="filteredMeetings"
         :selected-meeting-id="selectedMeetingId"
         :loading="loading"
+        :loading-more="loadingMore"
+        :has-more="hasMore"
         :is-dark="isDark"
+        @scroll.passive="handleMeetingListScroll"
         @select="selectMeeting"
         @hitl-open="openMeetingHitl"
       />
@@ -325,12 +328,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import axios from 'axios';
 import AgentChatPanel from '@/components/agent/AgentChatPanel.vue';
 import HitlDialog from '@/components/chat/HitlDialog.vue';
 import InteractionCardComponent from '@/components/chat/InteractionCardComponent.vue';
 import MeetingList from '@/components/meeting/MeetingList.vue';
+import { usePagedTaskList } from '@/composables/usePagedTaskList';
+import { useSelectedEventStream } from '@/composables/useSelectedEventStream';
 import { useCustomizerStore } from '@/stores/customizer';
 
 type MeetingEvent = {
@@ -398,7 +403,6 @@ type Meeting = {
 const customizer = useCustomizerStore();
 const isDark = computed(() => customizer.uiTheme === 'PurpleThemeDark');
 
-const meetings = ref<Meeting[]>([]);
 const meetingTypes = ref<any[]>([]);
 const agents = ref<any[]>([]);
 const selectedMeetingId = ref('');
@@ -416,10 +420,41 @@ const continueDialog = ref(false);
 const hitlDialog = ref(false);
 const starting = ref(false);
 const submittingInput = ref(false);
-const loading = ref(false);
 const detailTab = ref('chatroom');
-let eventSource: EventSource | null = null;
-let reloadTimer: ReturnType<typeof setTimeout> | null = null;
+let listRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+let summaryRefreshTimer: ReturnType<typeof setInterval> | null = null;
+
+const meetingList = usePagedTaskList<Meeting>({
+  pageSize: 30,
+  loadPage: loadMeetingPage,
+});
+const meetings = meetingList.items;
+const loading = meetingList.loading;
+const loadingMore = meetingList.loadingMore;
+const hasMore = meetingList.hasMore;
+const meetingStream = useSelectedEventStream({
+  eventNames: [
+    'phase',
+    'text_delta',
+    'assistant_message',
+    'tool_call',
+    'tool_result',
+    'reasoning',
+    'interaction',
+    'artifact',
+    'error',
+    'done',
+    'user_message',
+    'token',
+    'hitl_resolved',
+    'log',
+  ],
+  streamUrl: (meetingId, afterSeq) => `/api/plug/meeting/meetings/${encodeURIComponent(meetingId)}/events?after_seq=${afterSeq}`,
+  getAfterSeq: maxEventSeq,
+  onEvent: handleMeetingStreamEvent,
+  onFallback: meetingId => loadMeetingEvents(meetingId, { afterSeq: maxEventSeq() }),
+  shouldReconnect: meetingId => selectedMeetingId.value === meetingId && !isTerminalStatus(selectedMeeting.value?.status || ''),
+});
 
 const meetingForm = reactive({
   name: '',
@@ -466,33 +501,11 @@ const canContinue = computed(() => !!continueForm.review_comment.trim() || !!con
 const currentStageLabel = computed(() => stages.find(stage => stage.key === selectedMeeting.value?.stage)?.label || statusLabel(selectedMeeting.value?.status || ''));
 
 const filteredMeetings = computed(() => {
-  const q = searchText.value.trim().toLowerCase();
-  return meetings.value.filter((meeting) => {
-    if (statusFilter.value && meeting.status !== statusFilter.value) return false;
-    if (typeFilter.value && meeting.meeting_type !== typeFilter.value) return false;
-    if (selectedCategory.value === 'running' && meeting.status !== 'running') return false;
-    if (selectedCategory.value === 'completed' && meeting.status !== 'completed') return false;
-    if (selectedCategory.value === 'pending' && !['pending', 'draft'].includes(meeting.status)) return false;
-    if (q && !`${meeting.name} ${meeting.goal || ''}`.toLowerCase().includes(q)) return false;
-    return true;
-  });
+  return meetings.value;
 });
 
 const chatMessages = computed<ChatMessage[]>(() => {
   const currentEvents = events.value;
-  // 如果事件数量没有变化，直接返回缓存
-  if (currentEvents.length === lastProcessedEventCount.value && cachedMessages.value.length > 0) {
-    return cachedMessages.value;
-  }
-  // 增量更新：如果新事件数量大于上次处理的数量，只处理新事件
-  if (currentEvents.length > lastProcessedEventCount.value && cachedMessages.value.length > 0) {
-    const newEvents = currentEvents.slice(lastProcessedEventCount.value);
-    const newMessages = mapEventsToMessages(newEvents, cachedMessages.value);
-    cachedMessages.value = newMessages;
-    lastProcessedEventCount.value = currentEvents.length;
-    return newMessages;
-  }
-  // 全量重新计算（首次或事件被重置）
   const result = mapEventsToMessages(currentEvents);
   cachedMessages.value = result;
   lastProcessedEventCount.value = currentEvents.length;
@@ -505,14 +518,25 @@ const displayArtifacts = computed(() => {
   );
 });
 
-const displayLogs = computed(() => aggregateLogs(events.value));
+const displayLogs = computed(() => {
+  if (detailTab.value !== 'logs') return [];
+  return aggregateLogs(events.value.slice(-1000));
+});
+
+watch([searchText, statusFilter, typeFilter, selectedCategory], () => {
+  reloadMeetingsForFilters().catch(() => undefined);
+});
 
 onMounted(async () => {
   await Promise.all([loadMeetingTypes(), loadAgents(), loadMeetings()]);
-  if (meetings.value.length) selectMeeting(meetings.value[0].id);
+  await ensureSelectedMeeting();
+  startSummaryRefresh();
 });
 
-onBeforeUnmount(() => closeEventSource());
+onBeforeUnmount(() => {
+  closeEventSource();
+  if (summaryRefreshTimer) clearInterval(summaryRefreshTimer);
+});
 
 function selectCategory(cat: string) {
   selectedCategory.value = cat;
@@ -522,6 +546,7 @@ async function refreshAll() {
   loading.value = true;
   try {
     await Promise.all([loadMeetingTypes(), loadAgents(), loadMeetings()]);
+    await ensureSelectedMeeting();
     if (selectedMeetingId.value) await loadMeeting();
   } finally {
     loading.value = false;
@@ -539,12 +564,104 @@ async function loadAgents() {
 }
 
 async function loadMeetings() {
-  const response = await axios.get('/api/plug/meeting/meetings', { params: { q: searchText.value } });
-  if (response.data?.status === 'ok') meetings.value = response.data.data?.meetings || [];
+  await meetingList.loadFirstPage();
+}
+
+async function loadMeetingPage(page: number, pageSize: number) {
+  const params: Record<string, any> = {
+    page,
+    page_size: pageSize,
+    q: searchText.value.trim() || undefined,
+    meeting_type: typeFilter.value || undefined,
+  };
+  const status = listStatusFilter();
+  if (status) params.status = status;
+  const response = await axios.get('/api/plug/meeting/meetings', { params });
+  const data = response.data?.data || {};
+  return {
+    items: data.meetings || [],
+    pagination: data.pagination,
+  };
+}
+
+function listStatusFilter() {
+  if (statusFilter.value) return statusFilter.value;
+  if (selectedCategory.value === 'running') return 'running';
+  if (selectedCategory.value === 'completed') return 'completed';
+  if (selectedCategory.value === 'pending') return 'pending';
+  return '';
+}
+
+async function reloadMeetingsForFilters() {
+  closeEventSource();
+  selectedMeetingId.value = '';
+  selectedMeeting.value = null;
+  events.value = [];
+  artifacts.value = [];
+  cachedMessages.value = [];
+  lastProcessedEventCount.value = 0;
+  await loadMeetings();
+  await ensureSelectedMeeting();
+}
+
+async function ensureSelectedMeeting() {
+  if (selectedMeetingId.value && meetings.value.some(item => item.id === selectedMeetingId.value)) return;
+  const first = meetings.value[0];
+  if (first) {
+    await selectMeeting(first.id);
+    return;
+  }
+  selectedMeetingId.value = '';
+  selectedMeeting.value = null;
+  events.value = [];
+  artifacts.value = [];
+}
+
+function handleMeetingListScroll(event: Event) {
+  const target = event.target as HTMLElement | null;
+  if (!target) return;
+  if (target.scrollTop + target.clientHeight >= target.scrollHeight - 120) {
+    meetingList.loadMore().catch(() => undefined);
+  }
+}
+
+function startSummaryRefresh() {
+  if (summaryRefreshTimer) clearInterval(summaryRefreshTimer);
+  summaryRefreshTimer = setInterval(() => {
+    if (!document.hidden) refreshMeetingSummaries().catch(() => undefined);
+  }, 5000);
+}
+
+async function refreshMeetingSummaries() {
+  const ids = meetingList.loadedIds.value;
+  if (!ids.length) return;
+  const response = await axios.get('/api/plug/meeting/meetings/summaries', {
+    params: { ids: ids.join(',') },
+  });
+  if (response.data?.status !== 'ok') return;
+  const summaries: Meeting[] = response.data.data?.meetings || [];
+  meetingList.mergeSummaries(summaries);
+  const selectedSummary = summaries.find(item => item.id === selectedMeetingId.value);
+  if (selectedSummary && selectedMeeting.value) {
+    selectedMeeting.value = {
+      ...selectedMeeting.value,
+      ...selectedSummary,
+      artifacts: selectedMeeting.value.artifacts,
+      events: selectedMeeting.value.events,
+    };
+  }
 }
 
 async function selectMeeting(meetingId: string) {
-  if (selectedMeetingId.value === meetingId) return;
+  if (selectedMeetingId.value === meetingId) {
+    await loadMeeting(meetingId);
+    await loadMeetingEvents(meetingId, { afterSeq: maxEventSeq() });
+    if (!meetingStream.connected.value && !isTerminalStatus(selectedMeeting.value?.status || '')) {
+      openEventSource(meetingId);
+    }
+    return;
+  }
+  closeEventSource();
   selectedMeetingId.value = meetingId;
   detailTab.value = 'chatroom';
   events.value = [];
@@ -552,6 +669,7 @@ async function selectMeeting(meetingId: string) {
   cachedMessages.value = [];
   lastProcessedEventCount.value = 0;
   await loadMeeting(meetingId);
+  await loadMeetingEvents(meetingId, { tail: true });
   openEventSource(meetingId);
 }
 
@@ -560,11 +678,29 @@ async function loadMeeting(meetingId = selectedMeetingId.value) {
   const response = await axios.get(`/api/plug/meeting/meetings/${encodeURIComponent(meetingId)}`);
   if (response.data?.status === 'ok') {
     selectedMeeting.value = response.data.data;
-    const serverEvents: MeetingEvent[] = selectedMeeting.value?.events || [];
-    const serverIds = new Set(serverEvents.map((e: MeetingEvent) => e.id));
-    const sseOnlyEvents = events.value.filter(e => !serverIds.has(e.id));
-    events.value = [...serverEvents, ...sseOnlyEvents];
     artifacts.value = selectedMeeting.value?.artifacts || [];
+  }
+}
+
+async function loadMeetingEvents(meetingId = selectedMeetingId.value, options: { tail?: boolean; afterSeq?: number } = {}) {
+  if (!meetingId) return;
+  const response = await axios.get(`/api/plug/meeting/meetings/${encodeURIComponent(meetingId)}/events`, {
+    params: {
+      stream: 0,
+      limit: 500,
+      tail: options.tail ? 1 : undefined,
+      after_seq: options.afterSeq,
+    },
+  });
+  if (response.data?.status === 'ok') {
+    const serverEvents: MeetingEvent[] = response.data.data?.events || [];
+    if (options.afterSeq) {
+      for (const event of serverEvents) appendMeetingEvent(event);
+    } else {
+      events.value = serverEvents;
+      cachedMessages.value = [];
+      lastProcessedEventCount.value = 0;
+    }
   }
 }
 
@@ -588,7 +724,7 @@ async function createMeeting() {
   });
   if (response.data?.status === 'ok') {
     meetingDialog.value = false;
-    await loadMeetings();
+    meetingList.replaceItem(response.data.data);
     await selectMeeting(response.data.data.id);
   }
 }
@@ -598,8 +734,15 @@ async function startMeeting() {
   starting.value = true;
   try {
     await axios.post(`/api/plug/meeting/meetings/${encodeURIComponent(selectedMeetingId.value)}/start`);
+    if (selectedMeeting.value) {
+      selectedMeeting.value.status = 'running';
+      selectedMeeting.value.stage = 'goal';
+      selectedMeeting.value.progress = Math.max(selectedMeeting.value.progress || 0, 5);
+    }
+    meetingList.mergeSummaries([{ id: selectedMeetingId.value, status: 'running', stage: 'goal', progress: selectedMeeting.value?.progress || 5 } as any]);
+    openEventSource(selectedMeetingId.value);
     await loadMeeting();
-    await loadMeetings();
+    scheduleListRefresh(1000);
   } finally {
     starting.value = false;
   }
@@ -609,8 +752,8 @@ async function submitInput(message: string) {
   if (!selectedMeetingId.value) return;
   submittingInput.value = true;
   try {
-    await axios.post(`/api/plug/meeting/meetings/${encodeURIComponent(selectedMeetingId.value)}/input`, { text: message });
-    await loadMeeting();
+    const response = await axios.post(`/api/plug/meeting/meetings/${encodeURIComponent(selectedMeetingId.value)}/input`, { text: message });
+    if (response.data?.status === 'ok') appendMeetingEvent(response.data.data);
   } finally {
     submittingInput.value = false;
   }
@@ -624,9 +767,11 @@ async function respondHitl(payload: { interaction_id: string; action_key: string
   if (selectedMeeting.value) {
     selectedMeeting.value.active_hitl = null;
     selectedMeeting.value.has_hitl = false;
+    selectedMeeting.value.status = 'running';
   }
+  meetingList.mergeSummaries([{ id: selectedMeetingId.value, active_hitl: null, has_hitl: false, status: 'running' } as any]);
   await loadMeeting();
-  await loadMeetings();
+  scheduleListRefresh(1000);
 }
 
 async function continueMeeting() {
@@ -636,63 +781,171 @@ async function continueMeeting() {
   continueForm.additional_topic = '';
   continueDialog.value = false;
   await loadMeeting();
-  await loadMeetings();
+  await loadMeetingEvents(selectedMeetingId.value, { tail: true });
+  openEventSource(selectedMeetingId.value);
+  scheduleListRefresh(1000);
 }
 
-function openMeetingHitl(meetingId: string) {
+async function openMeetingHitl(meetingId: string) {
   if (selectedMeetingId.value !== meetingId) {
-    selectMeeting(meetingId);
+    await selectMeeting(meetingId);
+  } else if (!selectedMeeting.value?.active_hitl) {
+    await loadMeeting(meetingId);
   }
   hitlDialog.value = true;
 }
 
 function openEventSource(meetingId: string) {
-  closeEventSource();
-  eventSource = new EventSource(`/api/plug/meeting/meetings/${encodeURIComponent(meetingId)}/events`);
-  const reload = () => {
-    if (reloadTimer) clearTimeout(reloadTimer);
-    reloadTimer = setTimeout(async () => {
-      await loadMeeting(meetingId);
-      await loadMeetings();
-    }, 300);
-  };
-  ['phase', 'text_delta', 'tool_call', 'tool_result', 'reasoning', 'interaction', 'artifact', 'error', 'done', 'user_message', 'token', 'hitl_resolved'].forEach(name => {
-    eventSource?.addEventListener(name, (evt: MessageEvent) => {
-      try {
-        const payload = JSON.parse(evt.data);
-        if (name === 'token') {
-          reload();
-          return;
-        }
-        if (name === 'phase' && selectedMeeting.value) {
-          if (payload.status) selectedMeeting.value.status = payload.status;
-          if (payload.stage) selectedMeeting.value.stage = payload.stage;
-          if (payload.progress !== undefined) selectedMeeting.value.progress = payload.progress;
-        }
-        if (name === 'hitl_resolved' && selectedMeeting.value) {
-          selectedMeeting.value.active_hitl = null;
-          selectedMeeting.value.has_hitl = false;
-        }
-        if (payload?.id && !events.value.find(item => item.id === payload.id)) {
-          events.value = [...events.value, payload];
-        }
-      } catch {
-        // Ignore malformed heartbeat payloads.
-      }
-      reload();
-    });
-  });
+  if (isTerminalStatus(selectedMeeting.value?.status || '')) return;
+  meetingStream.open(meetingId);
 }
 
 function closeEventSource() {
-  if (eventSource) {
-    eventSource.close();
-    eventSource = null;
+  meetingStream.close();
+  if (listRefreshTimer) {
+    clearTimeout(listRefreshTimer);
+    listRefreshTimer = null;
   }
-  if (reloadTimer) {
-    clearTimeout(reloadTimer);
-    reloadTimer = null;
+}
+
+function handleMeetingStreamEvent(name: string, payload: any) {
+  const eventPayload = payload?.payload || payload || {};
+  if (name === 'heartbeat') return;
+  if (name === 'token' && selectedMeeting.value) {
+    scheduleListRefresh(800);
+    return;
   }
+  if (name === 'phase' && selectedMeeting.value) {
+    const nextStatus = eventPayload.status || selectedMeeting.value.status;
+    const nextStage = eventPayload.stage || eventPayload.phase;
+    const nextProgress = Number(eventPayload.progress);
+    const isCompletedPhase = nextStatus === 'completed' || nextStage === 'completed';
+    if (isCompletedPhase) {
+      selectedMeeting.value.status = 'completed';
+      selectedMeeting.value.stage = 'completed';
+      selectedMeeting.value.progress = 100;
+    } else if (!isTerminalStatus(selectedMeeting.value.status)) {
+      if (eventPayload.status) selectedMeeting.value.status = eventPayload.status;
+      if (nextStage) selectedMeeting.value.stage = nextStage;
+      if (Number.isFinite(nextProgress)) {
+        selectedMeeting.value.progress = Math.max(Number(selectedMeeting.value.progress || 0), nextProgress);
+      }
+    }
+    if (payload.speaker) selectedMeeting.value.current_speaker = payload.speaker;
+    if (Number(payload.round || eventPayload.round || 0) > 0) {
+      selectedMeeting.value.current_round = Number(payload.round || eventPayload.round);
+    }
+    meetingList.mergeSummaries([{ id: selectedMeeting.value.id, status: selectedMeeting.value.status, stage: selectedMeeting.value.stage, progress: selectedMeeting.value.progress, current_round: selectedMeeting.value.current_round, current_speaker: selectedMeeting.value.current_speaker } as any]);
+  }
+  if (name === 'hitl_resolved' && selectedMeeting.value) {
+    selectedMeeting.value.active_hitl = null;
+    selectedMeeting.value.has_hitl = false;
+    if (!isTerminalStatus(selectedMeeting.value.status)) selectedMeeting.value.status = 'running';
+    meetingList.mergeSummaries([{ id: selectedMeeting.value.id, active_hitl: null, has_hitl: false, status: selectedMeeting.value.status } as any]);
+  }
+  if (name === 'interaction' && selectedMeeting.value) {
+    selectedMeeting.value.active_hitl = eventPayload;
+    selectedMeeting.value.has_hitl = true;
+    selectedMeeting.value.status = 'waiting_feedback';
+    meetingList.mergeSummaries([{ id: selectedMeeting.value.id, active_hitl: eventPayload, has_hitl: true, status: 'waiting_feedback' } as any]);
+  }
+  if (name === 'artifact') {
+    scheduleArtifactRefresh();
+  }
+  if (name === 'done') {
+    if (selectedMeeting.value) {
+      selectedMeeting.value.status = eventPayload.status || 'completed';
+      if (selectedMeeting.value.status === 'completed') {
+        selectedMeeting.value.stage = 'completed';
+        selectedMeeting.value.progress = 100;
+        selectedMeeting.value.current_speaker = '已完成';
+      }
+      meetingList.mergeSummaries([{ id: selectedMeeting.value.id, status: selectedMeeting.value.status, stage: selectedMeeting.value.stage, progress: selectedMeeting.value.progress, current_speaker: selectedMeeting.value.current_speaker } as any]);
+    }
+    scheduleListRefresh(500);
+    scheduleArtifactRefresh(500);
+    meetingStream.close();
+    return;
+  }
+  appendMeetingEvent(payload);
+}
+
+function appendMeetingEvent(event: MeetingEvent) {
+  if (!event?.id) return;
+  if (events.value.some(item => item.id === event.id)) return;
+  if (isMergeableDeltaEvent(event)) {
+    const merged = mergeWithLastDeltaEvent(event);
+    if (merged) {
+      events.value = merged;
+      return;
+    }
+  }
+  const signature = eventSignature(event);
+  if (signature && events.value.some(item => eventSignature(item) === signature)) return;
+  const nextEvents = [...events.value, event].slice(-1500);
+  if (nextEvents.length === events.value.length) {
+    cachedMessages.value = [];
+    lastProcessedEventCount.value = 0;
+  }
+  events.value = nextEvents;
+}
+
+function isMergeableDeltaEvent(event: MeetingEvent) {
+  return event.event_type === 'text_delta' || event.event_type === 'reasoning';
+}
+
+function mergeWithLastDeltaEvent(event: MeetingEvent): MeetingEvent[] | null {
+  const last = events.value[events.value.length - 1];
+  if (!last || last.event_type !== event.event_type) return null;
+  if ((last.speaker || '') !== (event.speaker || '')) return null;
+  if (displayRound(last) !== displayRound(event)) return null;
+
+  const text = joinDeltaText(eventContent(last), eventContent(event));
+  const payload = {
+    ...(last.payload || {}),
+    ...(event.payload || {}),
+    text,
+    content: text,
+  };
+  return [
+    ...events.value.slice(0, -1),
+    {
+      ...last,
+      id: last.id,
+      content: text,
+      payload,
+      created_at: last.created_at || event.created_at,
+    },
+  ];
+}
+
+function eventSignature(event: MeetingEvent) {
+  const type = event.event_type || '';
+  const content = eventContent(event).trim();
+  if (!type || !content || type === 'text_delta' || type === 'reasoning' || type === 'token') return '';
+  return [type, event.speaker || '', Number(event.round || event.payload?.round || 0), content].join('|');
+}
+
+function maxEventSeq() {
+  return events.value.reduce((max, event) => Math.max(max, Number(event.seq || 0)), 0);
+}
+
+function scheduleListRefresh(delay = 5000) {
+  if (listRefreshTimer) clearTimeout(listRefreshTimer);
+  listRefreshTimer = setTimeout(() => {
+    refreshMeetingSummaries().catch(() => undefined);
+    listRefreshTimer = null;
+  }, delay);
+}
+
+function scheduleArtifactRefresh(delay = 1000) {
+  setTimeout(() => {
+    if (selectedMeetingId.value) loadMeeting(selectedMeetingId.value).catch(() => undefined);
+  }, delay);
+}
+
+function isTerminalStatus(status: string) {
+  return ['completed', 'failed', 'cancelled'].includes(status || '');
 }
 
 function mapEventsToMessages(items: MeetingEvent[], existingMessages?: ChatMessage[]): ChatMessage[] {
@@ -709,11 +962,13 @@ function mapEventsToMessages(items: MeetingEvent[], existingMessages?: ChatMessa
     }
   }
   for (const event of items) {
-    const type = event.event_type;
+    const type = event.event_type || 'log';
     const payload = event.payload || {};
-    if (['phase', 'token', 'artifact', 'hitl_resolved'].includes(type)) continue;
-    const content = event.content || payload.content || payload.text || payload.message || '';
-    if (!content && !['tool_call', 'tool_result', 'interaction'].includes(type)) continue;
+    if (['token', 'artifact', 'hitl_resolved'].includes(type)) continue;
+    const content = eventContent(event);
+    if (!content && !['tool_call', 'tool_result', 'interaction', 'phase'].includes(type)) continue;
+
+    if (type !== 'reasoning') finishOpenThinking(messages);
 
     if (type === 'tool_call') {
       const tool: ToolCallInfo = {
@@ -747,32 +1002,46 @@ function mapEventsToMessages(items: MeetingEvent[], existingMessages?: ChatMessa
     }
 
     if (type === 'text_delta') {
-      const last = messages[messages.length - 1];
-      if (last && last.role === 'assistant' && last.speaker === event.speaker && last.round === event.round && last.type === 'speech') {
+      const round = displayRound(event);
+      const last = findOpenSpeech(messages, event);
+      if (last && last.round === round) {
         last.content += content;
+        last.streaming = true;
       } else {
-        messages.push(baseAssistantMessage(event, content, 'speech'));
+        messages.push({ ...baseAssistantMessage(event, content, 'speech'), round, streaming: true });
+      }
+      continue;
+    }
+
+    if (type === 'assistant_message') {
+      const existing = findOpenSpeech(messages, event);
+      if (existing) {
+        existing.id = event.id;
+        existing.content = content;
+        existing.streaming = false;
+        existing.thinkingDone = true;
+      } else {
+        messages.push({ ...baseAssistantMessage(event, content, 'speech'), streaming: false });
       }
       continue;
     }
 
     if (type === 'reasoning') {
-      const last = messages[messages.length - 1];
-      if (last && last.role === 'assistant' && last.speaker === event.speaker) {
-        last.thinking = `${last.thinking || ''}${content}`;
+      const reasoningText = reasoningContent(event);
+      if (!reasoningText) continue;
+      const last = findOpenSpeech(messages, event);
+      if (last) {
+        last.thinking = joinDeltaText(last.thinking || '', reasoningText);
         last.thinkingDone = false;
       } else {
-        messages.push({ ...baseAssistantMessage(event, '', 'thinking'), thinking: content, thinkingDone: false });
+        messages.push({ ...baseAssistantMessage(event, '', 'speech'), thinking: reasoningText, thinkingDone: false, streaming: true });
       }
       continue;
     }
 
-    // 当收到非 reasoning 的 assistant 事件时，标记上一个 thinking 为完成
-    if (type !== 'reasoning' && messages.length > 0) {
-      const last = messages[messages.length - 1];
-      if (last && last.role === 'assistant' && last.thinking !== undefined && last.thinkingDone === false) {
-        last.thinkingDone = true;
-      }
+    if (type === 'phase') {
+      messages.push(baseAssistantMessage(event, content || payload.label || payload.stage || '会议阶段更新', 'guide'));
+      continue;
     }
 
     if (event.role === 'user' || type === 'user_message') {
@@ -781,7 +1050,7 @@ function mapEventsToMessages(items: MeetingEvent[], existingMessages?: ChatMessa
         role: 'user',
         content,
         speaker: event.speaker || '用户',
-        round: event.round,
+        round: displayRound(event),
         type,
         created_at: eventTime(event),
       });
@@ -793,17 +1062,74 @@ function mapEventsToMessages(items: MeetingEvent[], existingMessages?: ChatMessa
   return messages;
 }
 
+function eventContent(event: MeetingEvent): string {
+  const payload = event.payload || {};
+  const value =
+    event.content ||
+    payload.content ||
+    payload.text ||
+    payload.delta ||
+    payload.reasoning ||
+    payload.reasoning_content ||
+    payload.thinking ||
+    payload.message ||
+    payload.label ||
+    payload.title ||
+    '';
+  return typeof value === 'string' ? value : JSON.stringify(value);
+}
+
+function reasoningContent(event: MeetingEvent): string {
+  const payload = event.payload || {};
+  const value =
+    event.content ||
+    payload.reasoning ||
+    payload.reasoning_content ||
+    payload.thinking ||
+    payload.text ||
+    payload.delta ||
+    payload.content ||
+    '';
+  if (typeof value !== 'string') return JSON.stringify(value);
+  return value.trim() ? value : '';
+}
+
+function findOpenSpeech(messages: ChatMessage[], event: MeetingEvent): ChatMessage | undefined {
+  const speaker = event.speaker || '会议助理';
+  const round = displayRound(event);
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const msg = messages[index];
+    if (msg.role !== 'assistant' || msg.type !== 'speech') continue;
+    if ((msg.speaker || '会议助理') !== speaker || msg.round !== round) return undefined;
+    if (msg.streaming || !msg.content || msg.thinkingDone === false) return msg;
+    return undefined;
+  }
+  return undefined;
+}
+
+function finishOpenThinking(messages: ChatMessage[]) {
+  const last = messages[messages.length - 1];
+  if (last && last.role === 'assistant' && last.thinking !== undefined && last.thinkingDone === false) {
+    last.thinkingDone = true;
+  }
+}
+
 function baseAssistantMessage(event: MeetingEvent, content: string, type = 'speech', toolCalls?: ToolCallInfo[]): ChatMessage {
   return {
     id: event.id,
     role: 'assistant',
     content,
     speaker: event.speaker || '会议助理',
-    round: event.round,
+    round: displayRound(event),
     type,
     created_at: eventTime(event),
     toolCalls,
   };
+}
+
+function displayRound(event: MeetingEvent): number | undefined {
+  const round = Number(event.round || event.payload?.round || 0);
+  return round > 0 ? round : undefined;
 }
 
 function eventTime(event: MeetingEvent): number {
@@ -849,6 +1175,7 @@ function statusColor(status: string) {
 }
 
 function stageState(stage: string) {
+  if (selectedMeeting.value?.status === 'completed') return 'done';
   const order = ['goal', 'materials', 'running', 'completed'];
   const current = selectedMeeting.value?.stage || 'goal';
   const currentIndex = order.indexOf(current === 'finalizing' ? 'completed' : current);
@@ -899,62 +1226,21 @@ function artifactText(artifact: any) {
 
 function aggregateLogs(rawEvents: MeetingEvent[]) {
   const result: Array<{ id: string; created_at: string; label: string; message: string; kind: string }> = [];
-  let buffer: { id: string; created_at: string; label: string; message: string; kind: string } | null = null;
-  const flush = () => {
-    if (buffer) {
-      result.push(buffer);
-      buffer = null;
-    }
-  };
+  const ignoredEvents = new Set(['token', 'text_delta', 'reasoning', 'assistant_message', 'hitl_resolved']);
 
   for (const evt of rawEvents) {
-    const data = evt.payload || {};
     const event = evt.event_type || 'log';
-    if (event === 'token') continue;
-    if (event === 'text_delta') {
-      const text = String(data.text || evt.content || '');
-      if (!buffer || buffer.kind !== 'text') {
-        flush();
-        buffer = {
-          id: `${evt.id}-group`,
-          created_at: evt.created_at || '',
-          label: '输出',
-          message: text,
-          kind: 'text',
-        };
-      } else {
-        buffer.message = joinDeltaText(buffer.message, text);
-        buffer.created_at = evt.created_at || buffer.created_at;
-      }
-      continue;
-    }
-    if (event === 'reasoning') {
-      const text = String(data.text || evt.content || '');
-      if (!buffer || buffer.kind !== 'reasoning') {
-        flush();
-        buffer = {
-          id: `${evt.id}-group`,
-          created_at: evt.created_at || '',
-          label: '思考',
-          message: text,
-          kind: 'reasoning',
-        };
-      } else {
-        buffer.message = joinDeltaText(buffer.message, text);
-        buffer.created_at = evt.created_at || buffer.created_at;
-      }
-      continue;
-    }
-    flush();
+    if (ignoredEvents.has(event)) continue;
+    const message = logMessage(evt);
+    if (!message) continue;
     result.push({
       id: evt.id,
       created_at: evt.created_at || '',
       label: eventLabel(event),
-      message: logMessage(evt),
+      message,
       kind: event,
     });
   }
-  flush();
   return result;
 }
 
@@ -966,7 +1252,8 @@ function logMessage(evt: MeetingEvent) {
   if (event === 'phase') return data.message || data.label || data.phase || evt.content || '';
   if (event === 'interaction') return data.title || data.body || '等待人工处理';
   if (event === 'user_message') return evt.content || data.text || '';
-  return evt.content || data.message || '';
+  if (event === 'artifact') return data.title || evt.content || '交付物已生成';
+  return eventContent(evt);
 }
 
 function eventLabel(event: string) {

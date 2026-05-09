@@ -71,6 +71,18 @@ const MainRoutes = {
       meta: { requiresAuth: true }
     },
     {
+      name: 'GenericAgentWorkbench',
+      path: '/generic-agent',
+      component: () => import('@/views/GenericAgentWorkbench.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      name: 'GenericAgentConfig',
+      path: '/generic-agent/config',
+      component: () => import('@/views/GenericAgentConfigPage.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       name: 'MemoryManagement',
       path: '/memory-management',
       component: () => import('@/views/MemoryManagementPage.vue'),
@@ -241,6 +253,12 @@ const MainRoutes = {
       name: 'Work',
       path: '/work',
       component: () => import('@/views/WorkPage.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      name: 'Meeting',
+      path: '/meeting',
+      component: () => import('@/views/MeetingPage.vue'),
       meta: { requiresAuth: true }
     },
     {
