@@ -3,7 +3,7 @@
     <aside class="ga-run-list-pane">
       <div class="pane-header">
         <div>
-          <div class="pane-title">GenericAgent</div>
+          <div class="pane-title">智能RPA</div>
           <div class="pane-subtitle">OS 操作运行台</div>
         </div>
         <v-btn icon="mdi-refresh" size="small" variant="text" :loading="loading" @click="refreshAll" />
@@ -61,7 +61,7 @@
             <span>{{ shortDate(run.created_at) }}</span>
           </div>
           <strong>{{ run.goal }}</strong>
-          <p>{{ run.summary || run.error || run.constraints || '等待 GenericAgent 生成运行摘要' }}</p>
+          <p>{{ run.summary || run.error || run.constraints || '等待智能RPA生成运行摘要' }}</p>
           <v-progress-linear
             :model-value="progressValue(run)"
             :color="statusColor(run.status)"
@@ -77,7 +77,7 @@
 
         <div v-if="!filteredRuns.length" class="empty-list">
           <v-icon size="38" icon="mdi-timeline-clock-outline" />
-          <span>{{ runs.length ? '没有匹配的任务' : '暂无 GenericAgent 运行记录' }}</span>
+          <span>{{ runs.length ? '没有匹配的任务' : '暂无智能RPA运行记录' }}</span>
         </div>
         <div v-else-if="loadingMore" class="list-footer">正在加载更多...</div>
         <div v-else-if="hasMore" class="list-footer">下拉加载更多</div>
@@ -207,8 +207,8 @@
                     <v-icon icon="mdi-text-box-check-outline" />
                   </div>
                   <div>
-                    <strong>GenericAgent 最终输出</strong>
-                    <p>{{ finalOutputArtifact?.summary || 'GenericAgent 最后一轮交付内容' }}</p>
+                    <strong>智能RPA最终输出</strong>
+                    <p>{{ finalOutputArtifact?.summary || '智能RPA最后一轮交付内容' }}</p>
                   </div>
                 </div>
                 <span v-if="finalOutputArtifact?.size">大小 {{ formatSize(finalOutputArtifact.size) }}</span>
@@ -223,7 +223,7 @@
                 </div>
                 <div>
                   <strong>{{ artifact.name || artifactTitle(artifact.path) }}</strong>
-                  <p>{{ artifact.summary || 'GenericAgent 运行产物' }}</p>
+                  <p>{{ artifact.summary || '智能RPA运行产物' }}</p>
                   <code>{{ artifact.path }}</code>
                   <span v-if="artifact.size">大小 {{ formatSize(artifact.size) }}</span>
                 </div>
@@ -255,7 +255,7 @@
 
       <div v-else class="detail-empty">
         <v-icon size="58" icon="mdi-desktop-classic" />
-        <div>选择一个 GenericAgent 任务查看详情</div>
+        <div>选择一个智能RPA任务查看详情</div>
       </div>
     </main>
 
@@ -263,7 +263,7 @@
       <v-card class="dialog-card">
         <v-card-title class="d-flex align-center">
           <v-icon icon="mdi-plus-box-outline" class="mr-2" />
-          新建 GenericAgent 任务
+          新建智能RPA任务
         </v-card-title>
         <v-card-text class="dialog-grid">
           <v-textarea
@@ -498,7 +498,7 @@ const processSteps = computed<ProcessStep[]>(() => {
   turns.forEach((turn, index) => {
     const tools = extractToolNames(turn.text);
     const summary = extractTurnSummary(turn.text);
-    const title = turn.turn ? `第 ${turn.turn} 轮：${summary || '执行中'}` : summary || 'GenericAgent 输出';
+    const title = turn.turn ? `第 ${turn.turn} 轮：${summary || '执行中'}` : summary || '智能RPA输出';
     const streaming = isLatestTurn(index, turns.length);
     steps.push({
       id: turn.turn ? `turn-${turn.turn}` : `turn-${index}`,
@@ -590,7 +590,7 @@ async function refreshAll() {
     await ensureSelectedRun();
     if (hadSelection && selectedRun.value) await loadSelectedEvents(true);
   } catch (error: any) {
-    showSnack(errorMessage(error, '加载 GenericAgent 运行页失败'), 'error');
+    showSnack(errorMessage(error, '加载智能RPA运行页失败'), 'error');
   } finally {
     loading.value = false;
   }
@@ -810,10 +810,10 @@ async function createRun() {
       runList.replaceItem(run);
       selectRun(run);
     }
-    showSnack('GenericAgent 任务已加入队列。', 'success');
+    showSnack('智能RPA任务已加入队列。', 'success');
     await refreshRunSummaries();
   } catch (error: any) {
-    showSnack(errorMessage(error, '创建 GenericAgent 任务失败'), 'error');
+    showSnack(errorMessage(error, '创建智能RPA任务失败'), 'error');
   } finally {
     creatingRun.value = false;
   }
@@ -823,11 +823,11 @@ async function stopRun(run: GenericAgentRun) {
   stoppingRunId.value = run.id;
   try {
     await axios.post(`/api/plug/generic-agent/runs/${run.id}/stop`);
-    showSnack(run.status === 'pending' ? '任务已取消。' : '已请求 GenericAgent 停止。', 'success');
+    showSnack(run.status === 'pending' ? '任务已取消。' : '已请求智能RPA停止。', 'success');
     await refreshRunSummaries();
     if (selectedRunId.value === run.id) await loadSelectedEvents(false);
   } catch (error: any) {
-    showSnack(errorMessage(error, '停止 GenericAgent 任务失败'), 'error');
+    showSnack(errorMessage(error, '停止智能RPA任务失败'), 'error');
   } finally {
     stoppingRunId.value = '';
   }
@@ -982,6 +982,7 @@ function isFinalOutputArtifact(artifact: GenericAgentArtifact) {
     artifact.artifact_type === 'final_output' ||
     artifact.type === 'final_output' ||
     artifact.name === 'GenericAgent 最终输出' ||
+    artifact.name === '智能RPA最终输出' ||
     /(^|[\\/])output\.txt$/i.test(path)
   );
 }
@@ -1193,7 +1194,7 @@ function errorMessage(error: any, fallback: string) {
   height: calc(100vh - 64px);
   min-height: 720px;
   display: grid;
-  grid-template-columns: 380px minmax(0, 1fr);
+  grid-template-columns: 400px minmax(480px, 1fr);
   background: rgb(var(--v-theme-background));
   overflow: hidden;
 }

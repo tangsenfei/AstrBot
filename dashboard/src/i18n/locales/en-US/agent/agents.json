@@ -1,6 +1,6 @@
 {
   "title": "Agent Management",
-  "subtitle": "Create and manage AI agents, configure roles, abilities and models",
+  "subtitle": "Create and manage AI agents, configure soul, abilities and models",
   "buttons": {
     "add": "Add Agent",
     "refresh": "Refresh",
@@ -14,23 +14,17 @@
     "assistant": {
       "name": "General Assistant",
       "description": "A general AI assistant that can answer various questions",
-      "role": "Assistant",
-      "goal": "Help users complete various tasks and answer their questions",
-      "backstory": "I am an intelligent assistant, skilled at understanding and answering various questions."
+      "soul": "I am an intelligent assistant, skilled at understanding and answering various questions."
     },
     "researcher": {
       "name": "Researcher",
       "description": "A researcher agent skilled in research and analysis",
-      "role": "Researcher",
-      "goal": "Conduct in-depth research on various topics and provide detailed analysis reports",
-      "backstory": "I am a professional researcher, skilled at collecting and analyzing information."
+      "soul": "I am a professional researcher, skilled at collecting and analyzing information."
     },
     "coder": {
       "name": "Programmer",
       "description": "A programmer agent skilled in coding and code review",
-      "role": "Programmer",
-      "goal": "Write high-quality code and solve technical problems",
-      "backstory": "I am an experienced programmer, proficient in multiple programming languages."
+      "soul": "I am an experienced programmer, proficient in multiple programming languages."
     }
   },
   "search": {
@@ -48,7 +42,7 @@
     "disabled": "Disabled"
   },
   "card": {
-    "noRole": "No role description",
+    "noSoul": "No soul description",
     "tools": "{count} tools",
     "skills": "{count} skills",
     "knowledgeBases": "{count} knowledge bases",
@@ -70,6 +64,7 @@
   "editor": {
     "addTitle": "Add Agent",
     "editTitle": "Edit Agent",
+    "soul": "Soul",
     "tabs": {
       "basic": "Basic Info",
       "abilities": "Abilities",
@@ -79,12 +74,8 @@
     "basic": {
       "name": "Agent Name",
       "nameHint": "Set an easily recognizable name for the agent",
-      "role": "Role",
-      "roleHint": "Define the agent's role, e.g. 'Assistant', 'Researcher'",
-      "goal": "Goal",
-      "goalHint": "Describe the agent's primary goal and tasks",
-      "backstory": "Backstory",
-      "backstoryHint": "Set a backstory for the agent to enhance its character"
+      "soul": "Soul",
+      "soulHint": "Describe the agent's identity, goals, background and working style"
     },
     "abilities": {
       "tools": "Tool Selection",
@@ -150,8 +141,7 @@
     "send": "Send",
     "currentConfig": "Current Config",
     "basicInfo": "Basic Info",
-    "role": "Role",
-    "goal": "Goal",
+    "soul": "Soul",
     "abilities": "Abilities",
     "tools": "Tools",
     "skills": "Skills",
@@ -184,7 +174,7 @@
   "reset": {
     "title": "Reset Agent",
     "confirm": "Are you sure you want to reset {name} to its initial state?",
-    "warning": "After reset, the agent's role, goal, backstory and tool configuration will be restored to system defaults. Your custom modifications will be lost.",
+    "warning": "After reset, the agent's soul and tool configuration will be restored to system defaults. Your custom modifications will be lost.",
     "confirmButton": "Confirm Reset",
     "failed": "Reset failed"
   },

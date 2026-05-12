@@ -16,11 +16,7 @@ const MainRoutes = {
       path: '/',
       component: () => import('@/views/stats/StatsPage.vue')
     },
-    {
-      name: 'Welcome',
-      path: '/welcome',
-      component: () => import('@/views/WelcomePage.vue')
-    },
+
     {
       name: EXTENSION_ROUTE_NAME,
       path: '/extension',
@@ -56,12 +52,6 @@ const MainRoutes = {
       name: 'ToolSkills',
       path: '/tool-skills',
       component: () => import('@/views/ToolSkillsPage.vue'),
-      meta: { requiresAuth: true }
-    },
-    {
-      name: 'TaskManagement',
-      path: '/task-management',
-      component: () => import('@/views/TaskManagementPage.vue'),
       meta: { requiresAuth: true }
     },
     {
@@ -113,18 +103,6 @@ const MainRoutes = {
       meta: { requiresAuth: true }
     },
     {
-      name: 'AgentTasks',
-      path: '/agent/tasks',
-      component: () => import('@/views/agent/tasks/TasksPage.vue'),
-      meta: { requiresAuth: true }
-    },
-    {
-      name: 'AgentTaskDetail',
-      path: '/agent/tasks/:id',
-      component: () => import('@/views/agent/tasks/TaskDetail.vue'),
-      meta: { requiresAuth: true }
-    },
-    {
       name: 'Flows',
       path: '/flows',
       component: () => import('@/views/agent/flows/FlowsPage.vue'),
@@ -140,18 +118,6 @@ const MainRoutes = {
       name: 'AgentSkills',
       path: '/agent/skills',
       component: () => import('@/views/agent/skills/SkillsPage.vue'),
-      meta: { requiresAuth: true }
-    },
-    {
-      name: 'Roundtables',
-      path: '/roundtables',
-      component: () => import('@/views/agent/roundtables/RoundtablePage.vue'),
-      meta: { requiresAuth: true }
-    },
-    {
-      name: 'RoundtableExecution',
-      path: '/roundtables/:id/execution',
-      component: () => import('@/views/agent/roundtables/RoundtableExecution.vue'),
       meta: { requiresAuth: true }
     },
     {
@@ -250,6 +216,12 @@ const MainRoutes = {
       ]
     },
     {
+      name: 'WorkConfig',
+      path: '/work-config',
+      component: () => import('@/views/WorkConfig.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       name: 'Work',
       path: '/work',
       component: () => import('@/views/WorkPage.vue'),
@@ -265,11 +237,6 @@ const MainRoutes = {
       name: 'Settings',
       path: '/settings',
       component: () => import('@/views/Settings.vue')
-    },
-    {
-      name: 'About',
-      path: '/about',
-      component: () => import('@/views/AboutPage.vue')
     }
   ]
 };

@@ -141,7 +141,8 @@ def _create_mock_event(message: str = "", context=None):
         def should_call_llm(self, call_llm): self.call_llm = call_llm
         def set_extra(self, key, value): self._extras[key] = value
         def get_extra(self, key=None, default=None):
-            if key is None: return self._extras
+            if key is None:
+                return self._extras
             return self._extras.get(key, default)
         def clear_extra(self): self._extras = {}
         def get_platform_name(self): return "agent_test"
@@ -226,9 +227,7 @@ class AgentService:
         Args:
             data: 智能体数据
                 - name: 智能体名称（必填）
-                - role: 角色定义
-                - goal: 目标
-                - backstory: 背景故事
+                - soul: 智能体身份、目标、背景和工作方式
                 - tools: 工具 ID 列表
                 - skills: 技能 ID 列表
                 - knowledge_id: 知识库 ID
@@ -313,9 +312,7 @@ class AgentService:
         agent_data = {
             "id": agent_id,
             "name": data["name"],
-            "role": data.get("role", ""),
-            "goal": data.get("goal", ""),
-            "backstory": data.get("backstory", ""),
+            "soul": data.get("soul", ""),
             "tools": data.get("tools", []),
             "skills": data.get("skills", []),
             "knowledge_id": knowledge_id,
@@ -394,7 +391,7 @@ class AgentService:
 
         # 可更新字段
         updatable_fields = [
-            "name", "role", "goal", "backstory",
+            "name", "soul",
             "tools", "skills", "knowledge_id",
             "provider_id", "model_name", "llm_config",
             "memory_config", "planning", "planning_effort",
@@ -603,7 +600,7 @@ class AgentService:
             provider=provider,
             tool_executor=None,
             hooks=None,
-            astr_event=None,
+            astr_event=self._create_mock_event(message),
             config={
                 "provider_id": agent.provider_id,
                 "max_agent_step": 5,
@@ -658,7 +655,6 @@ class AgentService:
         Yields:
             流式事件字典，包含 type 和 data 字段
         """
-        start_time = datetime.now()
         original_message = message
 
         try:
@@ -867,9 +863,7 @@ class AgentService:
                 "name": "通用助手",
                 "description": "一个通用的 AI 助手，可以回答问题、提供建议和执行任务",
                 "category": "general",
-                "role": "AI 助手",
-                "goal": "帮助用户解决问题，提供准确、有用的信息和建议",
-                "backstory": "我是一个经过训练的 AI 助手，具有广泛的知识储备和问题解决能力。",
+                "soul": "我是一个经过训练的 AI 助手，具有广泛的知识储备和问题解决能力。",
                 "tools": [],
                 "skills": [],
                 "planning": False,
@@ -880,9 +874,7 @@ class AgentService:
                 "name": "代码专家",
                 "description": "专注于编程和软件开发的技术专家",
                 "category": "development",
-                "role": "高级软件工程师",
-                "goal": "帮助用户编写、调试和优化代码，解决技术问题",
-                "backstory": "我是一名经验丰富的软件工程师，精通多种编程语言和开发框架，擅长代码审查和性能优化。",
+                "soul": "我是一名经验丰富的软件工程师，精通多种编程语言和开发框架，擅长代码审查和性能优化。",
                 "tools": [],
                 "skills": [],
                 "planning": True,
@@ -894,9 +886,7 @@ class AgentService:
                 "name": "数据分析师",
                 "description": "专注于数据分析和可视化的专家",
                 "category": "analytics",
-                "role": "数据分析师",
-                "goal": "分析数据，发现模式，提供洞察和建议",
-                "backstory": "我是一名专业的数据分析师，擅长统计分析、数据可视化和机器学习。",
+                "soul": "我是一名专业的数据分析师，擅长统计分析、数据可视化和机器学习。",
                 "tools": [],
                 "skills": [],
                 "planning": True,
@@ -908,9 +898,7 @@ class AgentService:
                 "name": "内容创作者",
                 "description": "专注于内容创作和文案撰写的专家",
                 "category": "content",
-                "role": "内容创作者",
-                "goal": "创作高质量的内容，包括文章、文案、故事等",
-                "backstory": "我是一名专业的内容创作者，擅长各种文体的写作，能够根据需求创作引人入胜的内容。",
+                "soul": "我是一名专业的内容创作者，擅长各种文体的写作，能够根据需求创作引人入胜的内容。",
                 "tools": [],
                 "skills": [],
                 "planning": False,
@@ -921,9 +909,7 @@ class AgentService:
                 "name": "客服助手",
                 "description": "专注于客户服务和问题解决的智能客服",
                 "category": "service",
-                "role": "客户服务代表",
-                "goal": "提供优质的客户服务，解答疑问，处理投诉",
-                "backstory": "我是一名专业的客户服务代表，具有出色的沟通能力和问题解决能力，始终保持友好和耐心。",
+                "soul": "我是一名专业的客户服务代表，具有出色的沟通能力和问题解决能力，始终保持友好和耐心。",
                 "tools": [],
                 "skills": [],
                 "planning": False,
@@ -934,9 +920,7 @@ class AgentService:
                 "name": "会议助手",
                 "description": "专业的圆桌会议主持人，负责会议准备、引导讨论、生成纪要和交付物",
                 "category": "meeting",
-                "role": "圆桌会议主持人",
-                "goal": "高效主持圆桌会议，确保讨论聚焦、深入、有产出。在准备阶段收集和整理材料，在会议中引导讨论方向、控制节奏、促进共识，在完成阶段生成高质量的会议纪要和可落地的交付物。",
-                "backstory": """你是一位经验丰富的会议主持人，擅长多种会议模式（头脑风暴、议会投票、方案收敛、六顶思考帽等）。
+                "soul": """你是一位经验丰富的会议主持人，擅长多种会议模式（头脑风暴、议会投票、方案收敛、六顶思考帽等）。
 
 你的核心能力：
 1. **会议准备**：根据会议主题和类型，判断需要收集哪些背景资料，引导用户提供关键信息，确保参会者有足够的上下文。你可以使用 web_search 搜索相关资料，使用 fetch_url 获取参考文档内容。
@@ -1049,9 +1033,7 @@ class AgentService:
             self.WORK_ASSISTANT_ID: {
                 "template_id": "template_nicebot_work_assistant",
                 "name": "NiceBot 任务助手",
-                "role": "需求澄清、任务规划、执行调度和验收协调者",
-                "goal": "把模糊任务转化为清晰需求、可审批计划、可调度的二级任务树，并在最终交付前做验收判断。",
-                "backstory": "你是 NiceBot Work 的任务助手，擅长通过少量高价值问题澄清目标，生成依赖明确的执行计划，并为每个子任务选择合适的执行者。",
+                "soul": "你是 NiceBot Work 的任务助手，擅长通过少量高价值问题澄清目标，生成依赖明确的执行计划，并为每个子任务选择合适的执行者。",
                 "tools": [],
                 "skills": [],
                 "planning": True,
@@ -1062,9 +1044,7 @@ class AgentService:
             self.WORK_EXECUTOR_ID: {
                 "template_id": "template_nicebot_work_executor",
                 "name": "通用任务执行智能体",
-                "role": "通用任务执行者",
-                "goal": "根据已确认的需求、计划和上下文完成普通任务执行，形成可审查的阶段结果。",
-                "backstory": "你是稳定、克制的通用执行智能体，专注完成当前步骤，不擅自扩大范围，并明确记录产出依据和未解决问题。",
+                "soul": "你是稳定、克制的通用执行智能体，专注完成当前步骤，不擅自扩大范围，并明确记录产出依据和未解决问题。",
                 "tools": [],
                 "skills": [],
                 "planning": False,
@@ -1075,9 +1055,7 @@ class AgentService:
             self.WORK_REVIEWER_ID: {
                 "template_id": "template_nicebot_work_reviewer",
                 "name": "通用任务审查智能体",
-                "role": "任务质量审查者",
-                "goal": "独立审查执行结果是否满足需求、计划和交付标准，给出通过或返工意见。",
-                "backstory": "你是 NiceBot Work 的质量门禁，不参与执行本身，只根据目标、证据和交付标准判断结果是否足够可靠。",
+                "soul": "你是 NiceBot Work 的质量门禁，不参与执行本身，只根据目标、证据和交付标准判断结果是否足够可靠。",
                 "tools": [],
                 "skills": [],
                 "planning": False,
@@ -1088,9 +1066,7 @@ class AgentService:
             self.WORK_RESEARCHER_ID: {
                 "template_id": "template_nicebot_research_expert",
                 "name": "调查专家",
-                "role": "信息收集与资料核对专家",
-                "goal": "围绕任务目标收集、筛选、核对信息来源，输出结构化资料和关键依据。",
-                "backstory": "你擅长快速建立信息地图，区分事实、推断和不确定性，并保留来源线索供后续交付引用。",
+                "soul": "你擅长快速建立信息地图，区分事实、推断和不确定性，并保留来源线索供后续交付引用。",
                 "tools": [],
                 "skills": [],
                 "planning": False,
@@ -1101,9 +1077,7 @@ class AgentService:
             self.WORK_REPORTER_ID: {
                 "template_id": "template_nicebot_report_expert",
                 "name": "汇报专家",
-                "role": "交付物撰写与报告整理专家",
-                "goal": "把执行结果整理为清晰、完整、可直接使用的最终交付物。",
-                "backstory": "你擅长组织结构、突出结论、保留依据，并根据任务场景选择合适的报告表达方式。",
+                "soul": "你擅长组织结构、突出结论、保留依据，并根据任务场景选择合适的报告表达方式。",
                 "tools": [],
                 "skills": [],
                 "planning": False,
@@ -1140,9 +1114,7 @@ class AgentService:
             data = {
                 "id": agent_id,
                 "name": template["name"],
-                "role": template["role"],
-                "goal": template["goal"],
-                "backstory": template["backstory"],
+                "soul": template["soul"],
                 "tools": template.get("tools", []),
                 "skills": template.get("skills", []),
                 "planning": template.get("planning", False),
@@ -1195,9 +1167,7 @@ class AgentService:
             agent = self.create_agent({
                 "id": self.MEETING_ASSISTANT_ID,
                 "name": meeting_template["name"],
-                "role": meeting_template["role"],
-                "goal": meeting_template["goal"],
-                "backstory": meeting_template["backstory"],
+                "soul": meeting_template.get("soul", ""),
                 "tools": meeting_template.get("tools", []),
                 "skills": meeting_template.get("skills", []),
                 "planning": meeting_template.get("planning", False),
@@ -1289,9 +1259,7 @@ class AgentService:
             if agent.is_expert and "capabilities" in template:
                 self.update_agent(agent_id, {
                     "name": template["name"],
-                    "role": template["role"],
-                    "goal": template["goal"],
-                    "backstory": template["backstory"],
+                    "soul": template.get("soul") or template.get("backstory", ""),
                     "tools": template.get("tools", []),
                     "skills": template.get("skills", []),
                     "planning": template.get("planning", {}).get("enabled", True),
@@ -1307,9 +1275,7 @@ class AgentService:
             else:
                 self.update_agent(agent_id, {
                     "name": template["name"],
-                    "role": template["role"],
-                    "goal": template["goal"],
-                    "backstory": template["backstory"],
+                    "soul": template.get("soul") or template.get("backstory", ""),
                     "tools": template.get("tools", []),
                     "skills": template.get("skills", []),
                     "planning": template.get("planning", False),
@@ -1394,9 +1360,7 @@ class AgentService:
             agent = self.create_agent({
                 "id": agent_id,
                 "name": template["name"],
-                "role": template["role"],
-                "goal": template["goal"],
-                "backstory": template["backstory"],
+                "soul": template.get("soul") or template.get("backstory", ""),
                 "tools": template.get("tools", []),
                 "skills": template.get("skills", []),
                 "planning": template.get("planning", {}).get("enabled", True),
@@ -1492,13 +1456,12 @@ class AgentService:
 
                 if template_id in existing_experts:
                     existing = existing_experts[template_id]
-                    if existing.role != template.get("role", "") or existing.goal != template.get("goal", "") or existing.backstory != template.get("backstory", ""):
+                    template_soul = template.get("soul") or template.get("backstory", "")
+                    if existing.soul != template_soul:
                         try:
                             self.update_agent(existing.id, {
                                 "name": template["name"],
-                                "role": template["role"],
-                                "goal": template["goal"],
-                                "backstory": template["backstory"],
+                                "soul": template_soul,
                                 "skills": template.get("skills", []),
                                 "metadata": {
                                     **existing.metadata,
@@ -1516,9 +1479,7 @@ class AgentService:
                     self.create_agent({
                         "id": agent_id,
                         "name": template["name"],
-                        "role": template["role"],
-                        "goal": template["goal"],
-                        "backstory": template["backstory"],
+                        "soul": template.get("soul") or template.get("backstory", ""),
                         "tools": template.get("tools", []),
                         "skills": template.get("skills", []),
                         "planning": template.get("planning", {}).get("enabled", True),
@@ -1556,9 +1517,7 @@ class AgentService:
         return Agent(
             id=row["id"],
             name=row["name"],
-            role=row.get("role", ""),
-            goal=row.get("goal", ""),
-            backstory=row.get("backstory", ""),
+            soul=row.get("soul", ""),
             tools=self._parse_json(row.get("tools", "[]")),
             skills=self._parse_json(row.get("skills", "[]")),
             knowledge_id=row.get("knowledge_id"),
@@ -1676,17 +1635,8 @@ class AgentService:
         """
         parts = []
 
-        # 角色定义
-        if agent.role:
-            parts.append(f"你是一个{agent.role}。")
-
-        # 目标
-        if agent.goal:
-            parts.append(f"\n你的目标是：{agent.goal}")
-
-        # 背景故事
-        if agent.backstory:
-            parts.append(f"\n\n背景：{agent.backstory}")
+        if agent.soul:
+            parts.append(agent.soul)
 
         # 能力说明
         capabilities = []

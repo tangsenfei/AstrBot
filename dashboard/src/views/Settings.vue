@@ -1,6 +1,15 @@
 <template>
+    <v-card variant="flat" class="settings-shell">
+        <v-tabs v-model="settingsTab" color="primary" class="mb-3">
+            <v-tab value="general">
+                <v-icon start>mdi-cog-outline</v-icon>
+                {{ tm('tabs.general') }}
+            </v-tab>
+        </v-tabs>
 
-    <div style="background-color: var(--v-theme-surface, #fff); padding: 8px; padding-left: 16px; border-radius: 8px; margin-bottom: 24px;">
+        <v-window v-model="settingsTab">
+            <v-window-item value="general">
+                <div style="background-color: var(--v-theme-surface, #fff); padding: 8px; padding-left: 16px; border-radius: 8px; margin-bottom: 24px;">
 
         <v-list lines="two">
             <v-list-subheader>{{ tm('network.title') }}</v-list-subheader>
@@ -218,7 +227,10 @@
                 <v-btn style="margin-top: 16px;" color="primary" @click="startMigration">{{ tm('system.migration.button') }}</v-btn>
             </v-list-item>
 
-    </div>
+                </div>
+            </v-window-item>
+        </v-window>
+    </v-card>
 
     <WaitingForRestart ref="wfr"></WaitingForRestart>
     <MigrationDialog ref="migrationDialog"></MigrationDialog>
@@ -245,6 +257,7 @@ import { useToastStore } from '@/stores/toast';
 const { tm } = useModuleI18n('features/settings');
 const toastStore = useToastStore();
 const theme = useTheme();
+const settingsTab = ref('general');
 
 const getStoredColor = (key, fallback) => {
     const stored = typeof window !== 'undefined' ? localStorage.getItem(key) : null;
@@ -451,3 +464,9 @@ onMounted(() => {
     loadApiKeys();
 });
 </script>
+
+<style scoped>
+.settings-shell {
+    padding: 8px;
+}
+</style>

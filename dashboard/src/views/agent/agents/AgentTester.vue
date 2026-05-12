@@ -33,8 +33,7 @@
             <v-card variant="outlined" class="mb-4">
               <v-card-title class="text-subtitle-2 pb-0">{{ $t('agent.agents.tester.basicInfo') }}</v-card-title>
               <v-card-text>
-                <div class="mb-2"><span class="text-caption text-grey">Role:</span><p class="text-body-2 mb-0">{{ agent.role || '--' }}</p></div>
-                <div v-if="agent.goal"><span class="text-caption text-grey">Goal:</span><p class="text-body-2 mb-0">{{ agent.goal }}</p></div>
+                <div class="mb-2"><span class="text-caption text-grey">Soul:</span><p class="text-body-2 mb-0">{{ agent.soul || '--' }}</p></div>
               </v-card-text>
             </v-card>
             <v-card variant="outlined" class="mb-4">

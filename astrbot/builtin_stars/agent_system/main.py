@@ -98,9 +98,7 @@ class AgentSystemPlugin(Star):
             register_crew_routes,
             register_flow_routes,
             register_knowledge_routes,
-            register_roundtable_routes,
             register_skill_routes,
-            register_task_routes,
             register_tool_routes,
             register_work_routes,
             register_meeting_routes,
@@ -112,8 +110,6 @@ class AgentSystemPlugin(Star):
         register_agent_routes(self)
         register_crew_routes(self)
         register_flow_routes(self)
-        register_roundtable_routes(self)
-        register_task_routes(self)
         register_work_routes(self)
         register_meeting_routes(self)
         register_cli_agent_routes(self)

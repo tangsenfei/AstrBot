@@ -1,72 +1,13 @@
 <template>
   <div class="work-shell" :class="{ 'is-dark': isDark }">
-    <aside class="work-category-pane">
-      <div class="pane-header">
-        <div>
-          <div class="pane-title">Work</div>
-          <div class="pane-subtitle">任务工作台</div>
-        </div>
-        <v-btn icon="mdi-refresh" size="small" variant="text" :loading="loading" @click="refreshAll" />
-      </div>
-
-      <button
-        class="category-row"
-        :class="{ active: selectedScope === 'daily' && !selectedDailyDirId }"
-        type="button"
-        @click="selectDaily(null)"
-      >
-        <v-icon size="18">mdi-calendar-check-outline</v-icon>
-        <span>日常任务</span>
-      </button>
-      <div class="category-children">
-        <button
-          v-for="dir in dailyDirs"
-          :key="dir.id"
-          class="category-row child"
-          :class="{ active: selectedScope === 'daily' && selectedDailyDirId === dir.id }"
-          type="button"
-          @click="selectDaily(dir.id)"
-        >
-          <v-icon size="16">mdi-folder-clock-outline</v-icon>
-          <span>{{ dir.name }}</span>
-        </button>
-        <v-btn block size="small" variant="tonal" prepend-icon="mdi-plus" @click="openDailyDialog()">
-          日常目录
-        </v-btn>
-      </div>
-
-      <button
-        class="category-row"
-        :class="{ active: selectedScope === 'project' && !selectedProjectId }"
-        type="button"
-        @click="selectProject(null)"
-      >
-        <v-icon size="18">mdi-briefcase-outline</v-icon>
-        <span>项目</span>
-      </button>
-      <div class="category-children">
-        <button
-          v-for="project in projects"
-          :key="project.id"
-          class="category-row child"
-          :class="{ active: selectedScope === 'project' && selectedProjectId === project.id }"
-          type="button"
-          @click="selectProject(project.id)"
-        >
-          <v-icon size="16">mdi-folder-star-outline</v-icon>
-          <span>{{ project.name }}</span>
-        </button>
-        <v-btn block size="small" color="primary" variant="tonal" prepend-icon="mdi-plus" @click="openProjectDialog()">
-          创建项目
-        </v-btn>
-      </div>
-    </aside>
-
     <aside class="work-task-pane">
       <div class="task-toolbar">
-        <v-btn color="primary" variant="flat" prepend-icon="mdi-plus" @click="openTaskDialog">
-          新建任务
-        </v-btn>
+        <div class="toolbar-actions">
+          <v-btn color="primary" variant="flat" prepend-icon="mdi-plus" @click="openTaskDialog">
+            新建任务
+          </v-btn>
+          <v-btn icon="mdi-refresh" size="small" variant="text" :loading="loading" @click="refreshAll" />
+        </div>
         <v-text-field
           v-model="searchQuery"
           density="compact"
@@ -134,6 +75,50 @@
             </div>
           </div>
           <div class="detail-actions">
+            <v-chip :prepend-icon="taskModeIcon(selectedTaskMode)" color="primary" size="small" variant="tonal">
+              任务模式：{{ taskModeLabel(selectedTaskMode) }}
+            </v-chip>
+            <v-btn
+              v-if="canPauseTask"
+              size="small"
+              variant="tonal"
+              prepend-icon="mdi-pause"
+              :loading="controllingTask === 'pause'"
+              @click="controlTask('pause')"
+            >
+              暂停
+            </v-btn>
+            <v-btn
+              v-else-if="isPauseRequested"
+              size="small"
+              variant="tonal"
+              prepend-icon="mdi-pause-circle-outline"
+              disabled
+            >
+              暂停中
+            </v-btn>
+            <v-btn
+              v-if="canResumeTask"
+              size="small"
+              color="primary"
+              variant="tonal"
+              prepend-icon="mdi-play"
+              :loading="controllingTask === 'resume'"
+              @click="controlTask('resume')"
+            >
+              继续
+            </v-btn>
+            <v-btn
+              v-if="canTerminateTask"
+              size="small"
+              color="error"
+              variant="tonal"
+              prepend-icon="mdi-stop-circle-outline"
+              :loading="controllingTask === 'terminate'"
+              @click="controlTask('terminate')"
+            >
+              终止
+            </v-btn>
             <v-chip :color="statusColor(selectedTask.status)" size="small" variant="tonal">
               {{ statusLabel(selectedTask.status) }}
             </v-chip>
@@ -150,12 +135,12 @@
               'stage-done': stage.status === 'done' || stage.status === 'completed',
               'stage-running': stage.status === 'running',
               'stage-pending': stage.status === 'pending',
-              'stage-failed': stage.status === 'failed',
+              'stage-failed': stage.status === 'failed' || stage.status === 'retryable_failed',
               active: selectedStageIndex === idx,
             }"
             @click="selectStage(idx)"
           >
-            <v-icon :icon="stage.status === 'done' || stage.status === 'completed' ? 'mdi-check-circle' : stage.status === 'running' ? 'mdi-progress-clock' : stage.status === 'failed' ? 'mdi-alert-circle' : 'mdi-circle-outline'" size="14" />
+            <v-icon :icon="stage.status === 'done' || stage.status === 'completed' ? 'mdi-check-circle' : stage.status === 'running' ? 'mdi-progress-clock' : stage.status === 'failed' || stage.status === 'retryable_failed' ? 'mdi-alert-circle' : 'mdi-circle-outline'" size="14" />
             <span class="stage-label">{{ stage.title || stage.description || stage.name }}</span>
           </div>
         </div>
@@ -175,6 +160,17 @@
               <v-chip :color="stepColor(selectedNode.status)" size="small" variant="tonal">
                 {{ stepStatusLabel(selectedNode.status) }}
               </v-chip>
+              <v-btn
+                v-if="canRetrySelectedNode"
+                size="small"
+                color="primary"
+                variant="tonal"
+                prepend-icon="mdi-reload"
+                :loading="retryingNode"
+                @click="retrySelectedNode"
+              >
+                重试节点
+              </v-btn>
             </div>
 
             <div v-if="selectedStage?.id === 'stage_execute'" class="execution-detail-grid">
@@ -328,30 +324,9 @@
         <v-card-text class="dialog-grid">
           <v-text-field v-model="taskForm.name" label="任务名称" variant="outlined" />
           <v-textarea v-model="taskForm.description" label="交付目标" variant="outlined" rows="3" />
-          <div class="dialog-row">
-            <v-select v-model="taskForm.executor_config.flow_id" :items="flows" item-title="name" item-value="id" label="任务流程" variant="outlined" />
-            <v-select v-model="taskForm.work_scope" :items="scopeOptions" label="归属" variant="outlined" />
-          </div>
-          <v-select
-            v-if="taskForm.work_scope === 'project'"
-            v-model="taskForm.work_project_id"
-            :items="projects"
-            item-title="name"
-            item-value="id"
-            label="项目"
-            variant="outlined"
-          />
-          <v-select
-            v-else
-            v-model="taskForm.work_daily_dir_id"
-            :items="dailyDirs"
-            item-title="name"
-            item-value="id"
-            label="日常目录"
-            variant="outlined"
-          />
           <div class="option-row">
-            <v-checkbox v-model="taskForm.plan_config.enabled" label="人工审查规划" density="compact" hide-details />
+            <v-checkbox v-model="taskForm.plan_config.approval_enabled" label="人工审查规划" density="compact" hide-details />
+            <v-checkbox v-model="taskForm.clarification_config.interrogation_enabled" label="开启拷问" density="compact" hide-details />
             <v-checkbox v-model="taskForm.review_config.enabled" label="执行后审查" density="compact" hide-details />
             <v-text-field
               v-if="taskForm.review_config.enabled"
@@ -376,7 +351,7 @@
                 常规
               </v-btn>
               <v-btn value="deep" size="small">
-                <v-icon start size="16">mdi-layers-outline</v-icon>
+                <v-icon start size="16">mdi-microscope</v-icon>
                 深度
               </v-btn>
             </v-btn-toggle>
@@ -394,6 +369,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import axios from 'axios';
 import WorkTaskList from '@/components/work/WorkTaskList.vue';
 import WorkProgressTimeline from '@/components/work/WorkProgressTimeline.vue';
@@ -403,6 +379,7 @@ import { useSelectedEventStream } from '@/composables/useSelectedEventStream';
 import { useCustomizerStore } from '@/stores/customizer';
 
 const customizer = useCustomizerStore();
+const route = useRoute();
 const isDark = computed(() => customizer.uiTheme === 'PurpleThemeDark');
 
 const detailLoading = ref(false);
@@ -425,11 +402,15 @@ const statusFilter = ref<string | null>(null);
 const kindFilter = ref<string | null>(null);
 const supplementText = ref('');
 const submittingInput = ref(false);
+const retryingNode = ref(false);
+const controllingTask = ref<'pause' | 'resume' | 'terminate' | ''>('');
 let summaryRefreshTimer: ReturnType<typeof setInterval> | null = null;
 let selectedRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+let filterReloadTimer: ReturnType<typeof setTimeout> | null = null;
 let selectedTaskRequestId = 0;
 let selectedTaskLoading = false;
 let pendingSelectedReload = false;
+const seenLogIds = new Set<string>();
 const taskList = usePagedTaskList<any>({
   pageSize: 30,
   loadPage: loadTaskPage,
@@ -469,19 +450,18 @@ const taskForm = reactive<any>(defaultTaskForm());
 const statusOptions = [
   { title: '等待中', value: 'pending' },
   { title: '执行中', value: 'running' },
+  { title: '暂停中', value: 'pause_requested' },
+  { title: '已暂停', value: 'paused' },
   { title: '等待确认', value: 'waiting_feedback' },
   { title: '已完成', value: 'completed' },
   { title: '失败', value: 'failed' },
+  { title: '可重试失败', value: 'retryable_failed' },
   { title: '已取消', value: 'cancelled' },
 ];
 const kindOptions = [
   { title: '单智能体', value: 'single_agent' },
   { title: '多智能体', value: 'multi_agent' },
-  { title: '业务流', value: 'workflow' },
-];
-const scopeOptions = [
-  { title: '日常任务', value: 'daily' },
-  { title: '项目', value: 'project' },
+  { title: '交付任务', value: 'workflow' },
 ];
 
 const filteredTasks = computed(() => {
@@ -498,6 +478,13 @@ const steps = computed(() => {
 });
 
 const selectedExecutorLabel = computed(() => executorLabel(selectedTask.value));
+const selectedTaskMode = computed(() => taskMode(selectedTask.value));
+const canPauseTask = computed(() => selectedTask.value?.status === 'running');
+const isPauseRequested = computed(() => selectedTask.value?.status === 'pause_requested');
+const canResumeTask = computed(() => selectedTask.value?.status === 'paused');
+const canTerminateTask = computed(() =>
+  ['running', 'pause_requested', 'paused'].includes(selectedTask.value?.status || '')
+);
 
 const stepDialog = computed({
   get: () => Boolean(selectedStep.value),
@@ -507,9 +494,9 @@ const stepDialog = computed({
 });
 
 const displayArtifacts = computed(() => {
-  return artifacts.value.filter((artifact) =>
+  return uniqueArtifacts(artifacts.value.filter((artifact) =>
     artifact && (artifact.file_path || artifact.content || artifact.artifact_type === 'file')
-  );
+  ));
 });
 
 const displayLogs = computed(() => aggregateLogs(logs.value));
@@ -533,17 +520,23 @@ const selectedNode = computed(() => {
   if (selectedStage.value?.id === 'stage_execute' && selectedExecutionNode.value) return selectedExecutionNode.value;
   return selectedStage.value;
 });
-const selectedNodeLogs = computed(() => normalizeTimelineEvents(selectedNode.value?.events || []));
+const selectedNodeLogs = computed(() => {
+  const events = normalizeTimelineEvents(selectedNode.value?.events || []);
+  if (selectedStage.value?.id !== 'stage_deliver') return events;
+  return events.filter((event: any) => !isArtifactTimelineLog(event));
+});
+const canRetrySelectedNode = computed(() => {
+  const status = selectedNode.value?.status || selectedTask.value?.status;
+  return ['failed', 'retryable_failed'].includes(status) && Boolean(selectedTaskId.value && selectedNode.value?.id);
+});
 function defaultTaskForm() {
   return {
     name: '',
     description: '',
     work_task_kind: 'workflow',
-    work_scope: selectedScope.value,
-    work_project_id: selectedProjectId.value,
-    work_daily_dir_id: selectedDailyDirId.value,
     executor_config: { flow_id: BUILTIN_DAILY_FLOW_ID },
-    plan_config: { enabled: true, effort: 'medium', task_mode: 'normal' },
+    plan_config: { approval_enabled: true, task_mode: 'normal' },
+    clarification_config: { interrogation_enabled: false },
     review_config: { enabled: false, max_rework: 3 },
   };
 }
@@ -552,6 +545,7 @@ async function refreshAll() {
   loading.value = true;
   try {
     await Promise.all([loadProjects(), loadDailyDirs(), loadResources()]);
+    syncScopeFromRoute();
     await loadTasks();
     await ensureSelectedTask();
     if (selectedTaskId.value) await loadSelectedTask(true);
@@ -569,9 +563,6 @@ async function loadDailyDirs() {
   const response = await axios.get('/api/plug/work/daily-dirs');
   if (response.data?.status === 'ok') {
     dailyDirs.value = response.data.data || [];
-    if (!selectedDailyDirId.value && dailyDirs.value.length) {
-      selectedDailyDirId.value = dailyDirs.value[0].id;
-    }
   }
 }
 
@@ -616,8 +607,16 @@ async function loadTaskPage(page: number, pageSize: number) {
 }
 
 watch([searchQuery, statusFilter, kindFilter], () => {
-  reloadTasksForFilters().catch(() => undefined);
+  scheduleFilterReload();
 });
+
+watch(
+  () => [route.query.scope, route.query.daily_dir_id, route.query.project_id],
+  () => {
+    syncScopeFromRoute();
+    scheduleFilterReload();
+  }
+);
 
 watch(stageSteps, (stages) => {
   if (!stages.length) return;
@@ -631,6 +630,14 @@ async function reloadTasksForFilters() {
   clearSelection();
   await loadTasks();
   await ensureSelectedTask();
+}
+
+function scheduleFilterReload() {
+  if (filterReloadTimer) clearTimeout(filterReloadTimer);
+  filterReloadTimer = setTimeout(() => {
+    filterReloadTimer = null;
+    reloadTasksForFilters().catch(() => undefined);
+  }, 350);
 }
 
 async function ensureSelectedTask() {
@@ -655,7 +662,7 @@ function startSummaryRefresh() {
   if (summaryRefreshTimer) clearInterval(summaryRefreshTimer);
   summaryRefreshTimer = setInterval(() => {
     if (!document.hidden) refreshTaskSummaries().catch(() => undefined);
-  }, 5000);
+  }, 10000);
 }
 
 async function refreshTaskSummaries() {
@@ -694,12 +701,18 @@ async function loadSelectedTask(mergeLogs = false) {
   const taskId = selectedTaskId.value;
   try {
     const response = await axios.get(`/api/plug/work/tasks/${taskId}`, {
-      params: { logs_limit: 5000 },
+      params: { logs_limit: 500 },
     });
     if (requestId !== selectedTaskRequestId || taskId !== selectedTaskId.value) return;
     if (response.data?.status === 'ok') {
       selectedTask.value = response.data.data;
-      if (!mergeLogs) logs.value = selectedTask.value.logs || [];
+      if (!mergeLogs) {
+        logs.value = selectedTask.value.logs || [];
+        seenLogIds.clear();
+        for (const log of logs.value) {
+          if (log?.id) seenLogIds.add(log.id);
+        }
+      }
       artifacts.value = selectedTask.value.artifacts || [];
       interactionCards.value = selectedTask.value.hitl_cards || [];
     }
@@ -711,6 +724,22 @@ async function loadSelectedTask(mergeLogs = false) {
       loadSelectedTask(mergeLogs);
     }
   }
+}
+
+function routeString(value: unknown) {
+  return typeof value === 'string' ? value : '';
+}
+
+function syncScopeFromRoute() {
+  const scope = routeString(route.query.scope) === 'project' ? 'project' : 'daily';
+  selectedScope.value = scope;
+  if (scope === 'project') {
+    selectedProjectId.value = routeString(route.query.project_id) || null;
+    selectedDailyDirId.value = null;
+    return;
+  }
+  selectedDailyDirId.value = routeString(route.query.daily_dir_id) || null;
+  selectedProjectId.value = null;
 }
 
 function selectDaily(id: string | null) {
@@ -735,6 +764,7 @@ function clearSelection() {
   selectedTaskId.value = null;
   selectedTask.value = null;
   logs.value = [];
+  seenLogIds.clear();
   artifacts.value = [];
   interactionCards.value = [];
   selectedStep.value = null;
@@ -798,7 +828,7 @@ function handleWorkStreamEvent(name: string, payload: any) {
         };
         taskList.mergeSummaries([{ id: selectedTask.value.id, status: selectedTask.value.status, progress: selectedTask.value.progress }]);
       }
-      if (data.steps || data.phase === 'assign_done' || data.phase === 'step_done' || data.phase === 'completed') {
+      if (data.steps || data.phase === 'step_done' || data.phase === 'completed') {
         scheduleSelectedTaskRefresh(data.phase === 'step_done' ? 250 : 500);
       }
       return;
@@ -833,7 +863,11 @@ function handleWorkStreamEvent(name: string, payload: any) {
     workStream.close();
     return;
   }
-  if (name === 'artifact' || name === 'interaction' || name === 'hitl_resolved' || name === 'token' || name === 'tool_result') {
+  if (name === 'artifact') {
+    scheduleSelectedTaskRefresh(500);
+    return;
+  }
+  if (name === 'interaction' || name === 'hitl_resolved') {
     scheduleSelectedTaskRefresh(500);
   }
   if (payload?.id) appendTaskLog(payload);
@@ -841,8 +875,15 @@ function handleWorkStreamEvent(name: string, payload: any) {
 
 function appendTaskLog(log: any) {
   if (!log?.id) return;
-  if (logs.value.some(item => item.id === log.id)) return;
+  if (seenLogIds.has(log.id)) return;
+  seenLogIds.add(log.id);
   logs.value = [...logs.value, log].sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0)).slice(-5000);
+  if (logs.value.length >= 5000) {
+    seenLogIds.clear();
+    for (const item of logs.value) {
+      if (item?.id) seenLogIds.add(item.id);
+    }
+  }
 }
 
 function maxLogSeq() {
@@ -922,8 +963,9 @@ function openTaskDialog() {
 async function createTask() {
   creatingTask.value = true;
   try {
-    const payload = JSON.parse(JSON.stringify(taskForm));
-    payload.flow_id = payload.executor_config?.flow_id;
+    const payload = { ...JSON.parse(JSON.stringify(taskForm)), ...resolveTaskScopeForCreate() };
+    payload.executor_config = { ...(payload.executor_config || {}), flow_id: BUILTIN_DAILY_FLOW_ID };
+    payload.flow_id = BUILTIN_DAILY_FLOW_ID;
     payload.work_task_kind = 'workflow';
     const response = await axios.post('/api/plug/work/tasks', payload);
     taskDialog.value = false;
@@ -951,6 +993,55 @@ async function submitSupplement() {
   }
 }
 
+async function retrySelectedNode() {
+  if (!selectedTaskId.value || !selectedNode.value?.id || retryingNode.value) return;
+  retryingNode.value = true;
+  try {
+    const nodeId = encodeURIComponent(String(selectedNode.value.id));
+    await axios.post(`/api/plug/work/tasks/${selectedTaskId.value}/nodes/${nodeId}/retry`);
+    await Promise.all([loadSelectedTask(true), refreshTaskSummaries()]);
+    openEventSource(selectedTaskId.value);
+  } finally {
+    retryingNode.value = false;
+  }
+}
+
+function resolveTaskScopeForCreate() {
+  if (selectedScope.value === 'project' && selectedProjectId.value) {
+    return {
+      work_scope: 'project',
+      work_project_id: selectedProjectId.value,
+      work_daily_dir_id: null,
+    };
+  }
+  return {
+    work_scope: 'daily',
+    work_project_id: null,
+    work_daily_dir_id: selectedDailyDirId.value || dailyDirs.value[0]?.id || null,
+  };
+}
+
+async function controlTask(action: 'pause' | 'resume' | 'terminate') {
+  if (!selectedTaskId.value || controllingTask.value) return;
+  controllingTask.value = action;
+  try {
+    const response = await axios.post(`/api/plug/work/tasks/${selectedTaskId.value}/${action}`);
+    const task = response.data?.data;
+    if (task?.id) {
+      selectedTask.value = task;
+      taskList.mergeSummaries([task]);
+    }
+    await Promise.all([refreshTaskSummaries(), loadSelectedTask(true)]);
+    if (action === 'terminate') {
+      closeEventSource();
+    } else if (action === 'resume' && selectedTaskId.value) {
+      openEventSource(selectedTaskId.value);
+    }
+  } finally {
+    controllingTask.value = '';
+  }
+}
+
 async function handleInteractionRespond() {
   hitlDialog.value = false;
   if (selectedTask.value) {
@@ -961,17 +1052,42 @@ async function handleInteractionRespond() {
 }
 
 function isCompleted(task: any) {
-  return ['completed', 'failed', 'cancelled'].includes(task?.status);
+  return ['completed', 'failed', 'retryable_failed', 'cancelled'].includes(task?.status);
+}
+
+function taskMode(task: any) {
+  const mode = task?.task_mode || task?.plan_config?.task_mode || 'normal';
+  return ['quick', 'normal', 'deep'].includes(mode) ? mode : 'normal';
+}
+
+function taskModeLabel(mode: string) {
+  const map: Record<string, string> = {
+    quick: '快速',
+    normal: '常规',
+    deep: '深度',
+  };
+  return map[mode] || '常规';
+}
+
+function taskModeIcon(mode: string) {
+  const map: Record<string, string> = {
+    quick: 'mdi-lightning-bolt',
+    normal: 'mdi-tune-variant',
+    deep: 'mdi-microscope',
+  };
+  return map[mode] || 'mdi-tune-variant';
 }
 
 function statusLabel(status: string) {
   const map: Record<string, string> = {
     pending: '等待中',
     running: '执行中',
+    pause_requested: '暂停中',
     paused: '已暂停',
     waiting_feedback: '等待确认',
     completed: '已完成',
     failed: '失败',
+    retryable_failed: '可重试失败',
     cancelled: '已取消',
   };
   return map[status] || status || '-';
@@ -984,6 +1100,7 @@ function stepStatusLabel(status: string) {
     done: '已完成',
     completed: '已完成',
     failed: '失败',
+    retryable_failed: '可重试失败',
   };
   return map[status] || status || '-';
 }
@@ -992,9 +1109,12 @@ function statusColor(status: string) {
   const map: Record<string, string> = {
     pending: 'grey',
     running: 'primary',
+    pause_requested: 'warning',
+    paused: 'warning',
     waiting_feedback: 'warning',
     completed: 'success',
     failed: 'error',
+    retryable_failed: 'warning',
     cancelled: 'grey',
   };
   return map[status] || 'grey';
@@ -1004,9 +1124,12 @@ function statusIcon(status: string) {
   const map: Record<string, string> = {
     pending: 'mdi-clock-outline',
     running: 'mdi-progress-clock',
+    pause_requested: 'mdi-pause-circle-outline',
+    paused: 'mdi-pause-circle-outline',
     waiting_feedback: 'mdi-account-question-outline',
     completed: 'mdi-check-circle-outline',
     failed: 'mdi-alert-circle-outline',
+    retryable_failed: 'mdi-alert-circle-outline',
     cancelled: 'mdi-cancel',
   };
   return map[status] || 'mdi-circle-outline';
@@ -1016,7 +1139,7 @@ function taskKindLabel(kind: string) {
   const map: Record<string, string> = {
     single_agent: '单智能体',
     multi_agent: '多智能体',
-    workflow: '业务流',
+    workflow: '交付任务',
     work_task: 'Work 任务',
   };
   return map[kind] || kind || '任务';
@@ -1035,8 +1158,7 @@ function executorLabel(task: any) {
     return name ? `执行团队：${name}` : '执行团队：任务助手自动选择';
   }
   if (kind === 'workflow') {
-    const name = resourceNameById(flows.value, config.flow_id || task?.flow_id);
-    return name ? `执行流程：${name}` : '执行流程：已配置';
+    return '内置交付流程';
   }
   const name = resourceNameById(agents.value, config.agent_id || task?.agent_id);
   return name ? `执行智能体：${name}` : '执行智能体：任务助手自动选择';
@@ -1064,7 +1186,7 @@ function parseSteps(raw: unknown) {
 function stepIcon(status: string) {
   if (status === 'done' || status === 'completed') return 'mdi-check-circle-outline';
   if (status === 'running') return 'mdi-progress-clock';
-  if (status === 'failed') return 'mdi-alert-circle-outline';
+  if (status === 'failed' || status === 'retryable_failed') return 'mdi-alert-circle-outline';
   return 'mdi-circle-outline';
 }
 
@@ -1072,6 +1194,7 @@ function stepColor(status: string) {
   if (status === 'done' || status === 'completed') return 'success';
   if (status === 'running') return 'primary';
   if (status === 'failed') return 'error';
+  if (status === 'retryable_failed') return 'warning';
   return 'grey';
 }
 
@@ -1144,6 +1267,30 @@ function normalizeTimelineEvents(events: any[]) {
       created_at: event.created_at,
     };
   });
+}
+
+function isArtifactTimelineLog(log: any) {
+  const data = log?.data || {};
+  return data.event === 'artifact' || log?.kind === 'artifact';
+}
+
+function uniqueArtifacts(items: any[]) {
+  const seen = new Set<string>();
+  const result: any[] = [];
+  for (const artifact of items || []) {
+    const key = artifactDedupeKey(artifact);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(artifact);
+  }
+  return result;
+}
+
+function artifactDedupeKey(artifact: any) {
+  const title = artifactTitle(artifact);
+  const stableId = artifact.artifact_id || artifact.metadata?.artifact_id || artifact.file_path || '';
+  const content = artifactText(artifact);
+  return `${title}::${stableId || content}`;
 }
 
 function shortTimelineId(value: string) {
@@ -1360,6 +1507,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (summaryRefreshTimer) clearInterval(summaryRefreshTimer);
   if (selectedRefreshTimer) clearTimeout(selectedRefreshTimer);
+  if (filterReloadTimer) clearTimeout(filterReloadTimer);
   closeEventSource();
 });
 </script>
@@ -1372,7 +1520,7 @@ onBeforeUnmount(() => {
   --work-border: rgba(var(--v-border-color), 0.18);
   --work-muted: rgba(var(--v-theme-on-surface), 0.62);
   display: grid;
-  grid-template-columns: 210px 320px minmax(360px, 1fr);
+  grid-template-columns: 320px minmax(360px, 1fr);
   height: 100%;
   min-height: 0;
   overflow: hidden;
@@ -1387,19 +1535,10 @@ onBeforeUnmount(() => {
   --work-border: rgba(255, 255, 255, 0.1);
 }
 
-.work-category-pane,
 .work-task-pane {
   min-height: 0;
   border-right: 1px solid var(--work-border);
   background: var(--work-panel);
-}
-
-.work-category-pane {
-  overflow: auto;
-}
-
-.work-category-pane {
-  padding: 14px;
 }
 
 .pane-header,
@@ -1409,6 +1548,7 @@ onBeforeUnmount(() => {
 .filter-row,
 .dialog-row,
 .option-row,
+.toolbar-actions,
 .input-panel {
   display: flex;
   align-items: center;
@@ -1438,39 +1578,9 @@ onBeforeUnmount(() => {
   color: var(--work-muted);
 }
 
-.category-row {
-  width: 100%;
-  min-height: 38px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-  padding: 8px 10px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.category-row:hover,
-.category-row.active,
 .task-card:hover,
 .task-card.active {
   background: rgba(var(--v-theme-primary), 0.1);
-}
-
-.category-row.child {
-  min-height: 34px;
-  font-size: 13px;
-}
-
-.category-children {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 4px 0 14px 12px;
 }
 
 .work-task-pane {
@@ -1489,6 +1599,15 @@ onBeforeUnmount(() => {
   z-index: 1;
   border-bottom: 1px solid var(--work-border);
   background: var(--work-panel);
+}
+
+.toolbar-actions {
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.toolbar-actions .v-btn:first-child {
+  flex: 1;
 }
 
 .filter-row,
@@ -1628,6 +1747,8 @@ onBeforeUnmount(() => {
 .detail-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
 }
 
@@ -2083,25 +2204,20 @@ onBeforeUnmount(() => {
 
 @media (max-width: 1180px) {
   .work-shell {
-    grid-template-columns: 170px 260px minmax(300px, 1fr);
+    grid-template-columns: 280px minmax(300px, 1fr);
   }
 }
 
 @media (max-width: 820px) {
   .work-shell {
     grid-template-columns: 1fr;
-    grid-template-rows: auto auto 1fr;
+    grid-template-rows: auto 1fr;
   }
 
-  .work-category-pane,
   .work-task-pane {
     max-height: 210px;
     border-right: 0;
     border-bottom: 1px solid var(--work-border);
-  }
-
-  .category-children {
-    margin-left: 0;
   }
 
   .detail-body {

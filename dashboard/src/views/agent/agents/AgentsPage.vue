@@ -324,19 +324,9 @@
         <v-divider />
 
         <v-card-text class="pa-4" style="max-height: 65vh; overflow-y: auto;">
-          <div v-if="detailAgent.role" class="mb-4">
-            <div class="text-subtitle-2 mb-1">{{ t('agent.agents.editor.role') }}</div>
-            <p class="text-body-2">{{ detailAgent.role }}</p>
-          </div>
-
-          <div v-if="detailAgent.goal" class="mb-4">
-            <div class="text-subtitle-2 mb-1">{{ t('agent.agents.editor.goal') }}</div>
-            <p class="text-body-2">{{ detailAgent.goal }}</p>
-          </div>
-
-          <div v-if="detailAgent.backstory" class="mb-4">
-            <div class="text-subtitle-2 mb-1">{{ t('agent.agents.editor.backstory') }}</div>
-            <p class="text-body-2">{{ detailAgent.backstory }}</p>
+          <div v-if="detailAgent.soul" class="mb-4">
+            <div class="text-subtitle-2 mb-1">{{ t('agent.agents.editor.soul') }}</div>
+            <p class="text-body-2">{{ detailAgent.soul }}</p>
           </div>
 
           <div v-if="detailAgent.provider_id || detailAgent.model_name" class="mb-4">
@@ -593,9 +583,7 @@ const templates = ref([
     icon: 'mdi-robot',
     description: t('agent.agents.templates.assistant.description'),
     config: {
-      role: t('agent.agents.templates.assistant.role'),
-      goal: t('agent.agents.templates.assistant.goal'),
-      backstory: t('agent.agents.templates.assistant.backstory'),
+      soul: t('agent.agents.templates.assistant.soul'),
       tools: [],
       skills: [],
       knowledgeBases: [],
@@ -608,9 +596,7 @@ const templates = ref([
     icon: 'mdi-magnify',
     description: t('agent.agents.templates.researcher.description'),
     config: {
-      role: t('agent.agents.templates.researcher.role'),
-      goal: t('agent.agents.templates.researcher.goal'),
-      backstory: t('agent.agents.templates.researcher.backstory'),
+      soul: t('agent.agents.templates.researcher.soul'),
       tools: [],
       skills: [],
       knowledgeBases: [],
@@ -623,9 +609,7 @@ const templates = ref([
     icon: 'mdi-code-braces',
     description: t('agent.agents.templates.coder.description'),
     config: {
-      role: t('agent.agents.templates.coder.role'),
-      goal: t('agent.agents.templates.coder.goal'),
-      backstory: t('agent.agents.templates.coder.backstory'),
+      soul: t('agent.agents.templates.coder.soul'),
       tools: [],
       skills: [],
       knowledgeBases: [],
@@ -711,7 +695,7 @@ const filteredAgents = computed(() => {
     const query = searchQuery.value.toLowerCase();
     result = result.filter(agent =>
       agent.name.toLowerCase().includes(query) ||
-      (agent.role && agent.role.toLowerCase().includes(query))
+      (agent.soul && agent.soul.toLowerCase().includes(query))
     );
   }
 
@@ -726,7 +710,7 @@ const expertAgents = computed(() => {
     const query = searchQuery.value.toLowerCase();
     result = result.filter(agent =>
       agent.name.toLowerCase().includes(query) ||
-      (agent.role && agent.role.toLowerCase().includes(query))
+      (agent.soul && agent.soul.toLowerCase().includes(query))
     );
   }
 

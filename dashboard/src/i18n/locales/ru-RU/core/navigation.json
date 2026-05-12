@@ -1,5 +1,4 @@
 {
-    "welcome": "Добро пожаловать",
     "dashboard": "Обзор",
     "platforms": "Каналы",
     "providers": "Модели",
@@ -24,23 +23,9 @@
     "trace": "Трассировка",
     "alkaid": "Alkaid Lab",
     "knowledgeBase": "База знаний",
-    "about": "О программе",
     "settings": "Настройки",
-    "changelog": "Журнал изменений",
-    "documentation": "Документация",
-    "faq": "FAQ",
-    "github": "GitHub",
-    "drag": "Перетащить",
     "groups": {
         "more": "Дополнительно"
-    },
-    "changelogDialog": {
-        "title": "Журнал изменений",
-        "loading": "Загрузка...",
-        "error": "Ошибка загрузки",
-        "notFound": "Журнал изменений для этой версии не найден",
-        "selectVersion": "Выберите версию",
-        "current": "Текущая"
     },
     "configTabs": {
         "normal": "Обычная конфигурация",

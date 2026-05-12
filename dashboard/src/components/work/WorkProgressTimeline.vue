@@ -13,70 +13,78 @@
 
     <div v-if="!items.length && !activeCards.length && !loading" class="empty-hint">暂无执行进展</div>
 
-    <div v-for="item in items" :key="item.id" class="tl-entry" :class="`kind-${item.kind}`">
-      <div class="tl-node">
-        <v-icon size="16" :icon="item.icon" />
-      </div>
+    <template v-for="item in items" :key="item.id">
+      <WorkAgentCallCard
+        v-if="item.kind === 'agent_call'"
+        :call="item.call"
+        :is-dark="isDark"
+      />
 
-      <div class="tl-body">
-        <div class="tl-header" @click="item.collapsible ? toggleCollapse(item.id) : undefined" :class="{ clickable: item.collapsible }">
-          <span class="tl-title">
-            <span class="tl-kind-badge" :class="`badge-${item.kind}`">{{ kindLabel(item.kind) }}</span>
-            {{ item.title }}
-            <span v-if="item.subtitle" class="tl-subtitle">· {{ item.subtitle }}</span>
-          </span>
-          <span class="tl-right">
-            <time v-if="item.created_at" class="tl-time">{{ formatTime(item.created_at) }}</time>
-            <span v-if="item.duration_ms" class="tl-dur">{{ formatDur(item.duration_ms) }}</span>
-            <v-icon v-if="item.collapsible" size="14" :icon="isCollapsed(item.id) ? 'mdi-chevron-down' : 'mdi-chevron-up'" />
-          </span>
+      <div v-else class="tl-entry" :class="`kind-${item.kind}`">
+        <div class="tl-node">
+          <v-icon size="16" :icon="item.icon" />
         </div>
 
-        <div v-if="!isCollapsed(item.id)" class="tl-content">
-          <template v-if="item.kind === 'tool_call' && item.args">
-            <div class="tl-section">
-              <div class="tl-section-title">内容</div>
-              <pre class="tl-json">{{ item.args }}</pre>
+        <div class="tl-body">
+          <div class="tl-header" @click="item.collapsible ? toggleCollapse(item.id) : undefined" :class="{ clickable: item.collapsible }">
+            <span class="tl-title">
+              <span class="tl-kind-badge" :class="`badge-${item.kind}`">{{ kindLabel(item.kind) }}</span>
+              {{ item.title }}
+              <span v-if="item.subtitle" class="tl-subtitle">· {{ item.subtitle }}</span>
+            </span>
+            <span class="tl-right">
+              <time v-if="item.created_at" class="tl-time">{{ formatTime(item.created_at) }}</time>
+              <span v-if="item.duration_ms" class="tl-dur">{{ formatDur(item.duration_ms) }}</span>
+              <v-icon v-if="item.collapsible" size="14" :icon="isCollapsed(item.id) ? 'mdi-chevron-down' : 'mdi-chevron-up'" />
+            </span>
+          </div>
+
+          <div v-if="!isCollapsed(item.id)" class="tl-content">
+            <template v-if="item.kind === 'tool_call' && item.args">
+              <div class="tl-section">
+                <div class="tl-section-title">内容</div>
+                <pre class="tl-json">{{ item.args }}</pre>
+              </div>
+            </template>
+
+            <template v-if="item.kind === 'tool_result' && item.result">
+              <div class="tl-section">
+                <div class="tl-section-title">结果</div>
+                <pre class="tl-json">{{ item.result }}</pre>
+              </div>
+            </template>
+
+            <template v-if="item.kind === 'reasoning'">
+              <pre class="tl-text reasoning-text">{{ item.text }}</pre>
+            </template>
+
+            <template v-if="item.kind === 'text_delta'">
+              <button
+                v-if="item.reasoning"
+                class="reasoning-toggle"
+                type="button"
+                @click.stop="toggleReasoning(item.id)"
+              >
+                <v-icon size="15" icon="mdi-brain" />
+                <span>思考过程</span>
+                <v-icon size="15" :icon="isReasoningCollapsed(item.id) ? 'mdi-chevron-right' : 'mdi-chevron-down'" />
+              </button>
+              <pre v-if="item.reasoning && !isReasoningCollapsed(item.id)" class="tl-text reasoning-text">{{ item.reasoning }}</pre>
+              <pre class="tl-text output-text">{{ item.text }}</pre>
+            </template>
+
+            <template v-if="item.kind === 'error'">
+              <pre class="tl-text error-text">{{ item.text }}</pre>
+            </template>
+
+            <div v-if="item.kind === 'artifact' && item.content" class="tl-artifact">
+              <div class="tl-section-title">交付内容</div>
+              <pre class="tl-text">{{ item.content }}</pre>
             </div>
-          </template>
-
-          <template v-if="item.kind === 'tool_result' && item.result">
-            <div class="tl-section">
-              <div class="tl-section-title">结果</div>
-              <pre class="tl-json">{{ item.result }}</pre>
-            </div>
-          </template>
-
-          <template v-if="item.kind === 'reasoning'">
-            <pre class="tl-text reasoning-text">{{ item.text }}</pre>
-          </template>
-
-          <template v-if="item.kind === 'text_delta'">
-            <button
-              v-if="item.reasoning"
-              class="reasoning-toggle"
-              type="button"
-              @click.stop="toggleReasoning(item.id)"
-            >
-              <v-icon size="15" icon="mdi-brain" />
-              <span>思考过程</span>
-              <v-icon size="15" :icon="isReasoningCollapsed(item.id) ? 'mdi-chevron-right' : 'mdi-chevron-down'" />
-            </button>
-            <pre v-if="item.reasoning && !isReasoningCollapsed(item.id)" class="tl-text reasoning-text">{{ item.reasoning }}</pre>
-            <pre class="tl-text output-text">{{ item.text }}</pre>
-          </template>
-
-          <template v-if="item.kind === 'error'">
-            <pre class="tl-text error-text">{{ item.text }}</pre>
-          </template>
-
-          <div v-if="item.kind === 'artifact' && item.content" class="tl-artifact">
-            <div class="tl-section-title">交付内容</div>
-            <pre class="tl-text">{{ item.content }}</pre>
           </div>
         </div>
       </div>
-    </div>
+    </template>
 
     <div v-if="loading" class="tl-loading">
       <v-progress-circular indeterminate size="16" width="2" />
@@ -88,6 +96,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import InteractionCardComponent from '@/components/chat/InteractionCardComponent.vue';
+import WorkAgentCallCard from '@/components/work/WorkAgentCallCard.vue';
 
 const props = withDefaults(defineProps<{
   task?: any | null;
@@ -113,12 +122,18 @@ const emit = defineEmits<{
 
 const collapsedIds = ref<Set<string>>(new Set());
 const collapsedReasoningIds = ref<Set<string>>(new Set());
+const initializedCollapsedIds = ref<Set<string>>(new Set());
+const initializedReasoningIds = ref<Set<string>>(new Set());
 let prevLogCount = 0;
 
 watch(() => props.logs, (newLogs) => {
   if (newLogs.length < prevLogCount) {
-    prevLogCount = newLogs.length;
+    collapsedIds.value = new Set();
+    collapsedReasoningIds.value = new Set();
+    initializedCollapsedIds.value = new Set();
+    initializedReasoningIds.value = new Set();
   }
+  prevLogCount = newLogs.length;
 }, { immediate: false });
 
 function toggleCollapse(id: string) {
@@ -169,6 +184,7 @@ interface TimelineItem {
   collapsible: boolean;
   reasoning?: string;
   traceKey?: string;
+  call?: any;
 }
 
 function kindLabel(kind: string) {
@@ -202,15 +218,158 @@ const items = computed<TimelineItem[]>(() => {
   let prevTs: number | null = null;
   let textBuffer: TimelineItem | null = null;
   const pendingReasoning = new Map<string, { text: string; created_at: string; duration_ms?: number; title: string; id: string }>();
+  const agentCallItems = new Map<string, TimelineItem>();
 
   const pushItem = (item: TimelineItem) => {
-    if (item.kind !== 'text_delta' && item.collapsible) {
+    if (item.kind !== 'text_delta' && item.collapsible && !initializedCollapsedIds.value.has(item.id)) {
+      initializedCollapsedIds.value.add(item.id);
       collapsedIds.value.add(item.id);
     }
-    if (item.kind === 'text_delta' && item.reasoning) {
+    if (item.kind === 'text_delta' && item.reasoning && !initializedReasoningIds.value.has(item.id)) {
+      initializedReasoningIds.value.add(item.id);
       collapsedReasoningIds.value.add(item.id);
     }
     result.push(item);
+  };
+
+  const ensureAgentCall = (log: any, data: any, index: number): TimelineItem => {
+    const callId = String(data.call_id || '');
+    let item = agentCallItems.get(callId);
+    if (item) return item;
+    const call = {
+      callId,
+      attempt: Number(data.call_attempt || 1),
+      agentId: data.agent_id || '',
+      agentLabel: agentDisplay(data),
+      nodeId: data.node_id || '',
+      nodeLabel: nodeLabel(data.node_id || data.stage_id || ''),
+      stepId: data.step_id || '',
+      stepLabel: data.step_label || '',
+      stageId: data.stage_id || '',
+      status: data.agent_call_status || 'running',
+      providerId: data.provider_id || '',
+      model: data.model || '',
+      tools: data.func_tools || [],
+      inputPayload: data.input_payload || {},
+      startedAt: log.created_at,
+      completedAt: '',
+      durationMs: data.duration_ms || 0,
+      token: {},
+      outputSegments: [] as any[],
+      reasoningSegments: [] as any[],
+    };
+    item = {
+      id: `agent-call-${callId || log.id || index}`,
+      kind: 'agent_call',
+      icon: 'mdi-robot-outline',
+      title: `${call.agentLabel} 调用`,
+      text: '',
+      created_at: log.created_at,
+      collapsible: false,
+      call,
+    };
+    agentCallItems.set(callId, item);
+    pushItem(item);
+    return item;
+  };
+
+  const appendTextToCall = (call: any, lane: string, text: string) => {
+    if (!text) return;
+    const segments = lane === 'reasoning' ? call.reasoningSegments : call.outputSegments;
+    const last = segments[segments.length - 1];
+    if (last?.kind === 'text') {
+      last.text += text;
+    } else {
+      segments.push({ kind: 'text', text });
+    }
+  };
+
+  const appendToolToCall = (call: any, lane: string, event: string, data: any, dur?: number, createdAt?: string) => {
+    const segments = lane === 'reasoning' ? call.reasoningSegments : call.outputSegments;
+    const toolId = String(data.tool_call_id || data.id || `${data.name || data.tool || 'tool'}-${segments.length}`);
+    const name = data.name || data.tool || 'tool';
+    const eventTs = createdAt ? Date.parse(createdAt) / 1000 : Date.now() / 1000;
+    if (event === 'tool_call') {
+      const argsObj = { ...data };
+      stripTraceFields(argsObj);
+      segments.push({
+        kind: 'tool',
+        toolCallId: toolId,
+        id: toolId,
+        name,
+        args: JSON.stringify(argsObj, null, 2),
+        result: '',
+        ts: Number.isFinite(eventTs) ? eventTs : Date.now() / 1000,
+        finishedTs: 0,
+        duration: dur ? formatDur(dur) : '',
+      });
+      return;
+    }
+    const matched = [...call.outputSegments, ...call.reasoningSegments]
+      .reverse()
+      .find((segment: any) => segment.kind === 'tool' && segment.toolCallId === toolId);
+    let resultStr = '';
+    if (data.result !== undefined) {
+      resultStr = typeof data.result === 'string' ? data.result : JSON.stringify(data.result, null, 2);
+    } else {
+      resultStr = JSON.stringify(data, null, 2);
+    }
+    if (matched) {
+      matched.result = resultStr;
+      matched.duration = dur ? formatDur(dur) : matched.duration;
+      matched.finishedTs = Number.isFinite(eventTs) ? eventTs : Date.now() / 1000;
+    } else {
+      segments.push({
+        kind: 'tool',
+        toolCallId: toolId,
+        id: toolId,
+        name,
+        args: '',
+        result: resultStr,
+        ts: Number.isFinite(eventTs) ? eventTs : Date.now() / 1000,
+        finishedTs: Number.isFinite(eventTs) ? eventTs : Date.now() / 1000,
+        duration: dur ? formatDur(dur) : '',
+      });
+    }
+  };
+
+  const applyAgentCallEvent = (item: TimelineItem, log: any, data: any, event: string, dur?: number) => {
+    const call = item.call;
+    if (event === 'agent_call_start') {
+      call.status = data.agent_call_status || call.status || 'running';
+      call.providerId = data.provider_id || call.providerId;
+      call.model = data.model || call.model;
+      call.tools = data.func_tools || call.tools;
+      call.inputPayload = data.input_payload || call.inputPayload;
+      call.startedAt = log.created_at || call.startedAt;
+      return;
+    }
+    if (event === 'agent_call_end') {
+      call.status = data.agent_call_status || call.status || 'completed';
+      call.completedAt = log.created_at || call.completedAt;
+      call.durationMs = data.duration_ms || call.durationMs;
+      return;
+    }
+    if (event === 'text_delta' || event === 'reasoning') {
+      appendTextToCall(call, data.lane || (event === 'reasoning' ? 'reasoning' : 'output'), String(data.text || log.message || ''));
+      return;
+    }
+    if (event === 'tool_call' || event === 'tool_result') {
+      appendToolToCall(call, data.lane || 'reasoning', event, data, dur, log.created_at);
+      return;
+    }
+    if (event === 'token') {
+      call.token = { ...call.token, ...data };
+      return;
+    }
+    if (event === 'error') {
+      const lane = data.lane || 'output';
+      const segments = lane === 'reasoning' ? call.reasoningSegments : call.outputSegments;
+      const detailParts = [String(data.message || log.message || '')];
+      if (data.diagnostic) detailParts.push(`诊断信息：\n${JSON.stringify(data.diagnostic, null, 2)}`);
+      segments.push({ kind: 'error', text: detailParts.filter(Boolean).join('\n\n') });
+      call.status = data.status || call.status;
+    }
   };
 
   const flushTextBuffer = () => {
@@ -226,6 +385,14 @@ const items = computed<TimelineItem[]>(() => {
     const event = data.event || 'log';
     const ts = log.created_at ? Date.parse(log.created_at) : 0;
     const dur = prevTs && ts ? Math.max(0, ts - prevTs) : undefined;
+
+    if (data.call_id || event === 'agent_call_start' || event === 'agent_call_end') {
+      flushTextBuffer();
+      const callItem = ensureAgentCall(log, data, i);
+      applyAgentCallEvent(callItem, log, data, event, dur ? Math.min(dur, 30000) : undefined);
+      prevTs = ts;
+      continue;
+    }
 
     if (event === 'text_delta') {
       const text = String(data.text || log.message || '');
@@ -343,9 +510,14 @@ const items = computed<TimelineItem[]>(() => {
       });
     } else if (event === 'error' || log.level === 'error') {
       flushTextBuffer();
+      const detailParts = [String(data.message || log.message || '')];
+      if (data.diagnostic) {
+        detailParts.push(`诊断信息：\n${JSON.stringify(data.diagnostic, null, 2)}`);
+      }
+      if (data.retryable) detailParts.push('状态：可重试');
       pushItem({
         id: log.id || `log-${i}`, kind: 'error', icon: 'mdi-alert-circle-outline',
-        title: '错误', text: data.message || log.message || '',
+        title: '错误', text: detailParts.filter(Boolean).join('\n\n'),
         created_at: log.created_at, collapsible: true,
       });
     } else if (event === 'artifact') {
@@ -387,9 +559,25 @@ const items = computed<TimelineItem[]>(() => {
 });
 
 function stripTraceFields(data: Record<string, any>) {
-  for (const key of ['event', 'name', 'tool', 'ts', 'id', 'stage_id', 'step_id', 'agent_id', 'agent_label', 'tool_call_id']) {
+  for (const key of ['event', 'name', 'tool', 'ts', 'id', 'stage_id', 'step_id', 'agent_id', 'agent_label', 'tool_call_id', 'call_id', 'call_attempt', 'lane', 'input_payload', 'agent_call_status']) {
     delete data[key];
   }
+}
+
+function nodeLabel(value: string) {
+  const map: Record<string, string> = {
+    clarify: '需求明确',
+    plan: '规划',
+    execute: '执行',
+    review: '审查',
+    finalize: '交付',
+    stage_clarify: '需求明确',
+    stage_plan: '规划',
+    stage_execute: '执行',
+    stage_review: '审查',
+    stage_deliver: '交付',
+  };
+  return map[String(value || '')] || String(value || '');
 }
 
 function agentDisplay(data: any) {

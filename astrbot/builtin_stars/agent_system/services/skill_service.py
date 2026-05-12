@@ -524,7 +524,7 @@ class SkillService:
                         "builtin_label": "专家智能体",
                         "agent_id": agent_row["id"],
                         "agent_name": agent_name,
-                        "agent_role": agent_row.get("role", ""),
+                        "agent_soul": agent_row.get("soul", ""),
                         "skill_ids": skill_ids,
                     },
                 )

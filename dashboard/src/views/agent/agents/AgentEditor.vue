@@ -86,55 +86,17 @@
 
 
 
-              <v-text-field
-
-                v-model="formData.role"
-
-                :label="$t('agent.agents.editor.basic.role')"
-
-                :rules="[rules.required]"
-
-                :hint="$t('agent.agents.editor.basic.roleHint')"
-
-                persistent-hint
-
-                class="mb-3"
-
-              />
-
-
-
               <v-textarea
 
-                v-model="formData.goal"
+                v-model="formData.soul"
 
-                :label="$t('agent.agents.editor.basic.goal')"
+                :label="$t('agent.agents.editor.basic.soul')"
 
-                :hint="$t('agent.agents.editor.basic.goalHint')"
-
-                persistent-hint
-
-                rows="3"
-
-                auto-grow
-
-                class="mb-3"
-
-              />
-
-
-
-              <v-textarea
-
-                v-model="formData.backstory"
-
-                :label="$t('agent.agents.editor.basic.backstory')"
-
-                :hint="$t('agent.agents.editor.basic.backstoryHint')"
+                :hint="$t('agent.agents.editor.basic.soulHint')"
 
                 persistent-hint
 
-                rows="4"
+                rows="8"
 
                 auto-grow
 
@@ -788,11 +750,7 @@ const formData = ref({
 
   name: '',
 
-  role: '',
-
-  goal: '',
-
-  backstory: '',
+  soul: '',
 
   tools: [] as string[],
 
@@ -1169,11 +1127,7 @@ watch(() => props.agent, (newAgent) => {
 
       name: newAgent.name || '',
 
-      role: newAgent.role || '',
-
-      goal: newAgent.goal || '',
-
-      backstory: newAgent.backstory || '',
+      soul: newAgent.soul || '',
 
       tools: newAgent.tools || [],
 
@@ -1255,11 +1209,7 @@ function resetForm() {
 
     name: '',
 
-    role: '',
-
-    goal: '',
-
-    backstory: '',
+    soul: '',
 
     tools: [],
 

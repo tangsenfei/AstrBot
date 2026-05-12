@@ -95,7 +95,7 @@
             :class="{ 'mr-2': !isSidebarCollapsed }"
             >mdi-desktop-classic</v-icon
           >
-          <span v-if="!isSidebarCollapsed">GenericAgent</span>
+          <span v-if="!isSidebarCollapsed">智能RPA</span>
         </v-btn>
 
         <div v-if="!isSidebarCollapsed && cliAgentClients.length" class="cli-agent-nav">
@@ -782,8 +782,13 @@ const isCliAgentWorkspace = computed(
 const isGenericAgentWorkspace = computed(
   () => activeWorkspace.value === "generic-agent",
 );
+const SMART_RPA_SESSION_TITLE = "智能RPA";
+const LEGACY_GENERIC_AGENT_SESSION_TITLE = "GenericAgent";
 const visibleSessions = computed(() =>
-  sessions.value.filter((session) => (session.display_name || "").trim() !== "GenericAgent"),
+  sessions.value.filter((session) => {
+    const title = (session.display_name || "").trim();
+    return title !== SMART_RPA_SESSION_TITLE && title !== LEGACY_GENERIC_AGENT_SESSION_TITLE;
+  }),
 );
 const activeReasoningParts = computed<MessagePart[]>(() => {
   if (!activeReasoningTarget.value) return [];
@@ -901,7 +906,7 @@ onMounted(async () => {
       await selectSession(routeSessionId, false);
     }
     await loadPendingWorkHitlCount();
-    workTaskPollTimer = setInterval(loadPendingWorkHitlCount, 5000);
+    workTaskPollTimer = setInterval(loadPendingWorkHitlCount, 10000);
   } finally {
     loadingSessions.value = false;
   }
@@ -1097,16 +1102,28 @@ async function openNiceBotChat() {
 
 async function ensureGenericAgentChatSession() {
   const existing = sessions.value.find(
-    (session) => (session.display_name || "").trim() === "GenericAgent",
+    (session) => {
+      const title = (session.display_name || "").trim();
+      return title === SMART_RPA_SESSION_TITLE || title === LEGACY_GENERIC_AGENT_SESSION_TITLE;
+    },
   );
-  if (existing) return existing.session_id;
+  if (existing) {
+    if ((existing.display_name || "").trim() !== SMART_RPA_SESSION_TITLE) {
+      await axios.post("/api/chat/update_session_display_name", {
+        session_id: existing.session_id,
+        display_name: SMART_RPA_SESSION_TITLE,
+      });
+      updateSessionTitle(existing.session_id, SMART_RPA_SESSION_TITLE);
+    }
+    return existing.session_id;
+  }
 
   const sessionId = await newSession();
   await axios.post("/api/chat/update_session_display_name", {
     session_id: sessionId,
-    display_name: "GenericAgent",
+    display_name: SMART_RPA_SESSION_TITLE,
   });
-  updateSessionTitle(sessionId, "GenericAgent");
+  updateSessionTitle(sessionId, SMART_RPA_SESSION_TITLE);
   await getSessions();
   return sessionId;
 }
@@ -1137,17 +1154,9 @@ async function openGenericAgentRoute() {
 
 async function loadPendingWorkHitlCount() {
   try {
-    const response = await axios.get("/api/plug/work/tasks", {
-      params: { page_size: 80 },
-    });
+    const response = await axios.get("/api/plug/work/tasks/pending-hitl-count");
     if (response.data?.status === "ok") {
-      const tasks = response.data.data?.tasks || [];
-      pendingWorkHitlCount.value = tasks.filter(
-        (task: any) =>
-          task.status === "waiting_feedback" ||
-          task.has_hitl ||
-          Boolean(task.hitl_cards?.length),
-      ).length;
+      pendingWorkHitlCount.value = Number(response.data.data?.task_count || 0);
     }
   } catch {
     pendingWorkHitlCount.value = 0;
@@ -1339,7 +1348,7 @@ async function sendCurrentMessage() {
         parts: outgoingParts,
         userRecord,
         botRecord,
-        constraints: "来自 Chat 的 GenericAgent 请求。只操作必要文件，遇到高风险操作请在最终回复中说明。",
+        constraints: "来自 Chat 的智能RPA请求。只操作必要文件，遇到高风险操作请在最终回复中说明。",
         expectedOutputs: ["在聊天中给出最终结果", "如生成或修改文件，请列出路径"],
       });
     } else {

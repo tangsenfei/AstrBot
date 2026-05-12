@@ -402,8 +402,11 @@
             readonly
             class="mb-3"
           />
+          <v-alert v-if="isBuiltinDailyRuntimeNode" type="info" variant="tonal" density="compact" class="mb-3">
+            内置日常 Work 流程仅用于拓扑展示；运行配置请前往 Setting &gt; Work 配置 修改。
+          </v-alert>
 
-          <template v-if="node.type === 'agent_task'">
+          <template v-if="!isBuiltinDailyRuntimeNode && node.type === 'agent_task'">
             <v-select
               v-model="localNode.data.config.assignment_mode"
               :items="assignmentModeOptions"
@@ -437,16 +440,6 @@
               v-model="localNode.data.config.default_agent_id"
               :items="agentOptions"
               label="默认执行 Agent"
-              variant="outlined"
-              density="compact"
-              clearable
-              class="mb-3"
-              @update:model-value="handleUpdate"
-            />
-            <v-select
-              v-model="localNode.data.config.deep_mode_assigner_id"
-              :items="agentOptions"
-              label="深度模式分派 Agent"
               variant="outlined"
               density="compact"
               clearable
@@ -552,12 +545,39 @@
               @update:model-value="handleUpdate"
             />
             <v-select
+              v-model="localNode.data.config.content_provider_type"
+              :items="contentProviderOptions"
+              label="内容来源"
+              variant="outlined"
+              density="compact"
+              class="mb-3"
+              @update:model-value="handleUpdate"
+            />
+            <v-select
               v-model="localNode.data.config.content_provider_agent_id"
               :items="agentOptions"
               label="内容生成 Agent"
               variant="outlined"
               density="compact"
               clearable
+              class="mb-3"
+              @update:model-value="handleUpdate"
+            />
+            <v-textarea
+              v-model="localNode.data.config.content_system_prompt"
+              label="内容生成 System Prompt"
+              variant="outlined"
+              rows="3"
+              auto-grow
+              class="mb-3"
+              @update:model-value="handleUpdate"
+            />
+            <v-textarea
+              v-model="localNode.data.config.content_prompt"
+              label="内容生成 Prompt"
+              variant="outlined"
+              rows="8"
+              auto-grow
               class="mb-3"
               @update:model-value="handleUpdate"
             />
@@ -731,6 +751,11 @@ const { t } = useI18n();
 // 本地节点数据
 
 const localNode = ref<any>(null);
+const isBuiltinDailyRuntimeNode = computed(() => Boolean(
+  localNode.value?.data?.lockedTopology &&
+  localNode.value?.data?.config?.builtin_stage &&
+  ['clarification', 'plan', 'plan_hitl', 'execute_dag', 'review', 'rework_hitl', 'deliverable'].includes(localNode.value.data.config.builtin_stage)
+));
 
 
 
@@ -751,6 +776,12 @@ const assignmentModeOptions = [
   { title: '任务助手分配', value: 'assistant' },
   { title: '指定 Agent', value: 'agent' },
   { title: '指定团队', value: 'crew' },
+];
+
+const contentProviderOptions = [
+  { title: 'Agent 动态生成', value: 'agent' },
+  { title: '静态内容', value: 'static' },
+  { title: '上游输入', value: 'upstream' },
 ];
 
 const artifactTypeOptions = [

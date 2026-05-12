@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
     from ..database import Database
 
+from ..models import Agent as AgentModel
 from ..models import Crew, CrewTask, ProcessType, TaskStatus
 
 
@@ -536,9 +537,7 @@ class CrewService:
         return Agent(
             id=row["id"],
             name=row["name"],
-            role=row.get("role", ""),
-            goal=row.get("goal", ""),
-            backstory=row.get("backstory", ""),
+            soul=row.get("soul", ""),
             tools=self._parse_json(row.get("tools", "[]")),
             skills=self._parse_json(row.get("skills", "[]")),
             knowledge_id=row.get("knowledge_id"),
@@ -614,7 +613,7 @@ class CrewService:
             tasks = self._get_crew_tasks(crew.tasks)
 
             # 检查任务依赖
-            task_ids = set(t.id for t in tasks)
+            task_ids = {t.id for t in tasks}
             for task in tasks:
                 for context_id in task.context:
                     if context_id not in task_ids:
@@ -880,5 +879,3 @@ class CrewService:
             async_execution=bool(row.get("async_execution", 0)),
             config=self._parse_json(row.get("config", "{}")),
         )
-
-

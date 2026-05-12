@@ -20,7 +20,19 @@ if TYPE_CHECKING:
 
     from ..database import Database
 
-from ..models import Flow, FlowEdge, FlowNode, FlowNodeType, TaskStatus
+from ..models import Agent as AgentModel
+from ..models import (
+    AgentType,
+    Crew,
+    CrewTask,
+    Flow,
+    FlowEdge,
+    FlowNode,
+    FlowNodeType,
+    PlanningEffort,
+    ProcessType,
+    TaskStatus,
+)
 
 BUILTIN_DAILY_WORK_FLOW_ID = "builtin_nicebot_daily_work_flow"
 
@@ -208,7 +220,7 @@ class FlowService:
                 "editable": True,
                 "topology_locked": True,
                 "allows_cycles": True,
-                "schema_version": max(int(current_metadata.get("schema_version") or 0), 3),
+                "schema_version": max(int(current_metadata.get("schema_version") or 0), 6),
             }
 
         # 更新节点
@@ -316,7 +328,7 @@ class FlowService:
                 "topology_locked": True,
                 "allows_cycles": True,
             }
-            if int(upgraded.get("schema_version") or 0) < 3:
+            if int(upgraded.get("schema_version") or 0) < 6:
                 self.reset_builtin_daily_work_flow()
                 return
             if upgraded != metadata or not existing.get("enabled"):
@@ -350,7 +362,7 @@ class FlowService:
                 "resettable": True,
                 "editable": True,
                 "kind": "work_daily_task",
-                "schema_version": 3,
+                "schema_version": 6,
                 "topology_locked": True,
                 "allows_cycles": True,
             },
@@ -418,8 +430,36 @@ class FlowService:
                     "repeat_until_clear": True,
                     "content_provider_type": "agent",
                     "content_provider_agent_id": "agent_nicebot_work_assistant",
-                    "content_system_prompt": "你是 NiceBot Work 任务助手，擅长根据任务内容生成精准的需求确认项。只返回 JSON，不要其他内容。",
-                    "content_prompt": "请为任务「{task_name}」生成 2-5 个需求确认项。任务描述：{task_desc}\n\n{work_context}\n\n请返回 confirmation_items JSON。",
+                    "content_system_prompt": "你是 NiceBot Work 任务助手，负责根据用户任务目标生成精准、可操作的需求确认项。你必须只返回合法 JSON，不要输出解释、Markdown 或代码块。",
+                    "content_prompt": (
+                        "请为 Work 任务生成 2-5 个需求确认项。\n\n"
+                        "任务名称：{task_name}\n"
+                        "任务描述：{task_desc}\n\n"
+                        "工作上下文：\n{work_context}\n\n"
+                        "请只返回如下 JSON 对象，不要包含 markdown 代码块：\n"
+                        "{\n"
+                        '  "confirmation_items": [\n'
+                        "    {\n"
+                        '      "key": "字段英文key",\n'
+                        '      "label": "字段中文标签",\n'
+                        '      "description": "为什么需要确认这个信息",\n'
+                        '      "field_type": "select 或 multiselect 或 textarea",\n'
+                        '      "required": true,\n'
+                        '      "recommended": "推荐：结合任务内容给出的默认值",\n'
+                        '      "options": ["推荐：选项A", "选项B", "选项C"],\n'
+                        '      "allow_custom": true,\n'
+                        '      "custom_placeholder": "用户选择自定义时的填写提示"\n'
+                        "    }\n"
+                        "  ]\n"
+                        "}\n\n"
+                        "生成要求：\n"
+                        "1. 确认项必须贴合任务，不要使用泛化的固定字段。\n"
+                        "2. 优先确认会影响交付质量的信息，例如目标对象、范围边界、偏好、约束、交付格式、完成标准。\n"
+                        "3. 有明确互斥选项时用 select；可多选维度用 multiselect；需要用户自由描述时用 textarea。\n"
+                        "4. select/multiselect 必须提供 3-6 个 options，且至少一个选项以「推荐：」开头。\n"
+                        "5. 每个 select/multiselect 都必须设置 allow_custom 为 true。\n"
+                        "6. key 使用稳定英文小写蛇形命名。"
+                    ),
                 },
             },
             {
@@ -432,9 +472,9 @@ class FlowService:
                     "runtime_config_key": "plan_config.task_mode",
                     "default_mode": "normal",
                     "modes": {
-                        "quick": {"label": "快速", "description": "将任务作为一个交付单元执行。", "assignment_strategy": "single_unit", "planning_effort": "low"},
-                        "normal": {"label": "常规", "description": "按一级任务拆分执行。", "assignment_strategy": "parent_steps", "planning_effort": "medium"},
-                        "deep": {"label": "深度", "description": "按二级子任务细粒度执行。", "assignment_strategy": "leaf_steps", "planning_effort": "high"},
+                        "quick": {"label": "快速", "description": "单执行单元，快速形成可交付结果。", "planning_effort": "low"},
+                        "normal": {"label": "常规", "description": "按一级步骤规划执行，二级内容作为检查项或说明。", "planning_effort": "medium"},
+                        "deep": {"label": "深度", "description": "按叶子步骤细粒度规划，允许研究、审查、汇报等资源分工。", "planning_effort": "high"},
                     },
                     "conditions": [
                         {"key": "quick", "label": "快速任务", "expression": "plan_config.task_mode == 'quick'"},
@@ -453,9 +493,25 @@ class FlowService:
                     "runtime_config_key": "plan_config",
                     "agent_id": "agent_nicebot_work_assistant",
                     "max_depth": 2,
-                    "output": "task_tree_with_dependencies",
-                    "system_prompt": "你是 NiceBot Work 的任务规划助手，擅长把目标拆成可审查的执行步骤。",
-                    "prompt": "请为 Work 任务制定可执行计划。\n\n任务名称：{task_name}\n任务描述：{task_desc}\n\n已确认需求：\n{clarification}\n\n{work_context}\n\n规划深度：{effort}\n\n{feedback_text}请输出 3-7 个一级步骤，每个步骤包含清晰交付物。如果步骤较复杂，可拆出 1-3 个二级子步骤。二级子步骤必须使用「父步骤号.子序号」格式，最多两级。",
+                    "output": "resource_aware_execution_tree",
+                    "system_prompt": "你是 NiceBot Work 的资源感知规划智能体。你需要同时完成任务拆解、依赖设计和执行资源分配，并输出可校验的执行树。",
+                    "prompt": (
+                        "请根据 Work 规划协议输出可审批、可直接落地的执行树。\n\n"
+                        "## 任务目标\n"
+                        "- 名称：{task_name}\n"
+                        "- 描述：{task_desc}\n\n"
+                        "## 已确认需求\n"
+                        "{clarification}\n\n"
+                        "## 工作上下文\n"
+                        "{work_context}\n\n"
+                        "## 规划要求\n"
+                        "- 你必须在规划阶段完成执行资源分配；分配与拆解、依赖设计是一体的。\n"
+                        "- 按当前任务模式选择执行粒度，不要先写计划再补执行者。\n"
+                        "- 每个执行步骤必须同时给出依赖、执行者、审查者、交付物、验收标准和资源选择理由。\n"
+                        "- 依赖只能引用本计划中已经存在的 step_id，不能形成环。\n"
+                        "- 输出必须能被系统校验并在人工审批通过后原样执行。\n\n"
+                        "{feedback_text}"
+                    ),
                 },
             },
             {
@@ -481,11 +537,9 @@ class FlowService:
                     "builtin_stage": "execute_dag",
                     "runtime_config_key": "executor_config",
                     "default_agent_id": "agent_nicebot_work_executor",
-                    "assigner_agent_id": "agent_nicebot_work_assistant",
                     "research_agent_id": "agent_nicebot_research_expert",
                     "system_prompt": "你是 NiceBot Work 执行智能体。当前执行者：{agent_label}。只执行当前步骤，不负责审查自己的结果。",
                     "prompt": "请执行 Work 任务中的当前负责部分。\n\n## 任务需求\n{requirements}\n\n## 已审批整体计划\n{approved_plan}\n\n## 当前负责部分\n{step_scope}\n\n## 执行要求\n1. 先对齐任务需求和已审批整体计划，再完成当前负责部分。\n2. 只执行当前负责部分，不重写整体计划，也不要扩展到未分配步骤。\n3. 输出要能被后续步骤或最终交付复用，保留关键依据、结论和仍不确定的点。\n4. 如果当前负责部分与需求或计划冲突，明确指出冲突并给出最小可行处理。",
-                    "assignment_system_prompt": "你是 NiceBot Work 的任务分配助手，擅长根据执行计划分配执行者和设定依赖关系。只返回 JSON 数组，不要包含其他内容。",
                 },
             },
             {
@@ -605,6 +659,10 @@ class FlowService:
             for key in ("builtin_stage", "runtime_config_key"):
                 if template_config.get(key):
                     next_config[key] = template_config[key]
+            if template_config.get("builtin_stage") == "clarification":
+                for key in ("content_system_prompt", "content_prompt"):
+                    if template_config.get(key):
+                        next_config[key] = template_config[key]
             if template_config.get("conditions") and not existing_config.get("conditions"):
                 next_config["conditions"] = template_config["conditions"]
             template["name"] = row.get("name") or template["name"]
@@ -680,9 +738,7 @@ class FlowService:
         return AgentModel(
             id=row["id"],
             name=row["name"],
-            role=row.get("role", ""),
-            goal=row.get("goal", ""),
-            backstory=row.get("backstory", ""),
+            soul=row.get("soul", ""),
             tools=self._parse_json(row.get("tools", "[]")),
             skills=self._parse_json(row.get("skills", "[]")),
             knowledge_id=row.get("knowledge_id"),
@@ -765,7 +821,7 @@ class FlowService:
 
         # 检查节点连接
         node_ids = {n.id for n in flow.nodes}
-        source_nodes = {e.source for e in flow.edges}
+        {e.source for e in flow.edges}
         target_nodes = {e.target for e in flow.edges}
 
         # 检查是否有孤立节点

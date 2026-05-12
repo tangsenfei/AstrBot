@@ -25,6 +25,39 @@ const dailyWorkNodes: FlowNode[] = [
       repeat_until_clear: true,
       content_provider_type: 'agent',
       content_provider_agent_id: 'agent_nicebot_work_assistant',
+      content_system_prompt: '你是 NiceBot Work 任务助手，负责根据用户任务目标生成精准、可操作的需求确认项。你必须只返回合法 JSON，不要输出解释、Markdown 或代码块。',
+      content_prompt: `请为 Work 任务生成 2-5 个需求确认项。
+
+任务名称：{task_name}
+任务描述：{task_desc}
+
+工作上下文：
+{work_context}
+
+请只返回如下 JSON 对象，不要包含 markdown 代码块：
+{
+  "confirmation_items": [
+    {
+      "key": "字段英文key",
+      "label": "字段中文标签",
+      "description": "为什么需要确认这个信息",
+      "field_type": "select 或 multiselect 或 textarea",
+      "required": true,
+      "recommended": "推荐：结合任务内容给出的默认值",
+      "options": ["推荐：选项A", "选项B", "选项C"],
+      "allow_custom": true,
+      "custom_placeholder": "用户选择自定义时的填写提示"
+    }
+  ]
+}
+
+生成要求：
+1. 确认项必须贴合任务，不要使用泛化的固定字段。
+2. 优先确认会影响交付质量的信息，例如目标对象、范围边界、偏好、约束、交付格式、完成标准。
+3. 有明确互斥选项时用 select；可多选维度用 multiselect；需要用户自由描述时用 textarea。
+4. select/multiselect 必须提供 3-6 个 options，且至少一个选项以「推荐：」开头。
+5. 每个 select/multiselect 都必须设置 allow_custom 为 true。
+6. key 使用稳定英文小写蛇形命名。`,
     },
     summary: '用 HITL 模板向用户补齐目标、约束、交付格式和上下文。',
   },
@@ -38,11 +71,32 @@ const dailyWorkNodes: FlowNode[] = [
       work_stage: '任务规划',
       agent_id: 'agent_nicebot_work_assistant',
       max_depth: 2,
-      output: 'task_tree_with_dependencies',
+      output: 'resource_aware_execution_tree',
+      system_prompt: '你是 NiceBot Work 的资源感知规划智能体。你需要同时完成任务拆解、依赖设计和执行资源分配，并输出可校验的执行树。',
+      prompt: `请根据 Work 规划协议输出可审批、可直接落地的执行树。
+
+## 任务目标
+- 名称：{task_name}
+- 描述：{task_desc}
+
+## 已确认需求
+{clarification}
+
+## 工作上下文
+{work_context}
+
+## 规划要求
+- 你必须在规划阶段完成执行资源分配；分配与拆解、依赖设计是一体的。
+- 按当前任务模式选择执行粒度，不要先写计划再补执行者。
+- 每个执行步骤必须同时给出依赖、执行者、审查者、交付物、验收标准和资源选择理由。
+- 依赖只能引用本计划中已经存在的 step_id，不能形成环。
+- 输出必须能被系统校验并在人工审批通过后原样执行。
+
+{feedback_text}`,
       task_mode_strategy: {
-        quick: '轻量拆解，尽快形成可执行清单。',
-        normal: '生成依赖任务树并控制规划深度。',
-        deep: '扩展研究、风险和验收标准。',
+        quick: '单执行单元，快速形成可交付结果。',
+        normal: '按一级步骤规划执行，二级内容作为检查项或说明。',
+        deep: '按叶子步骤细粒度规划，允许研究、审查、汇报等资源分工。',
       },
     },
     summary: '根据任务模式生成依赖任务树、执行顺序和验收标准。',
@@ -70,7 +124,6 @@ const dailyWorkNodes: FlowNode[] = [
       builtin_stage: 'execute_dag',
       work_stage: '依赖执行',
       default_agent_id: 'agent_nicebot_work_executor',
-      deep_mode_assigner_id: 'agent_nicebot_work_assistant',
       research_agent_id: 'agent_nicebot_research_expert',
       task_mode_strategy: {
         quick: '直接执行主路径任务，减少分支探索。',

@@ -74,10 +74,12 @@ class TaskStatus(Enum):
     """任务状态"""
     PENDING = "pending"
     RUNNING = "running"
+    PAUSE_REQUESTED = "pause_requested"
     PAUSED = "paused"
     WAITING_FEEDBACK = "waiting_feedback"
     COMPLETED = "completed"
     FAILED = "failed"
+    RETRYABLE_FAILED = "retryable_failed"
     CANCELLED = "cancelled"
 
 
@@ -92,14 +94,6 @@ class WorkTaskKind(Enum):
     SINGLE_AGENT = "single_agent"
     MULTI_AGENT = "multi_agent"
     WORKFLOW = "workflow"
-
-
-class RoundtableStatus(Enum):
-    """圆桌会议状态"""
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
 
 
 class MeetingStatus(Enum):
@@ -271,9 +265,7 @@ class Agent:
     """智能体定义"""
     id: str
     name: str
-    role: str
-    goal: str
-    backstory: str
+    soul: str = ""
     tools: list[str] = field(default_factory=list)
     skills: list[str] = field(default_factory=list)
     knowledge_id: str | None = None
@@ -309,9 +301,7 @@ class Agent:
         return {
             "id": self.id,
             "name": self.name,
-            "role": self.role,
-            "goal": self.goal,
-            "backstory": self.backstory,
+            "soul": self.soul,
             "tools": self.tools,
             "skills": self.skills,
             "knowledge_id": self.knowledge_id,
@@ -342,9 +332,7 @@ class Agent:
         return cls(
             id=data["id"],
             name=data["name"],
-            role=data.get("role", ""),
-            goal=data.get("goal", ""),
-            backstory=data.get("backstory", ""),
+            soul=data.get("soul", ""),
             tools=data.get("tools", []),
             skills=data.get("skills", []),
             knowledge_id=data.get("knowledge_id"),
@@ -891,7 +879,6 @@ class WorkArtifact:
             "created_at": self.created_at.isoformat(),
         }
 
-
 # ==================== Meeting 工作台相关模型 ====================
 
 @dataclass
@@ -997,91 +984,3 @@ class MeetingArtifact:
             "metadata": self.metadata,
             "created_at": self.created_at.isoformat(),
         }
-
-
-# ==================== 圆桌会议相关模型 ====================
-
-@dataclass
-class Roundtable:
-    """圆桌会议定义"""
-    id: str
-    name: str
-    topic: str
-    deliverable: str = ""
-    mode: str = "free"  # hosted 或 free（兼容旧数据）
-    meeting_type: str = "standard"  # standard/brainstorm/parliament/convergence/six_hat/fishbone/swot/okr/retrospective/interview
-    host_agent_id: str | None = None
-    participants: list[str] = field(default_factory=list)  # Agent ID 列表
-    rounds: int = 3
-    config: dict[str, Any] = field(default_factory=dict)
-    status: RoundtableStatus = RoundtableStatus.PENDING
-    result: dict[str, Any] = field(default_factory=dict)
-    discussion_records: list[dict[str, Any]] = field(default_factory=list)  # 实时讨论记录
-    current_round: int = 0  # 当前执行轮次
-    current_speaker: str = ""  # 当前发言者
-    stage: str = "pending"  # 当前阶段: pending/preparing/running/completed/failed
-    streaming_content: str = ""  # 当前流式输出的内容
-    materials: dict[str, Any] = field(default_factory=dict)  # 会议材料 {type: url/file/manual, content: ...}
-    export_format: str = "markdown"  # markdown / word
-    preparation_records: list[dict[str, Any]] = field(default_factory=list)  # 准备阶段记录
-    created_at: datetime = field(default_factory=datetime.now)
-    updated_at: datetime = field(default_factory=datetime.now)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "name": self.name,
-            "topic": self.topic,
-            "deliverable": self.deliverable,
-            "mode": self.mode,
-            "meeting_type": self.meeting_type,
-            "host_agent_id": self.host_agent_id,
-            "participants": self.participants,
-            "rounds": self.rounds,
-            "config": self.config,
-            "status": self.status.value,
-            "result": self.result,
-            "discussion_records": self.discussion_records,
-            "current_round": self.current_round,
-            "current_speaker": self.current_speaker,
-            "stage": self.stage,
-            "streaming_content": self.streaming_content,
-            "materials": self.materials,
-            "export_format": self.export_format,
-            "preparation_records": self.preparation_records,
-            "created_at": self.created_at.isoformat(),
-            "updated_at": self.updated_at.isoformat(),
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Roundtable":
-        # 兼容旧数据：mode 映射到 meeting_type
-        mode = data.get("mode", "free")
-        meeting_type = data.get("meeting_type", "")
-        if not meeting_type:
-            # 旧数据迁移：hosted -> standard, free -> standard
-            meeting_type = "standard"
-        return cls(
-            id=data["id"],
-            name=data["name"],
-            topic=data.get("topic", ""),
-            deliverable=data.get("deliverable", ""),
-            mode=mode,
-            meeting_type=meeting_type,
-            host_agent_id=data.get("host_agent_id"),
-            participants=data.get("participants", []),
-            rounds=data.get("rounds", 3),
-            config=data.get("config", {}),
-            status=RoundtableStatus(data.get("status", "pending")),
-            result=data.get("result", {}),
-            discussion_records=data.get("discussion_records", []),
-            current_round=data.get("current_round", 0),
-            current_speaker=data.get("current_speaker", ""),
-            stage=data.get("stage", "pending"),
-            streaming_content=data.get("streaming_content", ""),
-            materials=data.get("materials", {}),
-            export_format=data.get("export_format", "markdown"),
-            preparation_records=data.get("preparation_records", []),
-            created_at=datetime.fromisoformat(data["created_at"]) if "created_at" in data else datetime.now(),
-            updated_at=datetime.fromisoformat(data["updated_at"]) if "updated_at" in data else datetime.now(),
-        )

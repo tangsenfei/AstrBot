@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from astrbot.builtin_stars.agent_system.database import Database
@@ -127,6 +128,44 @@ def test_pending_run_can_be_cancelled_without_starting(tmp_path: Path):
     asyncio.run(scenario())
 
 
+def test_stale_running_run_without_pid_is_marked_failed(tmp_path: Path):
+    db = make_db(tmp_path / "agent.db")
+    service = NoWorkerGenericAgentService(db, tmp_path)
+    old_time = (datetime.now() - timedelta(minutes=5)).isoformat()
+    db.insert(
+        "generic_agent_runs",
+        {
+            "id": "gar_stale_pidless",
+            "source": "manual",
+            "goal": "stale",
+            "constraints": "",
+            "expected_outputs": [],
+            "workspace_path": "",
+            "parent_task_id": "",
+            "status": "running",
+            "queue_position": 0,
+            "progress": 10,
+            "summary": "",
+            "artifacts": [],
+            "error": "",
+            "pid": None,
+            "started_at": old_time,
+            "completed_at": None,
+            "created_at": old_time,
+            "updated_at": old_time,
+        },
+    )
+
+    run = service.get_run("gar_stale_pidless")
+
+    assert run["status"] == "failed"
+    assert "进程状态丢失" in run["error"]
+    events = service.list_events("gar_stale_pidless")
+    assert events[-1]["event_type"] == "error"
+
+    db.close()
+
+
 def test_tool_policies_filter_generic_agent_tool_schema(tmp_path: Path):
     db = make_db(tmp_path / "agent.db")
     service = NoWorkerGenericAgentService(db, tmp_path)
@@ -208,7 +247,7 @@ def test_collect_artifacts_marks_output_txt_as_final_output(tmp_path: Path):
     artifacts = service._collect_artifacts("gar_output", tmp_path / "runtime")
     final = next(item for item in artifacts if item["artifact_type"] == "final_output")
 
-    assert final["name"] == "GenericAgent 最终输出"
+    assert final["name"] == "智能RPA最终输出"
     assert final["content"] == "最终报告正文"
     assert any(item["artifact_type"] == "file" for item in artifacts)
 
@@ -270,7 +309,9 @@ def test_recover_interrupted_running_run_from_round_end_output(tmp_path: Path):
     db.close()
 
 
-def test_recovery_keeps_pidless_running_run_without_final_output(tmp_path: Path):
+def test_recovery_marks_pidless_running_run_without_final_output_failed(
+    tmp_path: Path,
+):
     db = make_db(tmp_path / "agent.db")
     service = NoWorkerGenericAgentService(db, tmp_path)
     old_time = "2000-01-01T00:00:00"
@@ -291,7 +332,13 @@ def test_recovery_keeps_pidless_running_run_without_final_output(tmp_path: Path)
     service._recover_interrupted_runs()
 
     run = service.get_run("gar_pidless")
-    assert run["status"] == "running"
+    assert run["status"] == "failed"
+    assert "进程状态丢失" in run["error"]
+    assert any(
+        event["event_type"] == "error"
+        and "进程状态丢失" in event["payload"].get("message", "")
+        for event in service.list_events(run["id"])
+    )
 
     db.close()
 
@@ -342,7 +389,9 @@ def test_error_only_round_end_is_classified_as_llm_failure():
 
     assert GenericAgentRuntimeService._looks_like_completed_task_output(text)
     assert GenericAgentRuntimeService._is_error_only_final_output(text)
-    assert "LLM 连接失败" in GenericAgentRuntimeService._classify_final_output_error(text)
+    assert "LLM 连接失败" in GenericAgentRuntimeService._classify_final_output_error(
+        text
+    )
 
 
 def test_recover_interrupted_error_only_output_marks_failed(tmp_path: Path):

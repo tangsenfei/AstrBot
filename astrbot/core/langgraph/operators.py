@@ -110,6 +110,7 @@ class AgentOperator:
             tool_calls = []
             final_text = ""
             reasoning_text = ""
+            error_text = ""
             writer = run_ctx.writer
 
             trace_context = state.get("trace_context", {}) or {}
@@ -127,6 +128,12 @@ class AgentOperator:
                     chain = resp.data.get("chain")
                     if chain:
                         final_text = chain.get_plain_text(with_other_comps_mark=True)
+                elif resp.type == "err":
+                    chain = resp.data.get("chain") if isinstance(resp.data, dict) else None
+                    if chain:
+                        error_text = chain.get_plain_text(with_other_comps_mark=True)
+                    else:
+                        error_text = str(resp.data)
 
             if write_stream and writer and runner.stats:
                 tok = runner.stats.token_usage
@@ -145,6 +152,7 @@ class AgentOperator:
                 final_text=final_text,
                 reasoning_text=reasoning_text,
                 tool_calls=tool_calls,
+                error=error_text or None,
                 stats=runner.stats.to_dict() if runner.stats else {},
             )
         except Exception as e:

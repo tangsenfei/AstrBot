@@ -1,13 +1,14 @@
 {
   "tool_provider": "工具管理",
   "tool_skills": "工具技能",
-  "task_management": "任务管理",
   "cli_agent": "CLI Agent",
-  "generic_agent": "GenericAgent",
-  "generic_agent_run": "GenericAgent 运行",
-  "generic_agent_config": "GenericAgent 配置",
-  "work": "Work 工作台",
+  "generic_agent": "智能RPA",
+  "generic_agent_run": "智能RPA 运行",
+  "generic_agent_config": "智能RPA 配置",
+  "work": "工作",
+  "workbench": "工作台",
   "meeting": "Meeting 会议",
+  "work_config": "Work 配置",
   "memory_management": "记忆管理",
   "evolution_center": "进化中心"
 }

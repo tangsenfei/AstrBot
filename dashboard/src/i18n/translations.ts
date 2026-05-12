@@ -20,7 +20,6 @@ import zhCNConfig from './locales/zh-CN/features/config.json';
 import zhCNConfigMetadata from './locales/zh-CN/features/config-metadata.json';
 import zhCNConsole from './locales/zh-CN/features/console.json';
 import zhCNTrace from './locales/zh-CN/features/trace.json';
-import zhCNAbout from './locales/zh-CN/features/about.json';
 import zhCNSettings from './locales/zh-CN/features/settings.json';
 import zhCNAuth from './locales/zh-CN/features/auth.json';
 import zhCNChart from './locales/zh-CN/features/chart.json';
@@ -37,13 +36,12 @@ import zhCNPersona from './locales/zh-CN/features/persona.json';
 import zhCNMigration from './locales/zh-CN/features/migration.json';
 import zhCNCommand from './locales/zh-CN/features/command.json';
 import zhCNSubagent from './locales/zh-CN/features/subagent.json';
-import zhCNWelcome from './locales/zh-CN/features/welcome.json';
 import zhCNAgentSkills from './locales/zh-CN/features/agent-skills.json';
 import zhCNAgentTools from './locales/zh-CN/features/agent-tools.json';
 import zhCNToolProvider from './locales/zh-CN/features/tool-provider.json';
-import zhCNTaskManagement from './locales/zh-CN/features/task-management.json';
 import zhCNMemoryManagement from './locales/zh-CN/features/memory-management.json';
 import zhCNEvolutionCenter from './locales/zh-CN/features/evolution-center.json';
+import zhCNWorkConfig from './locales/zh-CN/features/work-config.json';
 import zhCNNicebotNavigation from './locales/zh-CN/features/nicebot-navigation.json';
 
 import zhCNAgentNavigation from './locales/zh-CN/agent/navigation.json';
@@ -51,10 +49,8 @@ import zhCNAgentExpertTeam from './locales/zh-CN/agent/expert-team.json';
 import zhCNAgentKnowledge from './locales/zh-CN/agent/knowledge.json';
 import zhCNAgentAgents from './locales/zh-CN/agent/agents.json';
 import zhCNAgentToolsModule from './locales/zh-CN/agent/tools.json';
-import zhCNAgentTasks from './locales/zh-CN/agent/tasks.json';
 import zhCNAgentSkillsModule from './locales/zh-CN/agent/skills.json';
 import zhCNAgentCrews from './locales/zh-CN/agent/crews.json';
-import zhCNAgentRoundtables from './locales/zh-CN/agent/roundtables.json';
 import zhCNAgentFlows from './locales/zh-CN/agent/flows.json';
 
 import zhCNErrors from './locales/zh-CN/messages/errors.json';
@@ -80,7 +76,6 @@ import enUSConfig from './locales/en-US/features/config.json';
 import enUSConfigMetadata from './locales/en-US/features/config-metadata.json';
 import enUSConsole from './locales/en-US/features/console.json';
 import enUSTrace from './locales/en-US/features/trace.json';
-import enUSAbout from './locales/en-US/features/about.json';
 import enUSSettings from './locales/en-US/features/settings.json';
 import enUSAuth from './locales/en-US/features/auth.json';
 import enUSChart from './locales/en-US/features/chart.json';
@@ -97,13 +92,12 @@ import enUSPersona from './locales/en-US/features/persona.json';
 import enUSMigration from './locales/en-US/features/migration.json';
 import enUSCommand from './locales/en-US/features/command.json';
 import enUSSubagent from './locales/en-US/features/subagent.json';
-import enUSWelcome from './locales/en-US/features/welcome.json';
 import enUSAgentSkills from './locales/en-US/features/agent-skills.json';
 import enUSAgentTools from './locales/en-US/features/agent-tools.json';
 import enUSToolProvider from './locales/en-US/features/tool-provider.json';
-import enUSTaskManagement from './locales/en-US/features/task-management.json';
 import enUSMemoryManagement from './locales/en-US/features/memory-management.json';
 import enUSEvolutionCenter from './locales/en-US/features/evolution-center.json';
+import enUSWorkConfig from './locales/en-US/features/work-config.json';
 import enUSNicebotNavigation from './locales/en-US/features/nicebot-navigation.json';
 
 import enUSAgentNavigation from './locales/en-US/agent/navigation.json';
@@ -111,10 +105,8 @@ import enUSAgentExpertTeam from './locales/en-US/agent/expert-team.json';
 import enUSAgentKnowledge from './locales/en-US/agent/knowledge.json';
 import enUSAgentAgents from './locales/en-US/agent/agents.json';
 import enUSAgentToolsModule from './locales/en-US/agent/tools.json';
-import enUSAgentTasks from './locales/en-US/agent/tasks.json';
 import enUSAgentSkillsModule from './locales/en-US/agent/skills.json';
 import enUSAgentCrews from './locales/en-US/agent/crews.json';
-import enUSAgentRoundtables from './locales/en-US/agent/roundtables.json';
 import enUSAgentFlows from './locales/en-US/agent/flows.json';
 
 import enUSErrors from './locales/en-US/messages/errors.json';
@@ -140,7 +132,6 @@ import ruRUConfig from './locales/ru-RU/features/config.json';
 import ruRUConfigMetadata from './locales/ru-RU/features/config-metadata.json';
 import ruRUConsole from './locales/ru-RU/features/console.json';
 import ruRUTrace from './locales/ru-RU/features/trace.json';
-import ruRUAbout from './locales/ru-RU/features/about.json';
 import ruRUSettings from './locales/ru-RU/features/settings.json';
 import ruRUAuth from './locales/ru-RU/features/auth.json';
 import ruRUChart from './locales/ru-RU/features/chart.json';
@@ -157,13 +148,12 @@ import ruRUPersona from './locales/ru-RU/features/persona.json';
 import ruRUMigration from './locales/ru-RU/features/migration.json';
 import ruRUCommand from './locales/ru-RU/features/command.json';
 import ruRUSubagent from './locales/ru-RU/features/subagent.json';
-import ruRUWelcome from './locales/ru-RU/features/welcome.json';
 import ruRUAgentSkills from './locales/ru-RU/features/agent-skills.json';
 import ruRUAgentTools from './locales/ru-RU/features/agent-tools.json';
 import ruRUToolProvider from './locales/ru-RU/features/tool-provider.json';
-import ruRUTaskManagement from './locales/ru-RU/features/task-management.json';
 import ruRUMemoryManagement from './locales/ru-RU/features/memory-management.json';
 import ruRUEvolutionCenter from './locales/ru-RU/features/evolution-center.json';
+import ruRUWorkConfig from './locales/ru-RU/features/work-config.json';
 import ruRUNicebotNavigation from './locales/ru-RU/features/nicebot-navigation.json';
 
 import ruRUAgentNavigation from './locales/ru-RU/agent/navigation.json';
@@ -171,10 +161,8 @@ import ruRUAgentExpertTeam from './locales/ru-RU/agent/expert-team.json';
 import ruRUAgentKnowledge from './locales/ru-RU/agent/knowledge.json';
 import ruRUAgentAgents from './locales/ru-RU/agent/agents.json';
 import ruRUAgentToolsModule from './locales/ru-RU/agent/tools.json';
-import ruRUAgentTasks from './locales/ru-RU/agent/tasks.json';
 import ruRUAgentSkillsModule from './locales/ru-RU/agent/skills.json';
 import ruRUAgentCrews from './locales/ru-RU/agent/crews.json';
-import ruRUAgentRoundtables from './locales/ru-RU/agent/roundtables.json';
 import ruRUAgentFlows from './locales/ru-RU/agent/flows.json';
 
 import ruRUErrors from './locales/ru-RU/messages/errors.json';
@@ -204,7 +192,6 @@ export const translations = {
       'config-metadata': zhCNConfigMetadata,
       console: zhCNConsole,
       trace: zhCNTrace,
-      about: zhCNAbout,
       settings: zhCNSettings,
       auth: zhCNAuth,
       chart: zhCNChart,
@@ -225,17 +212,15 @@ export const translations = {
       migration: zhCNMigration,
       command: zhCNCommand,
       subagent: zhCNSubagent,
-      welcome: zhCNWelcome,
       'tool-provider': zhCNToolProvider,
-      'task-management': zhCNTaskManagement,
       'memory-management': zhCNMemoryManagement,
-      'evolution-center': zhCNEvolutionCenter
+      'evolution-center': zhCNEvolutionCenter,
+      'work-config': zhCNWorkConfig
     },
     nicebot: {
       navigation: zhCNNicebotNavigation,
       evolution_center: zhCNEvolutionCenter,
-      memory_management: zhCNMemoryManagement,
-      task_management: zhCNTaskManagement
+      memory_management: zhCNMemoryManagement
     },
     messages: {
       errors: zhCNErrors,
@@ -250,10 +235,8 @@ export const translations = {
       knowledge: zhCNAgentKnowledge,
       agents: zhCNAgentAgents,
       tools: zhCNAgentToolsModule,
-      tasks: zhCNAgentTasks,
       skills: zhCNAgentSkillsModule,
       crews: zhCNAgentCrews,
-      roundtables: zhCNAgentRoundtables,
       flows: zhCNAgentFlows
     }
   },
@@ -278,7 +261,6 @@ export const translations = {
       'config-metadata': enUSConfigMetadata,
       console: enUSConsole,
       trace: enUSTrace,
-      about: enUSAbout,
       settings: enUSSettings,
       auth: enUSAuth,
       chart: enUSChart,
@@ -299,17 +281,15 @@ export const translations = {
       migration: enUSMigration,
       command: enUSCommand,
       subagent: enUSSubagent,
-      welcome: enUSWelcome,
       'tool-provider': enUSToolProvider,
-      'task-management': enUSTaskManagement,
       'memory-management': enUSMemoryManagement,
-      'evolution-center': enUSEvolutionCenter
+      'evolution-center': enUSEvolutionCenter,
+      'work-config': enUSWorkConfig
     },
     nicebot: {
       navigation: enUSNicebotNavigation,
       evolution_center: enUSEvolutionCenter,
-      memory_management: enUSMemoryManagement,
-      task_management: enUSTaskManagement
+      memory_management: enUSMemoryManagement
     },
     messages: {
       errors: enUSErrors,
@@ -324,10 +304,8 @@ export const translations = {
       knowledge: enUSAgentKnowledge,
       agents: enUSAgentAgents,
       tools: enUSAgentToolsModule,
-      tasks: enUSAgentTasks,
       skills: enUSAgentSkillsModule,
       crews: enUSAgentCrews,
-      roundtables: enUSAgentRoundtables,
       flows: enUSAgentFlows
     }
   },
@@ -352,7 +330,6 @@ export const translations = {
       'config-metadata': ruRUConfigMetadata,
       console: ruRUConsole,
       trace: ruRUTrace,
-      about: ruRUAbout,
       settings: ruRUSettings,
       auth: ruRUAuth,
       chart: ruRUChart,
@@ -373,17 +350,15 @@ export const translations = {
       migration: ruRUMigration,
       command: ruRUCommand,
       subagent: ruRUSubagent,
-      welcome: ruRUWelcome,
       'tool-provider': ruRUToolProvider,
-      'task-management': ruRUTaskManagement,
       'memory-management': ruRUMemoryManagement,
-      'evolution-center': ruRUEvolutionCenter
+      'evolution-center': ruRUEvolutionCenter,
+      'work-config': ruRUWorkConfig
     },
     nicebot: {
       navigation: ruRUNicebotNavigation,
       evolution_center: ruRUEvolutionCenter,
-      memory_management: ruRUMemoryManagement,
-      task_management: ruRUTaskManagement
+      memory_management: ruRUMemoryManagement
     },
     messages: {
       errors: ruRUErrors,
@@ -398,10 +373,8 @@ export const translations = {
       knowledge: ruRUAgentKnowledge,
       agents: ruRUAgentAgents,
       tools: ruRUAgentToolsModule,
-      tasks: ruRUAgentTasks,
       skills: ruRUAgentSkillsModule,
       crews: ruRUAgentCrews,
-      roundtables: ruRUAgentRoundtables,
       flows: ruRUAgentFlows
     }
   }

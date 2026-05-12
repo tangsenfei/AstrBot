@@ -19,10 +19,8 @@ import zhCNAgentExpertTeam from './locales/zh-CN/agent/expert-team.json';
 import zhCNAgentKnowledge from './locales/zh-CN/agent/knowledge.json';
 import zhCNAgentAgentsModule from './locales/zh-CN/agent/agents.json';
 import zhCNAgentToolsModule from './locales/zh-CN/agent/tools.json';
-import zhCNAgentTasks from './locales/zh-CN/agent/tasks.json';
 import zhCNAgentSkillsModule from './locales/zh-CN/agent/skills.json';
 import zhCNAgentCrews from './locales/zh-CN/agent/crews.json';
-import zhCNAgentRoundtables from './locales/zh-CN/agent/roundtables.json';
 import zhCNAgentFlows from './locales/zh-CN/agent/flows.json';
 
 import enUSAgentNavigation from './locales/en-US/agent/navigation.json';
@@ -30,10 +28,8 @@ import enUSAgentExpertTeam from './locales/en-US/agent/expert-team.json';
 import enUSAgentKnowledge from './locales/en-US/agent/knowledge.json';
 import enUSAgentAgentsModule from './locales/en-US/agent/agents.json';
 import enUSAgentToolsModule from './locales/en-US/agent/tools.json';
-import enUSAgentTasks from './locales/en-US/agent/tasks.json';
 import enUSAgentSkillsModule from './locales/en-US/agent/skills.json';
 import enUSAgentCrews from './locales/en-US/agent/crews.json';
-import enUSAgentRoundtables from './locales/en-US/agent/roundtables.json';
 import enUSAgentFlows from './locales/en-US/agent/flows.json';
 
 import ruRUAgentNavigation from './locales/ru-RU/agent/navigation.json';
@@ -41,10 +37,8 @@ import ruRUAgentExpertTeam from './locales/ru-RU/agent/expert-team.json';
 import ruRUAgentKnowledge from './locales/ru-RU/agent/knowledge.json';
 import ruRUAgentAgentsModule from './locales/ru-RU/agent/agents.json';
 import ruRUAgentToolsModule from './locales/ru-RU/agent/tools.json';
-import ruRUAgentTasks from './locales/ru-RU/agent/tasks.json';
 import ruRUAgentSkillsModule from './locales/ru-RU/agent/skills.json';
 import ruRUAgentCrews from './locales/ru-RU/agent/crews.json';
-import ruRUAgentRoundtables from './locales/ru-RU/agent/roundtables.json';
 import ruRUAgentFlows from './locales/ru-RU/agent/flows.json';
 
 import zhCNEvolutionCenter from './locales/zh-CN/features/evolution-center.json';
@@ -56,9 +50,6 @@ import ruRUNicebotNavigation from './locales/ru-RU/features/nicebot-navigation.j
 import zhCNMemoryManagement from './locales/zh-CN/features/memory-management.json';
 import enUSMemoryManagement from './locales/en-US/features/memory-management.json';
 import ruRUMemoryManagement from './locales/ru-RU/features/memory-management.json';
-import zhCNTaskManagement from './locales/zh-CN/features/task-management.json';
-import enUSTaskManagement from './locales/en-US/features/task-management.json';
-import ruRUTaskManagement from './locales/ru-RU/features/task-management.json';
 
 export const i18n = createI18n({
   legacy: false,
@@ -87,18 +78,15 @@ export function loadI18nMessages() {
         knowledge: zhCNAgentKnowledge,
         agents: zhCNAgentAgentsModule,
         tools: zhCNAgentToolsModule,
-        tasks: zhCNAgentTasks,
         skills: zhCNAgentSkillsModule,
         crews: zhCNAgentCrews,
-        roundtables: zhCNAgentRoundtables,
         flows: zhCNAgentFlows
       },
       expertTeam: zhCNAgentExpertTeam,
       nicebot: {
         evolution_center: zhCNEvolutionCenter,
         navigation: zhCNNicebotNavigation,
-        memory_management: zhCNMemoryManagement,
-        task_management: zhCNTaskManagement
+        memory_management: zhCNMemoryManagement
       }
     },
     'en-US': {
@@ -112,18 +100,15 @@ export function loadI18nMessages() {
         knowledge: enUSAgentKnowledge,
         agents: enUSAgentAgentsModule,
         tools: enUSAgentToolsModule,
-        tasks: enUSAgentTasks,
         skills: enUSAgentSkillsModule,
         crews: enUSAgentCrews,
-        roundtables: enUSAgentRoundtables,
         flows: enUSAgentFlows
       },
       expertTeam: enUSAgentExpertTeam,
       nicebot: {
         evolution_center: enUSEvolutionCenter,
         navigation: enUSNicebotNavigation,
-        memory_management: enUSMemoryManagement,
-        task_management: enUSTaskManagement
+        memory_management: enUSMemoryManagement
       }
     },
     'ru-RU': {
@@ -137,18 +122,15 @@ export function loadI18nMessages() {
         knowledge: ruRUAgentKnowledge,
         agents: ruRUAgentAgentsModule,
         tools: ruRUAgentToolsModule,
-        tasks: ruRUAgentTasks,
         skills: ruRUAgentSkillsModule,
         crews: ruRUAgentCrews,
-        roundtables: ruRUAgentRoundtables,
         flows: ruRUAgentFlows
       },
       expertTeam: ruRUAgentExpertTeam,
       nicebot: {
         evolution_center: ruRUEvolutionCenter,
         navigation: ruRUNicebotNavigation,
-        memory_management: ruRUMemoryManagement,
-        task_management: ruRUTaskManagement
+        memory_management: ruRUMemoryManagement
       }
     }
   };

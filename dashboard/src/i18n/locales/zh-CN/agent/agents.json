@@ -1,6 +1,6 @@
 {
   "title": "智能体管理",
-  "subtitle": "创建和管理 AI 智能体，配置角色、能力和模型",
+  "subtitle": "创建和管理 AI 智能体，配置 soul、能力和模型",
   "buttons": {
     "add": "添加智能体",
     "refresh": "刷新",
@@ -14,23 +14,17 @@
     "assistant": {
       "name": "通用助手",
       "description": "一个通用的 AI 助手，可以回答各种问题",
-      "role": "助手",
-      "goal": "帮助用户完成各种任务，回答他们的问题",
-      "backstory": "我是一个智能助手，擅长理解和回答各种问题。"
+      "soul": "我是一个智能助手，擅长理解和回答各种问题。"
     },
     "researcher": {
       "name": "研究员",
       "description": "擅长研究和分析的研究员智能体",
-      "role": "研究员",
-      "goal": "深入研究各种主题，提供详细的分析报告",
-      "backstory": "我是一个专业的研究员，擅长收集和分析信息。"
+      "soul": "我是一个专业的研究员，擅长收集和分析信息。"
     },
     "coder": {
       "name": "程序员",
       "description": "擅长编程和代码审查的程序员智能体",
-      "role": "程序员",
-      "goal": "编写高质量的代码，解决技术问题",
-      "backstory": "我是一个经验丰富的程序员，精通多种编程语言。"
+      "soul": "我是一个经验丰富的程序员，精通多种编程语言。"
     }
   },
   "search": {
@@ -48,7 +42,7 @@
     "disabled": "已禁用"
   },
   "card": {
-    "noRole": "暂无角色描述",
+    "noSoul": "暂无 Soul 描述",
     "tools": "{count} 个工具",
     "skills": "{count} 个技能",
     "knowledgeBases": "{count} 个知识库",
@@ -70,6 +64,7 @@
   "editor": {
     "addTitle": "添加智能体",
     "editTitle": "编辑智能体",
+    "soul": "Soul",
     "tabs": {
       "basic": "基本信息",
       "abilities": "能力配置",
@@ -79,12 +74,8 @@
     "basic": {
       "name": "智能体名称",
       "nameHint": "为智能体设置一个易于识别的名称",
-      "role": "角色",
-      "roleHint": "定义智能体的角色定位，如'助手'、'研究员'等",
-      "goal": "目标",
-      "goalHint": "描述智能体的主要目标和任务",
-      "backstory": "背景故事",
-      "backstoryHint": "为智能体设置背景故事，增强角色感"
+      "soul": "Soul",
+      "soulHint": "描述智能体的身份、目标、背景和工作方式"
     },
     "abilities": {
       "tools": "工具选择",
@@ -150,8 +141,7 @@
     "send": "发送",
     "currentConfig": "当前配置",
     "basicInfo": "基本信息",
-    "role": "角色",
-    "goal": "目标",
+    "soul": "Soul",
     "abilities": "能力配置",
     "tools": "工具",
     "skills": "技能",
@@ -184,7 +174,7 @@
   "reset": {
     "title": "重置智能体",
     "confirm": "确定要将 {name} 重置为初始状态吗？",
-    "warning": "重置后，该智能体的角色、目标、背景故事和工具配置将恢复为系统默认设置，您的自定义修改将丢失。",
+    "warning": "重置后，该智能体的 Soul 和工具配置将恢复为系统默认设置，您的自定义修改将丢失。",
     "confirmButton": "确认重置",
     "failed": "重置失败"
   },

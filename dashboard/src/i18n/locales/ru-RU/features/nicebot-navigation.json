@@ -1,13 +1,14 @@
 {
   "tool_provider": "Tools",
   "tool_skills": "Tool Skills",
-  "task_management": "Tasks",
   "cli_agent": "CLI Agent",
-  "generic_agent": "GenericAgent",
-  "generic_agent_run": "GenericAgent Runs",
-  "generic_agent_config": "GenericAgent Config",
+  "generic_agent": "Smart RPA",
+  "generic_agent_run": "Smart RPA Runs",
+  "generic_agent_config": "Smart RPA Config",
   "work": "Work",
+  "workbench": "Workbench",
   "meeting": "Meeting",
+  "work_config": "Work Config",
   "memory_management": "Memory",
   "evolution_center": "Evolution"
 }

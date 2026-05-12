@@ -1,0 +1,39 @@
+{
+  "tabs": {
+    "daily": "Daily Task Config",
+    "meeting": "Meeting Config",
+    "project": "Project Config"
+  },
+  "daily": {
+    "title": "Daily Task Configuration",
+    "description": "This is the single source of truth for daily Work runtime configuration. Changes only affect new tasks; running tasks are not retroactively modified.",
+    "alertText": "The built-in daily flow in Flow Management only shows topology; node runtime config should be modified in Work Config.",
+    "refresh": "Refresh",
+    "resetToDefault": "Reset to Default",
+    "save": "Save",
+    "sections": {
+      "clarification": "Requirement Clarification",
+      "interrogation": "Interrogation",
+      "planning": "Planning",
+      "deliverable": "Deliverable"
+    },
+    "fields": {
+      "clarificationAgent": "Clarification Agent",
+      "systemPrompt": "System Prompt",
+      "userPrompt": "User Prompt",
+      "interrogationAgent": "Interrogation Agent",
+      "maxRounds": "Max Rounds",
+      "planningAgent": "Planning Agent",
+      "reporterAgent": "Reporter Agent",
+      "artifactType": "Artifact Type"
+    }
+  },
+  "meeting": {
+    "title": "Meeting Configuration",
+    "placeholder": "Meeting configuration is coming soon."
+  },
+  "project": {
+    "title": "Project Configuration",
+    "placeholder": "Project configuration is coming soon."
+  }
+}

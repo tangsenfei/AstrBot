@@ -1,0 +1,39 @@
+{
+  "tabs": {
+    "daily": "日常任务配置",
+    "meeting": "会议配置",
+    "project": "项目配置"
+  },
+  "daily": {
+    "title": "日常任务配置",
+    "description": "这里是日常 Work 运行配置的唯一来源；保存后仅影响新任务，已运行任务不会追溯修改。",
+    "alertText": "流程管理中的内置日常流程只保留拓扑展示；节点运行配置请在 Work 配置 修改。",
+    "refresh": "刷新",
+    "resetToDefault": "重置为默认配置",
+    "save": "保存",
+    "sections": {
+      "clarification": "需求确认",
+      "interrogation": "开启拷问",
+      "planning": "规划",
+      "deliverable": "交付物"
+    },
+    "fields": {
+      "clarificationAgent": "需求确认 Agent",
+      "systemPrompt": "系统提示词",
+      "userPrompt": "用户提示词",
+      "interrogationAgent": "拷问 Agent",
+      "maxRounds": "最大轮数",
+      "planningAgent": "规划 Agent",
+      "reporterAgent": "汇报 Agent",
+      "artifactType": "交付物类型"
+    }
+  },
+  "meeting": {
+    "title": "会议配置",
+    "placeholder": "会议配置功能即将上线，敬请期待。"
+  },
+  "project": {
+    "title": "项目配置",
+    "placeholder": "项目配置功能即将上线，敬请期待。"
+  }
+}

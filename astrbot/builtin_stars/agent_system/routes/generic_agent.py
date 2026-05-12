@@ -23,59 +23,59 @@ def register_generic_agent_routes(plugin) -> None:
     global _plugin_ref
     _plugin_ref = plugin
     routes = [
-        ("/generic-agent/config", _get_config, ["GET"], "获取 GenericAgent 配置"),
-        ("/generic-agent/config", _update_config, ["POST"], "更新 GenericAgent 配置"),
-        ("/generic-agent/chat/send", _chat_send, ["POST"], "GenericAgent Chat 发送"),
-        ("/generic-agent/runs", _list_runs, ["GET"], "GenericAgent 运行列表"),
+        ("/generic-agent/config", _get_config, ["GET"], "获取智能RPA配置"),
+        ("/generic-agent/config", _update_config, ["POST"], "更新智能RPA配置"),
+        ("/generic-agent/chat/send", _chat_send, ["POST"], "智能RPA Chat 发送"),
+        ("/generic-agent/runs", _list_runs, ["GET"], "智能RPA运行列表"),
         (
             "/generic-agent/runs/summaries",
             _list_run_summaries,
             ["GET"],
-            "GenericAgent 运行摘要",
+            "智能RPA运行摘要",
         ),
-        ("/generic-agent/runs", _create_run, ["POST"], "创建 GenericAgent 运行"),
+        ("/generic-agent/runs", _create_run, ["POST"], "创建智能RPA运行"),
         (
             "/generic-agent/runs/<run_id>",
             _get_run,
             ["GET"],
-            "获取 GenericAgent 运行详情",
+            "获取智能RPA运行详情",
         ),
         (
             "/generic-agent/runs/<run_id>/events",
             _list_events,
             ["GET"],
-            "GenericAgent 运行事件",
+            "智能RPA运行事件",
         ),
         (
             "/generic-agent/runs/<run_id>/stop",
             _stop_run,
             ["POST"],
-            "停止 GenericAgent 运行",
+            "停止智能RPA运行",
         ),
-        ("/generic-agent/tools", _list_tools, ["GET"], "GenericAgent 工具策略"),
+        ("/generic-agent/tools", _list_tools, ["GET"], "智能RPA工具策略"),
         (
             "/generic-agent/tools",
             _update_tools,
             ["PATCH"],
-            "更新 GenericAgent 工具策略",
+            "更新智能RPA工具策略",
         ),
         (
             "/generic-agent/skill-reviews",
             _list_skill_reviews,
             ["GET"],
-            "GenericAgent 技能审核列表",
+            "智能RPA技能审核列表",
         ),
         (
             "/generic-agent/skill-reviews/<review_id>/approve",
             _approve_skill_review,
             ["POST"],
-            "批准 GenericAgent 技能审核",
+            "批准智能RPA技能审核",
         ),
         (
             "/generic-agent/skill-reviews/<review_id>/reject",
             _reject_skill_review,
             ["POST"],
-            "拒绝 GenericAgent 技能审核",
+            "拒绝智能RPA技能审核",
         ),
     ]
     for path, handler, methods, desc in routes:
@@ -143,7 +143,9 @@ async def _chat_send():
                         "type": "user_message_saved",
                         "data": {
                             "id": saved_user_record.id,
-                            "created_at": to_utc_isoformat(saved_user_record.created_at),
+                            "created_at": to_utc_isoformat(
+                                saved_user_record.created_at
+                            ),
                             "llm_checkpoint_id": llm_checkpoint_id,
                         },
                     }
@@ -155,7 +157,8 @@ async def _chat_send():
                     "goal": goal,
                     "workspace_path": str(data.get("workspace_path") or "").strip(),
                     "constraints": _chat_constraints(data),
-                    "expected_outputs": data.get("expected_outputs") or [
+                    "expected_outputs": data.get("expected_outputs")
+                    or [
                         "在聊天中给出最终结果",
                         "如生成或修改文件，请列出路径",
                     ],
@@ -169,13 +172,19 @@ async def _chat_send():
                     "type": "plain",
                     "chain_type": "reasoning",
                     "streaming": True,
-                    "data": f"GenericAgent 运行已加入队列：{run_id}\n",
+                    "data": f"智能RPA运行已加入队列：{run_id}\n",
                 }
             )
 
-            while True:
+            config = service.get_config()
+            max_ticks = max(
+                60, min(int(config.get("max_run_seconds") or 1800) + 120, 7200)
+            )
+            for _ in range(max_ticks):
                 run = service.get_run(run_id)
-                for event in service.list_events(run_id, after_seq=after_seq, limit=200):
+                for event in service.list_events(
+                    run_id, after_seq=after_seq, limit=200
+                ):
                     after_seq = max(after_seq, int(event.get("seq") or 0))
                     text = _event_to_chat_reasoning(event)
                     if text:
@@ -209,7 +218,7 @@ async def _chat_send():
                                 "refs": {"generic_agent_run_id": run_id},
                             },
                             sender_id="bot",
-                            sender_name="GenericAgent",
+                            sender_name="智能RPA",
                             llm_checkpoint_id=llm_checkpoint_id,
                         )
                     if saved_bot_record:
@@ -231,6 +240,23 @@ async def _chat_send():
 
                 yield ": heartbeat\n\n"
                 await asyncio.sleep(1)
+            else:
+                logger.warning(
+                    f"GenericAgent chat stream reached wait limit: run_id={run_id} "
+                    f"session_id={session_id} max_ticks={max_ticks}"
+                )
+                yield _chat_sse(
+                    {
+                        "type": "error",
+                        "data": "智能RPA运行等待超时，请稍后在运行详情中查看结果或手动停止该任务。",
+                    }
+                )
+                yield _chat_sse({"type": "end", "data": ""})
+        except asyncio.CancelledError:
+            logger.debug(
+                f"GenericAgent chat stream cancelled: run_id={run_id} session_id={session_id}"
+            )
+            raise
         except Exception as e:
             logger.error(f"GenericAgent chat stream failed: {e}", exc_info=True)
             yield _chat_sse({"type": "error", "data": str(e)})
@@ -263,7 +289,7 @@ async def _update_config():
         data = await request.get_json() or {}
         return (
             Response()
-            .ok(_get_service().update_config(data), "GenericAgent 配置已更新")
+            .ok(_get_service().update_config(data), "智能RPA配置已更新")
             .__dict__
         )
     except Exception as e:
@@ -312,7 +338,7 @@ async def _create_run():
     try:
         data = await request.get_json() or {}
         run = await _get_service().enqueue_run(data)
-        return Response().ok(run, "GenericAgent 任务已加入队列").__dict__
+        return Response().ok(run, "智能RPA任务已加入队列").__dict__
     except ValueError as e:
         return Response().error(str(e)).__dict__
     except Exception as e:
@@ -331,7 +357,10 @@ async def _get_run(run_id: str):
 
 
 async def _list_events(run_id: str):
-    if request.args.get("stream") != "0" and request.headers.get("accept", "").find("text/event-stream") >= 0:
+    if (
+        request.args.get("stream") != "0"
+        and request.headers.get("accept", "").find("text/event-stream") >= 0
+    ):
         return await _stream_events(run_id)
     try:
         after_seq = int(request.args.get("after_seq") or 0)
@@ -370,7 +399,9 @@ async def _stream_events(run_id: str):
                     last_status = run.get("status", "")
                     yield _sse("phase", _run_phase(run))
 
-                for event in service.list_events(run_id, after_seq=after_seq, limit=500):
+                for event in service.list_events(
+                    run_id, after_seq=after_seq, limit=500
+                ):
                     after_seq = max(after_seq, int(event.get("seq") or 0))
                     yield _sse(event.get("event_type") or "log", event)
 
@@ -402,7 +433,7 @@ async def _stop_run(run_id: str):
     try:
         return (
             Response()
-            .ok(await _get_service().stop_run(run_id), "GenericAgent 停止请求已处理")
+            .ok(await _get_service().stop_run(run_id), "智能RPA停止请求已处理")
             .__dict__
         )
     except ValueError as e:
@@ -425,9 +456,7 @@ async def _update_tools():
         data = await request.get_json() or {}
         return (
             Response()
-            .ok(
-                _get_service().update_tool_policies(data), "GenericAgent 工具策略已更新"
-            )
+            .ok(_get_service().update_tool_policies(data), "智能RPA工具策略已更新")
             .__dict__
         )
     except Exception as e:
@@ -450,7 +479,7 @@ async def _approve_skill_review(review_id: str):
             Response()
             .ok(
                 _get_service().approve_skill_review(review_id),
-                "GenericAgent 技能已同步到 NiceBot 技能库",
+                "智能RPA技能已同步到 NiceBot 技能库",
             )
             .__dict__
         )
@@ -464,7 +493,7 @@ async def _reject_skill_review(review_id: str):
             Response()
             .ok(
                 _get_service().reject_skill_review(review_id),
-                "GenericAgent 技能审核已拒绝",
+                "智能RPA技能审核已拒绝",
             )
             .__dict__
         )
@@ -554,7 +583,7 @@ def _message_parts_to_goal(parts: list[dict[str, Any]]) -> str:
 
 def _chat_constraints(data: dict[str, Any]) -> str:
     constraints = str(data.get("constraints") or "").strip()
-    base = "来自 Chat 的 GenericAgent 请求；遵守全局工具开关；最终回复要适合直接展示给用户。"
+    base = "来自 Chat 的智能RPA请求；遵守全局工具开关；最终回复要适合直接展示给用户。"
     return f"{base}\n{constraints}" if constraints else base
 
 
@@ -589,10 +618,12 @@ def _run_final_text(run: dict[str, Any], run_id: str) -> str:
                 final_text = str(artifact.get("content") or "").strip()
                 break
     if not final_text:
-        final_text = str(run.get("summary") or run.get("error") or "GenericAgent 运行已结束").strip()
+        final_text = str(
+            run.get("summary") or run.get("error") or "智能RPA运行已结束"
+        ).strip()
     link = f"/generic-agent?run={run_id}"
     if run.get("status") == "failed":
-        final_text = f"GenericAgent 运行失败：{final_text}"
+        final_text = f"智能RPA运行失败：{final_text}"
     elif run.get("status") == "cancelled":
-        final_text = f"GenericAgent 运行已停止：{final_text}"
-    return f"{final_text}\n\n[查看 GenericAgent 运行记录]({link})"
+        final_text = f"智能RPA运行已停止：{final_text}"
+    return f"{final_text}\n\n[查看智能RPA运行记录]({link})"

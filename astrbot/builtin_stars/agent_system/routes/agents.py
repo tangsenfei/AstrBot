@@ -250,9 +250,7 @@ async def _create_agent():
     Request Body:
         {
             "name": "智能体名称",
-            "role": "角色定义",
-            "goal": "目标",
-            "backstory": "背景故事",
+            "soul": "智能体身份、目标、背景和工作方式",
             "tools": ["tool_id_1", "tool_id_2"],
             "skills": ["skill_id_1"],
             "knowledge_id": "kb_xxx",

@@ -1,57 +1,13 @@
 <template>
   <div class="meeting-shell" :class="{ 'is-dark': isDark }">
-    <aside class="meeting-category-pane">
-      <div class="pane-header">
-        <div>
-          <div class="pane-title">Meeting</div>
-          <div class="pane-subtitle">会议工作台</div>
-        </div>
-        <v-btn icon="mdi-refresh" size="small" variant="text" :loading="loading" @click="refreshAll" />
-      </div>
-
-      <button
-        class="category-row"
-        :class="{ active: selectedCategory === 'all' }"
-        type="button"
-        @click="selectCategory('all')"
-      >
-        <v-icon size="18">mdi-calendar-check-outline</v-icon>
-        <span>全部会议</span>
-      </button>
-      <button
-        class="category-row"
-        :class="{ active: selectedCategory === 'running' }"
-        type="button"
-        @click="selectCategory('running')"
-      >
-        <v-icon size="18">mdi-progress-clock</v-icon>
-        <span>进行中</span>
-      </button>
-      <button
-        class="category-row"
-        :class="{ active: selectedCategory === 'completed' }"
-        type="button"
-        @click="selectCategory('completed')"
-      >
-        <v-icon size="18">mdi-check-circle-outline</v-icon>
-        <span>已结束</span>
-      </button>
-      <button
-        class="category-row"
-        :class="{ active: selectedCategory === 'pending' }"
-        type="button"
-        @click="selectCategory('pending')"
-      >
-        <v-icon size="18">mdi-clock-outline</v-icon>
-        <span>待开始</span>
-      </button>
-    </aside>
-
     <aside class="meeting-task-pane">
       <div class="task-toolbar">
-        <v-btn color="primary" variant="flat" prepend-icon="mdi-plus" @click="openCreateDialog">
-          新建会议
-        </v-btn>
+        <div class="toolbar-actions">
+          <v-btn color="primary" variant="flat" prepend-icon="mdi-plus" @click="openCreateDialog">
+            新建会议
+          </v-btn>
+          <v-btn icon="mdi-refresh" size="small" variant="text" :loading="loading" @click="refreshAll" />
+        </div>
         <v-text-field
           v-model="searchText"
           density="compact"
@@ -411,10 +367,11 @@ const events = ref<MeetingEvent[]>([]);
 const artifacts = ref<any[]>([]);
 const cachedMessages = ref<ChatMessage[]>([]);
 const lastProcessedEventCount = ref(0);
+const seenMeetingEventIds = new Set<string>();
+const seenMeetingEventSignatures = new Set<string>();
 const searchText = ref('');
 const statusFilter = ref<string | null>(null);
 const typeFilter = ref<string | null>(null);
-const selectedCategory = ref('all');
 const meetingDialog = ref(false);
 const continueDialog = ref(false);
 const hitlDialog = ref(false);
@@ -423,6 +380,7 @@ const submittingInput = ref(false);
 const detailTab = ref('chatroom');
 let listRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 let summaryRefreshTimer: ReturnType<typeof setInterval> | null = null;
+let filterReloadTimer: ReturnType<typeof setTimeout> | null = null;
 
 const meetingList = usePagedTaskList<Meeting>({
   pageSize: 30,
@@ -506,7 +464,12 @@ const filteredMeetings = computed(() => {
 
 const chatMessages = computed<ChatMessage[]>(() => {
   const currentEvents = events.value;
-  const result = mapEventsToMessages(currentEvents);
+  let result: ChatMessage[];
+  if (cachedMessages.value.length && lastProcessedEventCount.value <= currentEvents.length) {
+    result = mapEventsToMessages(currentEvents.slice(lastProcessedEventCount.value), cachedMessages.value);
+  } else {
+    result = mapEventsToMessages(currentEvents);
+  }
   cachedMessages.value = result;
   lastProcessedEventCount.value = currentEvents.length;
   return result;
@@ -523,8 +486,8 @@ const displayLogs = computed(() => {
   return aggregateLogs(events.value.slice(-1000));
 });
 
-watch([searchText, statusFilter, typeFilter, selectedCategory], () => {
-  reloadMeetingsForFilters().catch(() => undefined);
+watch([searchText, statusFilter, typeFilter], () => {
+  scheduleFilterReload();
 });
 
 onMounted(async () => {
@@ -536,11 +499,8 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   closeEventSource();
   if (summaryRefreshTimer) clearInterval(summaryRefreshTimer);
+  if (filterReloadTimer) clearTimeout(filterReloadTimer);
 });
-
-function selectCategory(cat: string) {
-  selectedCategory.value = cat;
-}
 
 async function refreshAll() {
   loading.value = true;
@@ -585,11 +545,7 @@ async function loadMeetingPage(page: number, pageSize: number) {
 }
 
 function listStatusFilter() {
-  if (statusFilter.value) return statusFilter.value;
-  if (selectedCategory.value === 'running') return 'running';
-  if (selectedCategory.value === 'completed') return 'completed';
-  if (selectedCategory.value === 'pending') return 'pending';
-  return '';
+  return statusFilter.value || '';
 }
 
 async function reloadMeetingsForFilters() {
@@ -597,11 +553,20 @@ async function reloadMeetingsForFilters() {
   selectedMeetingId.value = '';
   selectedMeeting.value = null;
   events.value = [];
+  resetEventIndexes();
   artifacts.value = [];
   cachedMessages.value = [];
   lastProcessedEventCount.value = 0;
   await loadMeetings();
   await ensureSelectedMeeting();
+}
+
+function scheduleFilterReload() {
+  if (filterReloadTimer) clearTimeout(filterReloadTimer);
+  filterReloadTimer = setTimeout(() => {
+    filterReloadTimer = null;
+    reloadMeetingsForFilters().catch(() => undefined);
+  }, 350);
 }
 
 async function ensureSelectedMeeting() {
@@ -614,6 +579,7 @@ async function ensureSelectedMeeting() {
   selectedMeetingId.value = '';
   selectedMeeting.value = null;
   events.value = [];
+  resetEventIndexes();
   artifacts.value = [];
 }
 
@@ -629,7 +595,7 @@ function startSummaryRefresh() {
   if (summaryRefreshTimer) clearInterval(summaryRefreshTimer);
   summaryRefreshTimer = setInterval(() => {
     if (!document.hidden) refreshMeetingSummaries().catch(() => undefined);
-  }, 5000);
+  }, 10000);
 }
 
 async function refreshMeetingSummaries() {
@@ -665,6 +631,7 @@ async function selectMeeting(meetingId: string) {
   selectedMeetingId.value = meetingId;
   detailTab.value = 'chatroom';
   events.value = [];
+  resetEventIndexes();
   artifacts.value = [];
   cachedMessages.value = [];
   lastProcessedEventCount.value = 0;
@@ -698,6 +665,7 @@ async function loadMeetingEvents(meetingId = selectedMeetingId.value, options: {
       for (const event of serverEvents) appendMeetingEvent(event);
     } else {
       events.value = serverEvents;
+      rebuildEventIndexes(serverEvents);
       cachedMessages.value = [];
       lastProcessedEventCount.value = 0;
     }
@@ -872,22 +840,42 @@ function handleMeetingStreamEvent(name: string, payload: any) {
 
 function appendMeetingEvent(event: MeetingEvent) {
   if (!event?.id) return;
-  if (events.value.some(item => item.id === event.id)) return;
+  if (seenMeetingEventIds.has(event.id)) return;
   if (isMergeableDeltaEvent(event)) {
     const merged = mergeWithLastDeltaEvent(event);
     if (merged) {
       events.value = merged;
+      cachedMessages.value = [];
+      lastProcessedEventCount.value = 0;
+      rebuildEventIndexes(merged);
       return;
     }
   }
   const signature = eventSignature(event);
-  if (signature && events.value.some(item => eventSignature(item) === signature)) return;
+  if (signature && seenMeetingEventSignatures.has(signature)) return;
+  seenMeetingEventIds.add(event.id);
+  if (signature) seenMeetingEventSignatures.add(signature);
   const nextEvents = [...events.value, event].slice(-1500);
   if (nextEvents.length === events.value.length) {
     cachedMessages.value = [];
     lastProcessedEventCount.value = 0;
+    rebuildEventIndexes(nextEvents);
   }
   events.value = nextEvents;
+}
+
+function resetEventIndexes() {
+  seenMeetingEventIds.clear();
+  seenMeetingEventSignatures.clear();
+}
+
+function rebuildEventIndexes(items: MeetingEvent[]) {
+  resetEventIndexes();
+  for (const item of items) {
+    if (item?.id) seenMeetingEventIds.add(item.id);
+    const signature = eventSignature(item);
+    if (signature) seenMeetingEventSignatures.add(signature);
+  }
 }
 
 function isMergeableDeltaEvent(event: MeetingEvent) {
@@ -1289,7 +1277,7 @@ function joinDeltaText(current: string, next: string) {
   --work-border: rgba(var(--v-border-color), 0.18);
   --work-muted: rgba(var(--v-theme-on-surface), 0.62);
   display: grid;
-  grid-template-columns: 210px 320px minmax(360px, 1fr);
+  grid-template-columns: 400px minmax(480px, 1fr);
   height: 100%;
   min-height: 0;
   overflow: hidden;
@@ -1304,21 +1292,16 @@ function joinDeltaText(current: string, next: string) {
   --work-border: rgba(255, 255, 255, 0.1);
 }
 
-.meeting-category-pane,
 .meeting-task-pane {
   min-height: 0;
   border-right: 1px solid var(--work-border);
   background: var(--work-panel);
 }
 
-.meeting-category-pane {
-  overflow: auto;
-  padding: 14px;
-}
-
 .pane-header,
 .detail-header,
-.filter-row {
+.filter-row,
+.toolbar-actions {
   display: flex;
   align-items: center;
 }
@@ -1346,27 +1329,6 @@ function joinDeltaText(current: string, next: string) {
   color: var(--work-muted);
 }
 
-.category-row {
-  width: 100%;
-  min-height: 38px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-  padding: 8px 10px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.category-row:hover,
-.category-row.active {
-  background: rgba(var(--v-theme-primary), 0.1);
-}
-
 .meeting-task-pane {
   display: flex;
   flex-direction: column;
@@ -1383,6 +1345,15 @@ function joinDeltaText(current: string, next: string) {
   z-index: 1;
   border-bottom: 1px solid var(--work-border);
   background: var(--work-panel);
+}
+
+.toolbar-actions {
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.toolbar-actions .v-btn:first-child {
+  flex: 1;
 }
 
 .filter-row {
@@ -1664,17 +1635,16 @@ function joinDeltaText(current: string, next: string) {
 
 @media (max-width: 1180px) {
   .meeting-shell {
-    grid-template-columns: 170px 260px minmax(300px, 1fr) 320px;
+    grid-template-columns: 320px minmax(360px, 1fr);
   }
 }
 
 @media (max-width: 820px) {
   .meeting-shell {
     grid-template-columns: 1fr;
-    grid-template-rows: auto auto 1fr auto;
+    grid-template-rows: auto 1fr auto;
   }
 
-  .meeting-category-pane,
   .meeting-task-pane {
     max-height: 210px;
     border-right: 0;

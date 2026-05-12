@@ -100,7 +100,6 @@ class AstrBotDashboard:
         self.context = RouteContext(self.config, self.app)
         self.ur = UpdateRoute(
             self.context,
-            core_lifecycle.astrbot_updator,
             core_lifecycle,
         )
         self.sr = StatRoute(self.context, db, core_lifecycle)

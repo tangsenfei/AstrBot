@@ -1203,6 +1203,125 @@ async def test_query_injects_reasoning_effort_none_for_ollama(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_query_stream_omits_usage_stream_options_by_default(monkeypatch):
+    provider = _make_provider()
+    try:
+        captured_kwargs = {}
+
+        chunks = [
+            ChatCompletionChunk.model_validate(
+                {
+                    "id": "chatcmpl-stream",
+                    "object": "chat.completion.chunk",
+                    "created": 0,
+                    "model": "gpt-4o-mini",
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"role": "assistant", "content": "ok"},
+                            "finish_reason": None,
+                        }
+                    ],
+                }
+            ),
+            ChatCompletionChunk.model_validate(
+                {
+                    "id": "chatcmpl-stream",
+                    "object": "chat.completion.chunk",
+                    "created": 0,
+                    "model": "gpt-4o-mini",
+                    "choices": [
+                        {"index": 0, "delta": {}, "finish_reason": "stop"}
+                    ],
+                }
+            ),
+        ]
+
+        async def fake_stream():
+            for chunk in chunks:
+                yield chunk
+
+        async def fake_create(**kwargs):
+            captured_kwargs.update(kwargs)
+            return fake_stream()
+
+        monkeypatch.setattr(provider.client.chat.completions, "create", fake_create)
+
+        async for _ in provider._query_stream(
+            payloads={
+                "model": "gpt-4o-mini",
+                "messages": [{"role": "user", "content": "hello"}],
+            },
+            tools=None,
+        ):
+            pass
+
+        assert captured_kwargs["stream"] is True
+        assert "stream_options" not in captured_kwargs
+    finally:
+        await provider.terminate()
+
+
+@pytest.mark.asyncio
+async def test_query_stream_can_enable_usage_stream_options(monkeypatch):
+    provider = _make_provider({"stream_include_usage": True})
+    try:
+        captured_kwargs = {}
+
+        chunks = [
+            ChatCompletionChunk.model_validate(
+                {
+                    "id": "chatcmpl-stream",
+                    "object": "chat.completion.chunk",
+                    "created": 0,
+                    "model": "gpt-4o-mini",
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"role": "assistant", "content": "ok"},
+                            "finish_reason": None,
+                        }
+                    ],
+                }
+            ),
+            ChatCompletionChunk.model_validate(
+                {
+                    "id": "chatcmpl-stream",
+                    "object": "chat.completion.chunk",
+                    "created": 0,
+                    "model": "gpt-4o-mini",
+                    "choices": [
+                        {"index": 0, "delta": {}, "finish_reason": "stop"}
+                    ],
+                }
+            ),
+        ]
+
+        async def fake_stream():
+            for chunk in chunks:
+                yield chunk
+
+        async def fake_create(**kwargs):
+            captured_kwargs.update(kwargs)
+            return fake_stream()
+
+        monkeypatch.setattr(provider.client.chat.completions, "create", fake_create)
+
+        async for _ in provider._query_stream(
+            payloads={
+                "model": "gpt-4o-mini",
+                "messages": [{"role": "user", "content": "hello"}],
+            },
+            tools=None,
+        ):
+            pass
+
+        assert captured_kwargs["stream_options"] == {"include_usage": True}
+    finally:
+        await provider.terminate()
+
+
+@pytest.mark.asyncio
 async def test_parse_openai_completion_raises_empty_model_output_error():
     provider = _make_provider()
     try:

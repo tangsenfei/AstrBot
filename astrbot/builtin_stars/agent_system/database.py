@@ -3,6 +3,7 @@
 
 使用 SQLite 存储所有数据
 """
+
 from __future__ import annotations
 
 import json
@@ -119,9 +120,7 @@ class Database:
             CREATE TABLE IF NOT EXISTS agents (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
-                role TEXT NOT NULL,
-                goal TEXT,
-                backstory TEXT,
+                soul TEXT DEFAULT '',
                 tools TEXT DEFAULT '[]',
                 skills TEXT DEFAULT '[]',
                 knowledge_id TEXT,
@@ -620,6 +619,15 @@ class Database:
             )
         """)
 
+        # Work configuration storage.
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS work_config (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+
         # GenericAgent run records.
         self.execute("""
             CREATE TABLE IF NOT EXISTS generic_agent_runs (
@@ -699,35 +707,6 @@ class Database:
             )
         """)
 
-        # 圆桌会议表
-        self.execute("""
-            CREATE TABLE IF NOT EXISTS roundtables (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                topic TEXT NOT NULL,
-                deliverable TEXT,
-                mode TEXT DEFAULT 'free',
-                meeting_type TEXT DEFAULT 'standard',
-                host_agent_id TEXT,
-                participants TEXT DEFAULT '[]',
-                rounds INTEGER DEFAULT 3,
-                config TEXT DEFAULT '{}',
-                status TEXT DEFAULT 'pending',
-                result TEXT DEFAULT '{}',
-                discussion_records TEXT DEFAULT '[]',
-                current_round INTEGER DEFAULT 0,
-                current_speaker TEXT DEFAULT '',
-                stage TEXT DEFAULT 'pending',
-                streaming_content TEXT DEFAULT '',
-                materials TEXT DEFAULT '{}',
-                export_format TEXT DEFAULT 'markdown',
-                preparation_records TEXT DEFAULT '[]',
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                FOREIGN KEY (host_agent_id) REFERENCES agents(id)
-            )
-        """)
-
         # 数据库迁移
         self._migrate_tables()
 
@@ -740,6 +719,7 @@ class Database:
     def _migrate_tables(self) -> None:
         """数据库迁移：检查并添加缺失的列"""
         migrations = [
+            ("agents", "soul", "TEXT DEFAULT ''"),
             ("agents", "knowledge_id", "TEXT"),
             ("agents", "planning", "INTEGER DEFAULT 0"),
             ("agents", "planning_effort", "TEXT DEFAULT 'medium'"),
@@ -756,15 +736,6 @@ class Database:
             ("meetings", "total_tokens", "INTEGER DEFAULT 0"),
             ("meetings", "input_tokens", "INTEGER DEFAULT 0"),
             ("meetings", "output_tokens", "INTEGER DEFAULT 0"),
-            ("roundtables", "discussion_records", "TEXT DEFAULT '[]'"),
-            ("roundtables", "current_round", "INTEGER DEFAULT 0"),
-            ("roundtables", "current_speaker", "TEXT DEFAULT ''"),
-            ("roundtables", "stage", "TEXT DEFAULT 'pending'"),
-            ("roundtables", "streaming_content", "TEXT DEFAULT ''"),
-            ("roundtables", "meeting_type", "TEXT DEFAULT 'standard'"),
-            ("roundtables", "materials", "TEXT DEFAULT '{}'"),
-            ("roundtables", "export_format", "TEXT DEFAULT 'markdown'"),
-            ("roundtables", "preparation_records", "TEXT DEFAULT '[]'"),
             ("agents", "is_builtin", "INTEGER DEFAULT 0"),
             ("agents", "agent_type", "TEXT DEFAULT 'custom'"),
             ("agent_tasks", "meeting_id", "TEXT"),
@@ -792,7 +763,11 @@ class Database:
             ("meetings", "expected_output", "TEXT DEFAULT ''"),
             ("meetings", "materials", "TEXT DEFAULT '{}'"),
             ("meetings", "settings", "TEXT DEFAULT '{}'"),
-            ("meetings", "assistant_agent_id", "TEXT DEFAULT 'agent_meeting_assistant'"),
+            (
+                "meetings",
+                "assistant_agent_id",
+                "TEXT DEFAULT 'agent_meeting_assistant'",
+            ),
             ("meetings", "result", "TEXT DEFAULT '{}'"),
             ("meetings", "task_id", "TEXT DEFAULT ''"),
             ("meetings", "started_at", "TEXT DEFAULT NULL"),
@@ -809,7 +784,108 @@ class Database:
             except Exception as e:
                 logger.warning(f"Migration warning for {table}.{column}: {e}")
 
+        self._migrate_agents_soul_schema()
         self._migrate_agent_type()
+
+    def _migrate_agents_soul_schema(self) -> None:
+        try:
+            cursor = self.execute("PRAGMA table_info(agents)")
+            columns = [dict(row) for row in cursor.fetchall()]
+            column_names = [row["name"] for row in columns]
+            legacy_columns = {"role", "goal", "backstory"}
+            if "soul" in column_names and not legacy_columns.intersection(column_names):
+                return
+
+            logger.info("Migrating agents table to soul schema")
+            now_expr = "CURRENT_TIMESTAMP"
+            desired_columns: list[tuple[str, str, str]] = [
+                ("id", "TEXT PRIMARY KEY", "id"),
+                ("name", "TEXT NOT NULL", "name"),
+                ("soul", "TEXT DEFAULT ''", "soul"),
+                ("tools", "TEXT DEFAULT '[]'", "tools"),
+                ("skills", "TEXT DEFAULT '[]'", "skills"),
+                ("knowledge_id", "TEXT", "knowledge_id"),
+                ("provider_id", "TEXT", "provider_id"),
+                ("model_name", "TEXT", "model_name"),
+                ("llm_config", "TEXT DEFAULT '{}'", "llm_config"),
+                ("memory_config", "TEXT DEFAULT '{}'", "memory_config"),
+                ("planning", "INTEGER DEFAULT 0", "planning"),
+                ("planning_effort", "TEXT DEFAULT 'medium'", "planning_effort"),
+                ("max_iter", "INTEGER DEFAULT 20", "max_iter"),
+                ("max_rpm", "INTEGER", "max_rpm"),
+                ("verbose", "INTEGER DEFAULT 0", "verbose"),
+                ("allow_delegation", "INTEGER DEFAULT 0", "allow_delegation"),
+                ("enabled", "INTEGER DEFAULT 1", "enabled"),
+                ("is_builtin", "INTEGER DEFAULT 0", "is_builtin"),
+                ("agent_type", "TEXT DEFAULT 'custom'", "agent_type"),
+                ("metadata", "TEXT DEFAULT '{}'", "metadata"),
+                ("created_at", "TEXT NOT NULL", "created_at"),
+                ("updated_at", "TEXT NOT NULL", "updated_at"),
+            ]
+            definitions = ",\n                ".join(
+                f"{name} {definition}" for name, definition, _ in desired_columns
+            )
+            self.execute("PRAGMA foreign_keys = OFF")
+            self.execute("DROP TABLE IF EXISTS agents_new")
+            self.execute(
+                f"""
+                CREATE TABLE agents_new (
+                    {definitions},
+                    FOREIGN KEY (knowledge_id) REFERENCES knowledge(id)
+                )
+                """
+            )
+
+            def expr_for(name: str, source: str) -> str:
+                if name == "soul":
+                    if "soul" in column_names and "backstory" in column_names:
+                        return "COALESCE(NULLIF(soul, ''), backstory, '') AS soul"
+                    if "soul" in column_names:
+                        return "COALESCE(soul, '') AS soul"
+                    if "backstory" in column_names:
+                        return "COALESCE(backstory, '') AS soul"
+                    return "'' AS soul"
+                if source in column_names:
+                    return source
+                defaults = {
+                    "tools": "'[]'",
+                    "skills": "'[]'",
+                    "llm_config": "'{}'",
+                    "memory_config": "'{}'",
+                    "planning": "0",
+                    "planning_effort": "'medium'",
+                    "max_iter": "20",
+                    "verbose": "0",
+                    "allow_delegation": "0",
+                    "enabled": "1",
+                    "is_builtin": "0",
+                    "agent_type": "'custom'",
+                    "metadata": "'{}'",
+                    "created_at": now_expr,
+                    "updated_at": now_expr,
+                }
+                return f"{defaults.get(name, 'NULL')} AS {name}"
+
+            select_exprs = [
+                expr_for(name, source) for name, _, source in desired_columns
+            ]
+            insert_columns = ", ".join(name for name, _, _ in desired_columns)
+            self.execute(
+                f"""
+                INSERT INTO agents_new ({insert_columns})
+                SELECT {", ".join(select_exprs)}
+                FROM agents
+                """
+            )
+            self.execute("DROP TABLE agents")
+            self.execute("ALTER TABLE agents_new RENAME TO agents")
+            self.execute("PRAGMA foreign_keys = ON")
+        except Exception as e:
+            logger.warning(f"Agents soul schema migration warning: {e}")
+            try:
+                self.execute("PRAGMA foreign_keys = ON")
+            except Exception:
+                pass
 
     def _migrate_agent_type(self) -> None:
         try:
@@ -820,7 +896,7 @@ class Database:
                 if agent_type in (None, "", "custom") and is_builtin:
                     self.execute(
                         "UPDATE agents SET agent_type = 'builtin' WHERE id = ?",
-                        (agent_id,)
+                        (agent_id,),
                     )
                     logger.info(f"Migrated agent {agent_id} to agent_type='builtin'")
         except Exception as e:
@@ -843,24 +919,30 @@ class Database:
             "CREATE INDEX IF NOT EXISTS idx_agent_tasks_meeting ON agent_tasks(meeting_id)",
             "CREATE INDEX IF NOT EXISTS idx_agent_tasks_type ON agent_tasks(task_type)",
             "CREATE INDEX IF NOT EXISTS idx_agent_tasks_work_scope ON agent_tasks(work_scope)",
+            "CREATE INDEX IF NOT EXISTS idx_agent_tasks_work_scope_created ON agent_tasks(work_scope, created_at DESC)",
             "CREATE INDEX IF NOT EXISTS idx_agent_tasks_work_project ON agent_tasks(work_project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_agent_tasks_work_project_created ON agent_tasks(work_scope, work_project_id, created_at DESC)",
             "CREATE INDEX IF NOT EXISTS idx_agent_tasks_work_daily ON agent_tasks(work_daily_dir_id)",
+            "CREATE INDEX IF NOT EXISTS idx_agent_tasks_work_daily_created ON agent_tasks(work_scope, work_daily_dir_id, created_at DESC)",
             "CREATE INDEX IF NOT EXISTS idx_sub_tasks_parent ON sub_tasks(parent_task_id)",
             "CREATE INDEX IF NOT EXISTS idx_sub_tasks_agent ON sub_tasks(agent_id)",
             "CREATE INDEX IF NOT EXISTS idx_execution_logs_task ON execution_logs(task_id)",
             "CREATE INDEX IF NOT EXISTS idx_token_stats_task ON token_stats(task_id)",
-            "CREATE INDEX IF NOT EXISTS idx_roundtables_status ON roundtables(status)",
-            "CREATE INDEX IF NOT EXISTS idx_roundtables_host ON roundtables(host_agent_id)",
             "CREATE INDEX IF NOT EXISTS idx_agent_memories_agent ON agent_memories(agent_id)",
             "CREATE INDEX IF NOT EXISTS idx_agent_memories_scope ON agent_memories(scope)",
             "CREATE INDEX IF NOT EXISTS idx_agent_memories_importance ON agent_memories(importance)",
             "CREATE INDEX IF NOT EXISTS idx_work_projects_status ON work_projects(status)",
             "CREATE INDEX IF NOT EXISTS idx_work_daily_dirs_status ON work_daily_dirs(status)",
             "CREATE INDEX IF NOT EXISTS idx_work_artifacts_task ON work_artifacts(task_id)",
+            "CREATE INDEX IF NOT EXISTS idx_work_artifacts_task_created ON work_artifacts(task_id, created_at)",
             "CREATE INDEX IF NOT EXISTS idx_meetings_status ON meetings(status)",
+            "CREATE INDEX IF NOT EXISTS idx_meetings_status_updated ON meetings(status, updated_at DESC)",
             "CREATE INDEX IF NOT EXISTS idx_meetings_type ON meetings(meeting_type)",
+            "CREATE INDEX IF NOT EXISTS idx_meetings_type_updated ON meetings(meeting_type, updated_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_meetings_updated ON meetings(updated_at DESC)",
             "CREATE INDEX IF NOT EXISTS idx_meeting_events_meeting ON meeting_events(meeting_id)",
             "CREATE INDEX IF NOT EXISTS idx_meeting_artifacts_meeting ON meeting_artifacts(meeting_id)",
+            "CREATE INDEX IF NOT EXISTS idx_meeting_artifacts_meeting_created ON meeting_artifacts(meeting_id, created_at)",
             "CREATE INDEX IF NOT EXISTS idx_hitl_requests_task ON hitl_requests(task_id)",
             "CREATE INDEX IF NOT EXISTS idx_hitl_requests_status ON hitl_requests(status)",
             "CREATE INDEX IF NOT EXISTS idx_hitl_templates_type ON hitl_templates(template_type)",
@@ -896,7 +978,9 @@ class Database:
         self.execute(sql, values)
         self.commit()
 
-    def update(self, table: str, data: dict[str, Any], where: str, where_params: tuple = ()) -> None:
+    def update(
+        self, table: str, data: dict[str, Any], where: str, where_params: tuple = ()
+    ) -> None:
         """更新数据"""
         set_clause = ", ".join([f"{k} = ?" for k in data.keys()])
         values = self._prepare_values(data)
@@ -911,7 +995,9 @@ class Database:
         self.execute(sql, where_params)
         self.commit()
 
-    def select_one(self, table: str, where: str = "1=1", where_params: tuple = ()) -> dict[str, Any] | None:
+    def select_one(
+        self, table: str, where: str = "1=1", where_params: tuple = ()
+    ) -> dict[str, Any] | None:
         """查询单条数据"""
         sql = f"SELECT * FROM {table} WHERE {where} LIMIT 1"
         cursor = self.execute(sql, where_params)
@@ -920,7 +1006,14 @@ class Database:
             return dict(row)
         return None
 
-    def select_all(self, table: str, where: str = "1=1", where_params: tuple = (), order_by: str | None = None, limit: int | None = None) -> list[dict[str, Any]]:
+    def select_all(
+        self,
+        table: str,
+        where: str = "1=1",
+        where_params: tuple = (),
+        order_by: str | None = None,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
         """查询多条数据"""
         sql = f"SELECT * FROM {table} WHERE {where}"
         if order_by:

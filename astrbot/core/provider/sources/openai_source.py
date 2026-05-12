@@ -656,12 +656,14 @@ class ProviderOpenAIOfficial(Provider):
 
         self._sanitize_assistant_messages(payloads)
 
-        stream = await self.client.chat.completions.create(
+        stream_kwargs = {
             **payloads,
-            stream=True,
-            extra_body=extra_body,
-            stream_options={"include_usage": True},
-        )
+            "stream": True,
+            "extra_body": extra_body,
+        }
+        if self.provider_config.get("stream_include_usage") is True:
+            stream_kwargs["stream_options"] = {"include_usage": True}
+        stream = await self.client.chat.completions.create(**stream_kwargs)
 
         llm_response = LLMResponse("assistant", is_chunk=True)
 

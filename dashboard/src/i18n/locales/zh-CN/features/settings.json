@@ -1,4 +1,8 @@
 {
+  "tabs": {
+    "general": "基础设置",
+    "work": "Work 配置"
+  },
   "network": {
     "title": "网络",
     "githubProxy": {

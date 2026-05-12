@@ -12,17 +12,24 @@ from typing import Any
 
 from .state import StreamEvent, TaskRecord, TaskStatus
 
-_DEBUG_LOG_PATH = Path(__file__).parent.parent.parent.parent / "data" / "task_center_debug.log"
+_DEBUG_LOG_PATH = (
+    Path(__file__).parent.parent.parent.parent / "data" / "task_center_debug.log"
+)
+NOISY_STREAM_EVENTS = {"text_delta", "reasoning"}
 
 
 def _merge_steps(task: TaskRecord, new_steps: list[dict]) -> None:
     """Merge new steps into existing, preserving completed results."""
     existing = {}
     for index, step in enumerate(task.steps or []):
-        key = str(step.get("id") or step.get("description") or step.get("content") or index)
+        key = str(
+            step.get("id") or step.get("description") or step.get("content") or index
+        )
         existing[key] = step
     for s in new_steps:
-        key = str(s.get("id") or s.get("description") or s.get("content") or len(existing) + 1)
+        key = str(
+            s.get("id") or s.get("description") or s.get("content") or len(existing) + 1
+        )
         if key in existing:
             existing[key].update(s)
         else:
@@ -59,11 +66,13 @@ class TaskCenter:
                 TaskStatus.CREATED: "pending",
                 TaskStatus.DISPATCHED: "pending",
                 TaskStatus.RUNNING: "running",
-                TaskStatus.PAUSED: "waiting_feedback",
+                TaskStatus.PAUSE_REQUESTED: "pause_requested",
+                TaskStatus.PAUSED: "paused",
                 TaskStatus.WAITING_FEEDBACK: "waiting_feedback",
                 TaskStatus.RESUMING: "running",
                 TaskStatus.DONE: "completed",
                 TaskStatus.FAILED: "failed",
+                TaskStatus.RETRYABLE_FAILED: "retryable_failed",
                 TaskStatus.CANCELLED: "cancelled",
             }
             updates = {
@@ -78,7 +87,12 @@ class TaskCenter:
                 "total_tokens": task.total_tokens,
                 "updated_at": datetime.now().isoformat(),
             }
-            if task.status in (TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.CANCELLED):
+            if task.status in (
+                TaskStatus.DONE,
+                TaskStatus.FAILED,
+                TaskStatus.RETRYABLE_FAILED,
+                TaskStatus.CANCELLED,
+            ):
                 updates["completed_at"] = datetime.now().isoformat()
             if task.status == TaskStatus.RUNNING and not task._started_at_db_set:
                 updates["started_at"] = datetime.now().isoformat()
@@ -90,7 +104,9 @@ class TaskCenter:
                 updates,
             )
         except Exception as e2:
-            _debug_log(f"_persist_stream_event EXCEPTION: {e2}\n{traceback.format_exc()}")
+            _debug_log(
+                f"_persist_stream_event EXCEPTION: {e2}\n{traceback.format_exc()}"
+            )
 
     def _install_run_writer(self, task: TaskRecord) -> None:
         run_ctx = task.run_ctx
@@ -121,6 +137,10 @@ class TaskCenter:
             status = data.get("status")
             if status == "cancelled":
                 task.status = TaskStatus.CANCELLED
+            elif status == "pause_requested":
+                task.status = TaskStatus.PAUSE_REQUESTED
+            elif status == "paused":
+                task.status = TaskStatus.PAUSED
             elif status == "running" and task.status == TaskStatus.WAITING_FEEDBACK:
                 task.status = TaskStatus.RUNNING
             progress = data.get("progress")
@@ -138,7 +158,9 @@ class TaskCenter:
             output_t = data.get("output") or data.get("output_tokens") or 0
             task.input_tokens += int(input_t)
             task.output_tokens += int(output_t)
-            task.total_tokens += int(data.get("total") or data.get("total_tokens") or input_t + output_t)
+            task.total_tokens += int(
+                data.get("total") or data.get("total_tokens") or input_t + output_t
+            )
         elif event_type == "error":
             task.error = str(data.get("message") or data)
         elif event_type == "tool_call":
@@ -147,59 +169,59 @@ class TaskCenter:
             pass
         elif event_type in ("interaction_card", "interaction"):
             task.status = TaskStatus.WAITING_FEEDBACK
-            task.interaction_text = str(data.get("body") or data.get("title") or "")[:500]
+            task.interaction_text = str(data.get("body") or data.get("title") or "")[
+                :500
+            ]
             task.interaction_id = str(data.get("interaction_id") or "")
 
-        asyncio.create_task(self._sync_to_db(task))
+        if event_type not in {*NOISY_STREAM_EVENTS, "token"}:
+            asyncio.create_task(self._sync_to_db(task))
         asyncio.create_task(self._persist_stream_event(task, event))
 
     async def _persist_stream_event(self, task: TaskRecord, event: StreamEvent) -> None:
         try:
-            _debug_log(f"_persist_stream_event ENTER: task_id={task.task_id} thread_id={task.thread_id}")
+            _debug_log(
+                f"_persist_stream_event ENTER: task_id={task.task_id} thread_id={task.thread_id}"
+            )
             from astrbot.builtin_stars.agent_system.database import get_database
 
             db = get_database()
             _debug_log(f"  db={db}")
-            row = db.select_one("agent_tasks", where="thread_id = ?", where_params=(task.thread_id,))
+            row = db.select_one(
+                "agent_tasks", where="thread_id = ?", where_params=(task.thread_id,)
+            )
             _debug_log(f"  row by thread_id: {row is not None}")
             if not row:
-                row = db.select_one("agent_tasks", where="id = ?", where_params=(task.task_id,))
+                row = db.select_one(
+                    "agent_tasks", where="id = ?", where_params=(task.task_id,)
+                )
                 _debug_log(f"  row by task_id: {row is not None}")
             if not row:
-                _debug_log(f"_persist_stream_event: task not found! task_id={task.task_id} thread_id={task.thread_id}")
+                _debug_log(
+                    f"_persist_stream_event: task not found! task_id={task.task_id} thread_id={task.thread_id}"
+                )
                 return
             task_id = row["id"]
             event_type = event.get("event", "event")
             data = event.get("data", {}) or {}
             now = datetime.now().isoformat()
 
-            db.insert(
-                "execution_logs",
-                {
-                    "id": f"log_{uuid.uuid4().hex[:12]}",
-                    "task_id": task_id,
-                    "sub_task_id": None,
-                    "agent_id": data.get("agent_id") if isinstance(data, dict) else None,
-                    "level": "error" if event_type == "error" else "info",
-                    "message": self._event_message(event_type, data),
-                    "data": {"event": event_type, **(data if isinstance(data, dict) else {"value": data})},
-                    "created_at": now,
-                },
-            )
-
             if event_type == "token":
-                stats = data.get("stats", {}) if isinstance(data, dict) else {}
-                usage = stats.get("token_usage", {}) if isinstance(stats, dict) else {}
-                input_tokens = int(usage.get("input_other") or usage.get("input") or 0)
-                output_tokens = int(usage.get("output") or 0)
-                total_tokens = input_tokens + output_tokens
+                data_dict = data if isinstance(data, dict) else {}
+                input_tokens, output_tokens, total_tokens = self._extract_token_counts(
+                    data_dict
+                )
+                if not total_tokens:
+                    total_tokens = input_tokens + output_tokens
                 db.insert(
                     "token_stats",
                     {
                         "id": f"tok_{uuid.uuid4().hex[:12]}",
                         "task_id": task_id,
-                        "agent_id": data.get("agent_id"),
-                        "model_name": stats.get("model") if isinstance(stats, dict) else None,
+                        "agent_id": data_dict.get("agent_id"),
+                        "model_name": (data_dict.get("stats") or {}).get("model")
+                        if isinstance(data_dict.get("stats"), dict)
+                        else data_dict.get("model"),
                         "input_tokens": input_tokens,
                         "output_tokens": output_tokens,
                         "total_tokens": total_tokens,
@@ -209,14 +231,41 @@ class TaskCenter:
                 db.update(
                     "agent_tasks",
                     {
-                        "input_tokens": int(row.get("input_tokens") or 0) + input_tokens,
-                        "output_tokens": int(row.get("output_tokens") or 0) + output_tokens,
-                        "total_tokens": int(row.get("total_tokens") or 0) + total_tokens,
+                        "input_tokens": int(row.get("input_tokens") or 0)
+                        + input_tokens,
+                        "output_tokens": int(row.get("output_tokens") or 0)
+                        + output_tokens,
+                        "total_tokens": int(row.get("total_tokens") or 0)
+                        + total_tokens,
                         "updated_at": now,
                     },
                     where="id = ?",
                     where_params=(task_id,),
                 )
+                return
+
+            data_dict = data if isinstance(data, dict) else {"value": data}
+            if event_type in NOISY_STREAM_EVENTS and self._coalesce_stream_log(
+                db, task_id, event_type, data_dict, now
+            ):
+                return
+
+            db.insert(
+                "execution_logs",
+                {
+                    "id": f"log_{uuid.uuid4().hex[:12]}",
+                    "task_id": task_id,
+                    "sub_task_id": None,
+                    "agent_id": self._safe_log_agent_id(db, data_dict),
+                    "level": "error" if event_type == "error" else "info",
+                    "message": self._event_message(event_type, data_dict),
+                    "data": {
+                        "event": event_type,
+                        **data_dict,
+                    },
+                    "created_at": now,
+                },
+            )
 
             if event_type == "interaction" and isinstance(data, dict):
                 try:
@@ -253,7 +302,11 @@ class TaskCenter:
                         where_params=(task_id,),
                     )
 
-            if event_type == "phase" and isinstance(data, dict) and isinstance(data.get("steps"), list):
+            if (
+                event_type == "phase"
+                and isinstance(data, dict)
+                and isinstance(data.get("steps"), list)
+            ):
                 self._persist_work_steps(db, task_id, data["steps"], now)
 
             if event_type == "artifact" and isinstance(data, dict):
@@ -272,7 +325,9 @@ class TaskCenter:
                     },
                 )
                 deliverables = json.loads(row.get("deliverables") or "[]")
-                deliverables.append({"id": artifact_id, "title": data.get("title") or "任务交付物"})
+                deliverables.append(
+                    {"id": artifact_id, "title": data.get("title") or "任务交付物"}
+                )
                 db.update(
                     "agent_tasks",
                     {"deliverables": deliverables, "updated_at": now},
@@ -280,17 +335,26 @@ class TaskCenter:
                     where_params=(task_id,),
                 )
         except Exception as e3:
-            _debug_log(f"_persist_stream_event outer EXCEPTION: {e3}\n{traceback.format_exc()}")
+            _debug_log(
+                f"_persist_stream_event outer EXCEPTION: {e3}\n{traceback.format_exc()}"
+            )
 
     @staticmethod
-    def _persist_work_steps(db, task_id: str, steps: list[dict[str, Any]], now: str) -> None:
+    def _persist_work_steps(
+        db, task_id: str, steps: list[dict[str, Any]], now: str
+    ) -> None:
         def scoped_id(value: Any) -> str:
             raw = str(value or "").strip()
             if not raw:
                 return ""
             return raw if raw.startswith(f"{task_id}:") else f"{task_id}:{raw}"
 
-        def persist_step(step: dict[str, Any], index: int, parent_id: str | None = None, depth: int | None = None) -> None:
+        def persist_step(
+            step: dict[str, Any],
+            index: int,
+            parent_id: str | None = None,
+            depth: int | None = None,
+        ) -> None:
             if not isinstance(step, dict):
                 return
             raw_step_id = str(step.get("id") or f"step_{index + 1}")
@@ -302,12 +366,17 @@ class TaskCenter:
                 dependencies = step.get("depends_on") or []
             if not isinstance(dependencies, list):
                 dependencies = [dependencies] if dependencies else []
-            effective_depth = min(2, int(depth or step.get("depth") or (2 if scoped_parent_id else 1)))
+            effective_depth = min(
+                2, int(depth or step.get("depth") or (2 if scoped_parent_id else 1))
+            )
             row = {
                 "id": step_id,
                 "task_id": task_id,
                 "parent_id": scoped_parent_id,
-                "title": step.get("title") or step.get("name") or step.get("description") or f"步骤 {index + 1}",
+                "title": step.get("title")
+                or step.get("name")
+                or step.get("description")
+                or f"步骤 {index + 1}",
                 "description": step.get("description") or step.get("title") or "",
                 "status": step.get("status", "pending"),
                 "dependencies": [scoped_id(dep) for dep in dependencies if dep],
@@ -318,20 +387,42 @@ class TaskCenter:
                 "result": step.get("result", ""),
                 "result_ref": step.get("result_ref", ""),
                 "depth": effective_depth,
-                "sort_order": int(step.get("sort_order") if step.get("sort_order") is not None else index),
+                "sort_order": int(
+                    step.get("sort_order")
+                    if step.get("sort_order") is not None
+                    else index
+                ),
                 "updated_at": now,
             }
-            existing = db.select_one("work_task_steps", where="id = ? AND task_id = ?", where_params=(step_id, task_id))
+            existing = db.select_one(
+                "work_task_steps",
+                where="id = ? AND task_id = ?",
+                where_params=(step_id, task_id),
+            )
             if existing:
                 updates = {k: v for k, v in row.items() if k not in {"id", "task_id"}}
                 if row["status"] in {"running"} and not existing.get("started_at"):
                     updates["started_at"] = now
-                if row["status"] in {"done", "completed", "failed", "cancelled"} and not existing.get("completed_at"):
+                if row["status"] in {
+                    "done",
+                    "completed",
+                    "failed",
+                    "cancelled",
+                } and not existing.get("completed_at"):
                     updates["completed_at"] = now
-                db.update("work_task_steps", updates, where="id = ? AND task_id = ?", where_params=(step_id, task_id))
+                db.update(
+                    "work_task_steps",
+                    updates,
+                    where="id = ? AND task_id = ?",
+                    where_params=(step_id, task_id),
+                )
             else:
                 row["started_at"] = now if row["status"] == "running" else None
-                row["completed_at"] = now if row["status"] in {"done", "completed", "failed", "cancelled"} else None
+                row["completed_at"] = (
+                    now
+                    if row["status"] in {"done", "completed", "failed", "cancelled"}
+                    else None
+                )
                 db.insert("work_task_steps", row)
             for child_index, child in enumerate(step.get("children") or []):
                 if isinstance(child, dict):
@@ -341,8 +432,78 @@ class TaskCenter:
             persist_step(step, index)
 
     @staticmethod
+    def _coalesce_stream_log(
+        db, task_id: str, event_type: str, data: dict[str, Any], now: str
+    ) -> bool:
+        rows = db.execute(
+            """
+            SELECT rowid, *
+            FROM execution_logs
+            WHERE task_id = ?
+            ORDER BY rowid DESC
+            LIMIT 1
+            """,
+            (task_id,),
+        ).fetchall()
+        if not rows:
+            return False
+
+        latest = dict(rows[0])
+        try:
+            latest_data = json.loads(latest.get("data") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            return False
+
+        if latest_data.get("event") != event_type:
+            return False
+        if TaskCenter._stream_trace_key(latest_data) != TaskCenter._stream_trace_key(
+            data
+        ):
+            return False
+
+        merged_text = f"{latest_data.get('text') or ''}{data.get('text') or ''}"
+        latest_data.update(data)
+        latest_data["event"] = event_type
+        latest_data["text"] = merged_text
+        db.update(
+            "execution_logs",
+            {
+                "message": TaskCenter._event_message(event_type, latest_data),
+                "data": latest_data,
+                "created_at": now,
+            },
+            where="rowid = ?",
+            where_params=(latest["rowid"],),
+        )
+        return True
+
+    @staticmethod
+    def _stream_trace_key(data: dict[str, Any]) -> tuple[str, str, str, str, str]:
+        return (
+            str(data.get("stage_id") or ""),
+            str(data.get("step_id") or ""),
+            str(data.get("agent_id") or ""),
+            str(data.get("agent_label") or data.get("agent") or ""),
+            str(data.get("step_label") or ""),
+        )
+
+    @staticmethod
+    def _safe_log_agent_id(db, data: dict[str, Any]) -> str | None:
+        agent_id = str(data.get("agent_id") or "").strip()
+        if not agent_id:
+            return None
+        try:
+            if db.select_one("agents", where="id = ?", where_params=(agent_id,)):
+                return agent_id
+        except Exception:
+            return None
+        return None
+
+    @staticmethod
     def _event_message(event_type: str, data: dict[str, Any]) -> str:
         if event_type == "text_delta":
+            return str(data.get("text", ""))[:500]
+        if event_type == "reasoning":
             return str(data.get("text", ""))[:500]
         if event_type == "tool_call":
             return f"调用工具：{data.get('name') or data.get('function', {}).get('name') or 'tool'}"
@@ -378,7 +539,9 @@ class TaskCenter:
                     return number
             return 0
 
-        input_tokens = read_number("input_tokens", "input", "usage.input_other", "usage.input")
+        input_tokens = read_number(
+            "input_tokens", "input", "usage.input_other", "usage.input"
+        )
         output_tokens = read_number("output_tokens", "output", "usage.output")
         total_tokens = read_number("total_tokens", "total", "usage.total")
         return input_tokens, output_tokens, total_tokens
@@ -443,7 +606,9 @@ class TaskCenter:
         return checkpointer
 
     async def _run_task(self, task: TaskRecord):
-        _debug_log(f"_run_task ENTER: task_id={task.task_id} thread_id={task.thread_id} task_type={task.task_type}")
+        _debug_log(
+            f"_run_task ENTER: task_id={task.task_id} thread_id={task.thread_id} task_type={task.task_type}"
+        )
         builder = self.EXECUTOR_REGISTRY.get(task.task_type)
         _debug_log(f"  builder found: {builder is not None}")
         if not builder:
@@ -471,7 +636,11 @@ class TaskCenter:
             task,
             StreamEvent(
                 event="phase",
-                data={"phase": "started", "label": "任务执行器已启动", "progress": task.progress},
+                data={
+                    "phase": "started",
+                    "label": "任务执行器已启动",
+                    "progress": task.progress,
+                },
                 timestamp=time.time(),
                 node_id="task_center",
             ),
@@ -490,7 +659,9 @@ class TaskCenter:
                 },
                 version="v2",
             ):
-                _debug_log(f"  astream event: {event.get('event')} name={event.get('name')}")
+                _debug_log(
+                    f"  astream event: {event.get('event')} name={event.get('name')}"
+                )
                 if event["event"] == "on_custom_event":
                     stream_event = event["data"]
                     if task.stream_callback:
@@ -514,7 +685,11 @@ class TaskCenter:
                     task,
                     StreamEvent(
                         event="phase",
-                        data={"phase": "done", "label": "任务执行器已结束", "progress": 100},
+                        data={
+                            "phase": "done",
+                            "label": "任务执行器已结束",
+                            "progress": 100,
+                        },
                         timestamp=time.time(),
                         node_id="task_center",
                     ),
@@ -527,8 +702,14 @@ class TaskCenter:
             await self._sync_to_db(task)
             raise
         except Exception as e:
-            _debug_log(f"  _run_task EXCEPTION: {task.task_id} error={e}\n{traceback.format_exc()}")
-            task.status = TaskStatus.FAILED
+            _debug_log(
+                f"  _run_task EXCEPTION: {task.task_id} error={e}\n{traceback.format_exc()}"
+            )
+            retryable = bool(getattr(e, "retryable", False)) or e.__class__.__name__ in {
+                "WorkLLMCallError",
+                "WorkLLMIdleTimeout",
+            }
+            task.status = TaskStatus.RETRYABLE_FAILED if retryable else TaskStatus.FAILED
             task.error = str(e)
             task.updated_at = time.time()
             self._handle_stream_event(
@@ -546,6 +727,11 @@ class TaskCenter:
 
     async def resume_task(self, task_id: str, resume_value: Any):
         task = self._tasks.get(task_id)
+        if task and task.status == TaskStatus.PAUSE_REQUESTED:
+            task.status = TaskStatus.RUNNING
+            task.updated_at = time.time()
+            await self._sync_to_db(task)
+            return
         if not task or task.status != TaskStatus.PAUSED:
             raise ValueError(f"Task {task_id} is not paused")
 
@@ -592,7 +778,11 @@ class TaskCenter:
                     task,
                     StreamEvent(
                         event="phase",
-                        data={"phase": "done", "label": "任务执行器已结束", "progress": 100},
+                        data={
+                            "phase": "done",
+                            "label": "任务执行器已结束",
+                            "progress": 100,
+                        },
                         timestamp=time.time(),
                         node_id="task_center",
                     ),
@@ -604,7 +794,11 @@ class TaskCenter:
             await self._sync_to_db(task)
             raise
         except Exception as e:
-            task.status = TaskStatus.FAILED
+            retryable = bool(getattr(e, "retryable", False)) or e.__class__.__name__ in {
+                "WorkLLMCallError",
+                "WorkLLMIdleTimeout",
+            }
+            task.status = TaskStatus.RETRYABLE_FAILED if retryable else TaskStatus.FAILED
             task.error = str(e)
             task.updated_at = time.time()
             self._handle_stream_event(
@@ -628,6 +822,16 @@ class TaskCenter:
         if running and not running.done():
             running.cancel()
         task.status = TaskStatus.CANCELLED
+        task.updated_at = time.time()
+        await self._sync_to_db(task)
+
+    async def request_pause_task(self, task_id: str):
+        task = self._tasks.get(task_id)
+        if not task:
+            raise ValueError(f"Task {task_id} not found")
+        if task.status not in {TaskStatus.RUNNING, TaskStatus.RESUMING}:
+            raise ValueError(f"Task {task_id} is not running")
+        task.status = TaskStatus.PAUSE_REQUESTED
         task.updated_at = time.time()
         await self._sync_to_db(task)
 

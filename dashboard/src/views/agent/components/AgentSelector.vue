@@ -94,7 +94,7 @@
           </v-avatar>
           <div class="flex-grow-1" style="min-width: 0">
             <div class="text-subtitle-2 font-weight-medium text-truncate">{{ agent.title }}</div>
-            <div class="text-caption text-grey text-truncate">{{ agent.role || agent.agentType }}</div>
+            <div class="text-caption text-grey text-truncate">{{ agent.soul || agent.agentType }}</div>
           </div>
           <v-chip
             v-if="agent.agentType === 'builtin'"
@@ -178,7 +178,7 @@ const filteredAgents = computed(() => {
     const q = searchQuery.value.toLowerCase();
     result = result.filter(a =>
       a.title.toLowerCase().includes(q) ||
-      (a.role || '').toLowerCase().includes(q)
+      (a.soul || '').toLowerCase().includes(q)
     );
   }
 
@@ -249,7 +249,7 @@ async function loadAgents() {
       agents.value = rawAgents.map((agent: any) => ({
         title: agent.name,
         value: agent.id || agent.name,
-        role: agent.role || '-',
+        soul: agent.soul || '-',
         agentType: agent.agent_type || 'custom',
         expertCategory: agent.metadata?.category || '',
         isMeetingAssistant: agent.metadata?.is_meeting_assistant === true,

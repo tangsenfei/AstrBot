@@ -1,4 +1,8 @@
 {
+  "tabs": {
+    "general": "General",
+    "work": "Work Config"
+  },
   "network": {
     "title": "Network",
     "githubProxy": {

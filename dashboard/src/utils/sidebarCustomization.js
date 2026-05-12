@@ -1,5 +1,6 @@
 // Utility for managing sidebar customization in localStorage
 const STORAGE_KEY = 'astrbot_sidebar_customization';
+const STORAGE_VERSION = 'work-os-slimming-v2';
 
 /**
  * Get the customized sidebar configuration from localStorage
@@ -8,7 +9,15 @@ const STORAGE_KEY = 'astrbot_sidebar_customization';
 export function getSidebarCustomization() {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
-    return stored ? JSON.parse(stored) : null;
+    if (!stored) return null;
+
+    const parsed = JSON.parse(stored);
+    if (parsed?.version !== STORAGE_VERSION) {
+      localStorage.removeItem(STORAGE_KEY);
+      return null;
+    }
+
+    return parsed;
   } catch (error) {
     console.error('Error reading sidebar customization:', error);
     return null;
@@ -23,7 +32,11 @@ export function getSidebarCustomization() {
  */
 export function setSidebarCustomization(config) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      version: STORAGE_VERSION,
+      mainItems: Array.isArray(config?.mainItems) ? config.mainItems : [],
+      moreItems: Array.isArray(config?.moreItems) ? config.moreItems : []
+    }));
   } catch (error) {
     console.error('Error saving sidebar customization:', error);
   }

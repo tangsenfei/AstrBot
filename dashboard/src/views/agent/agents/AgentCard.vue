@@ -47,7 +47,7 @@
       </div>
 
       <p class="text-body-2 text-grey-darken-1 mb-3 description-text">
-        {{ agent.role || $t('agent.agents.card.noRole') }}
+        {{ agent.soul || $t('agent.agents.card.noSoul') }}
       </p>
 
       <div v-if="agent.provider_id || agent.model_name" class="d-flex align-center mb-2">

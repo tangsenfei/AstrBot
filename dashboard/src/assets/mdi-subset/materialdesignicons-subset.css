@@ -1,4 +1,4 @@
-/* Auto-generated MDI subset – 428 icons */
+/* Auto-generated MDI subset – 405 icons */
 /* Do not edit manually. Run: pnpm run subset-icons */
 
 @font-face {
@@ -44,12 +44,12 @@
   content: "\F0849";
 }
 
-.mdi-account-heart::before {
-  content: "\F0899";
+.mdi-account-hard-hat-outline::before {
+  content: "\F1A1F";
 }
 
-.mdi-account-question::before {
-  content: "\F0B59";
+.mdi-account-heart::before {
+  content: "\F0899";
 }
 
 .mdi-account-question-outline::before {
@@ -62,10 +62,6 @@
 
 .mdi-account-star::before {
   content: "\F0017";
-}
-
-.mdi-account-tie::before {
-  content: "\F0CE3";
 }
 
 .mdi-account-voice::before {
@@ -104,6 +100,10 @@
   content: "\F1257";
 }
 
+.mdi-archive::before {
+  content: "\F003C";
+}
+
 .mdi-arrow-down::before {
   content: "\F0045";
 }
@@ -130,10 +130,6 @@
 
 .mdi-arrow-up-bold::before {
   content: "\F0737";
-}
-
-.mdi-arrow-up-circle::before {
-  content: "\F0CE1";
 }
 
 .mdi-arrow-up-thin::before {
@@ -194,10 +190,6 @@
 
 .mdi-bullhorn::before {
   content: "\F00E6";
-}
-
-.mdi-bullseye-arrow::before {
-  content: "\F08C9";
 }
 
 .mdi-cached::before {
@@ -264,16 +256,8 @@
   content: "\F0128";
 }
 
-.mdi-chart-box::before {
-  content: "\F154D";
-}
-
 .mdi-chart-line::before {
   content: "\F012A";
-}
-
-.mdi-chart-pie::before {
-  content: "\F012B";
 }
 
 .mdi-chat::before {
@@ -368,10 +352,6 @@
   content: "\F09DF";
 }
 
-.mdi-clipboard::before {
-  content: "\F0147";
-}
-
 .mdi-clipboard-check::before {
   content: "\F014E";
 }
@@ -390,10 +370,6 @@
 
 .mdi-clipboard-text::before {
   content: "\F014D";
-}
-
-.mdi-clipboard-text-outline::before {
-  content: "\F0A38";
 }
 
 .mdi-clipboard-text-search-outline::before {
@@ -450,10 +426,6 @@
 
 .mdi-cogs::before {
   content: "\F08D6";
-}
-
-.mdi-comment-question::before {
-  content: "\F0817";
 }
 
 .mdi-comment-text-multiple::before {
@@ -692,10 +664,6 @@
   content: "\F021C";
 }
 
-.mdi-file-export::before {
-  content: "\F021D";
-}
-
 .mdi-file-music-outline::before {
   content: "\F0E2A";
 }
@@ -732,16 +700,8 @@
   content: "\F022D";
 }
 
-.mdi-filter::before {
-  content: "\F0232";
-}
-
 .mdi-filter-remove::before {
   content: "\F0234";
-}
-
-.mdi-fish::before {
-  content: "\F023A";
 }
 
 .mdi-fit-to-screen::before {
@@ -812,10 +772,6 @@
   content: "\F028C";
 }
 
-.mdi-frequently-asked-questions::before {
-  content: "\F0EB4";
-}
-
 .mdi-fullscreen::before {
   content: "\F0293";
 }
@@ -844,20 +800,8 @@
   content: "\F182D";
 }
 
-.mdi-hand-heart::before {
-  content: "\F10F1";
-}
-
-.mdi-hand-wave-outline::before {
-  content: "\F1822";
-}
-
 .mdi-handshake::before {
   content: "\F1218";
-}
-
-.mdi-hat-fedora::before {
-  content: "\F0BA4";
 }
 
 .mdi-head-cog::before {
@@ -886,10 +830,6 @@
 
 .mdi-help-circle-outline::before {
   content: "\F0625";
-}
-
-.mdi-history::before {
-  content: "\F02DA";
 }
 
 .mdi-home::before {
@@ -992,10 +932,6 @@
   content: "\F087E";
 }
 
-.mdi-lightbulb::before {
-  content: "\F0335";
-}
-
 .mdi-lightbulb-on::before {
   content: "\F06E8";
 }
@@ -1088,14 +1024,6 @@
   content: "\F0365";
 }
 
-.mdi-message-question::before {
-  content: "\F173A";
-}
-
-.mdi-message-reply::before {
-  content: "\F0367";
-}
-
 .mdi-message-text::before {
   content: "\F0369";
 }
@@ -1110,6 +1038,10 @@
 
 .mdi-microphone-message::before {
   content: "\F050A";
+}
+
+.mdi-microscope::before {
+  content: "\F0654";
 }
 
 .mdi-minus::before {
@@ -1146,10 +1078,6 @@
 
 .mdi-music-note-outline::before {
   content: "\F0F74";
-}
-
-.mdi-note-text-outline::before {
-  content: "\F11D7";
 }
 
 .mdi-numeric-1::before {
@@ -1208,8 +1136,8 @@
   content: "\F03E4";
 }
 
-.mdi-pause-circle::before {
-  content: "\F03E5";
+.mdi-pause-circle-outline::before {
+  content: "\F03E6";
 }
 
 .mdi-pencil::before {
@@ -1304,12 +1232,12 @@
   content: "\F0450";
 }
 
-.mdi-rename-box::before {
-  content: "\F0455";
+.mdi-reload::before {
+  content: "\F0453";
 }
 
-.mdi-replay::before {
-  content: "\F0459";
+.mdi-rename-box::before {
+  content: "\F0455";
 }
 
 .mdi-reply::before {
@@ -1360,16 +1288,8 @@
   content: "\F0467";
 }
 
-.mdi-rss::before {
-  content: "\F046B";
-}
-
 .mdi-ruler-square::before {
   content: "\F0CC2";
-}
-
-.mdi-run::before {
-  content: "\F070E";
 }
 
 .mdi-school::before {
@@ -1458,10 +1378,6 @@
 
 .mdi-sitemap-outline::before {
   content: "\F199C";
-}
-
-.mdi-skip-next::before {
-  content: "\F04AD";
 }
 
 .mdi-skip-next-circle-outline::before {
@@ -1592,14 +1508,6 @@
   content: "\F0519";
 }
 
-.mdi-timeline::before {
-  content: "\F0BD1";
-}
-
-.mdi-timeline-clock::before {
-  content: "\F11FB";
-}
-
 .mdi-timeline-clock-outline::before {
   content: "\F11FC";
 }
@@ -1634,6 +1542,10 @@
 
 .mdi-truck-delivery::before {
   content: "\F053E";
+}
+
+.mdi-tune-variant::before {
+  content: "\F1542";
 }
 
 .mdi-tune-vertical::before {
@@ -1672,12 +1584,12 @@
   content: "\F0560";
 }
 
-.mdi-video::before {
-  content: "\F0567";
+.mdi-video-box::before {
+  content: "\F00FD";
 }
 
-.mdi-view-dashboard::before {
-  content: "\F056E";
+.mdi-view-dashboard-outline::before {
+  content: "\F0A1D";
 }
 
 .mdi-view-grid::before {
@@ -1686,10 +1598,6 @@
 
 .mdi-volume-high::before {
   content: "\F057E";
-}
-
-.mdi-vote::before {
-  content: "\F0A1F";
 }
 
 .mdi-weather-night::before {

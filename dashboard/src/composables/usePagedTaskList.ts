@@ -70,9 +70,9 @@ export function usePagedTaskList<T extends { id: string }>(options: {
 
   function mergeItems(nextItems: T[]) {
     const byId = new Map(items.value.map(item => [item.id, item]));
-    const nextIds = new Set(nextItems.map(item => item.id));
+    const nextById = new Map(nextItems.map(item => [item.id, item]));
     items.value = [
-      ...items.value.map(item => (nextIds.has(item.id) ? { ...item, ...byId.get(item.id), ...nextItems.find(next => next.id === item.id) } : item)),
+      ...items.value.map(item => (nextById.has(item.id) ? { ...item, ...nextById.get(item.id)! } : item)),
       ...nextItems.filter(item => !byId.has(item.id)),
     ];
   }

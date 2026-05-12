@@ -4,12 +4,14 @@ Independent Meeting module used by the top-level Meeting tab. It deliberately
 does not reuse the legacy roundtables data model, but it reuses agents,
 LangGraph execution, shared tool execution, and HITL primitives.
 """
+
 from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Callable
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any
 
 from astrbot.core import logger
 
@@ -17,7 +19,6 @@ from ..models import Meeting, MeetingArtifact, MeetingEvent, MeetingStatus, Task
 from .agent_service import AgentService
 from .hitl_service import HITLService
 from .task_service import TaskService
-
 
 MEETING_ASSISTANT_ID = "agent_meeting_assistant"
 
@@ -101,8 +102,15 @@ class MeetingService:
             """,
             tuple(params + [page_size, (page - 1) * page_size]),
         ).fetchall()
+        hitl_cards_by_meeting = self._pending_hitl_cards_by_meeting()
         return {
-            "meetings": [self._enrich_meeting(self._row_to_meeting(dict(row)).to_dict()) for row in rows],
+            "meetings": [
+                self._enrich_meeting(
+                    self._row_to_meeting(dict(row)).to_dict(),
+                    cards_by_meeting=hitl_cards_by_meeting,
+                )
+                for row in rows
+            ],
             "pagination": {
                 "page": page,
                 "page_size": page_size,
@@ -112,7 +120,11 @@ class MeetingService:
         }
 
     def list_meeting_summaries(self, meeting_ids: list[str]) -> list[dict[str, Any]]:
-        ids = [str(meeting_id).strip() for meeting_id in meeting_ids if str(meeting_id).strip()]
+        ids = [
+            str(meeting_id).strip()
+            for meeting_id in meeting_ids
+            if str(meeting_id).strip()
+        ]
         if not ids:
             return []
         placeholders = ",".join("?" for _ in ids)
@@ -124,8 +136,12 @@ class MeetingService:
             """,
             tuple(ids),
         ).fetchall()
+        hitl_cards_by_meeting = self._pending_hitl_cards_by_meeting()
         by_id = {
-            row["id"]: self._enrich_meeting(self._row_to_meeting(dict(row)).to_dict())
+            row["id"]: self._enrich_meeting(
+                self._row_to_meeting(dict(row)).to_dict(),
+                cards_by_meeting=hitl_cards_by_meeting,
+            )
             for row in rows
         }
         return [by_id[meeting_id] for meeting_id in ids if meeting_id in by_id]
@@ -181,15 +197,27 @@ class MeetingService:
             raise ValueError("会议进行中不可编辑基础配置")
 
         updates: dict[str, Any] = {"updated_at": datetime.now().isoformat()}
-        for key in ("name", "goal", "meeting_type", "expected_output", "participants", "materials", "settings"):
+        for key in (
+            "name",
+            "goal",
+            "meeting_type",
+            "expected_output",
+            "participants",
+            "materials",
+            "settings",
+        ):
             if key in data:
                 updates[key] = data[key]
-        if "meeting_type" in updates and updates["meeting_type"] not in {item["type"] for item in MEETING_TYPES}:
+        if "meeting_type" in updates and updates["meeting_type"] not in {
+            item["type"] for item in MEETING_TYPES
+        }:
             updates["meeting_type"] = "solution_design"
         self.db.update("meetings", updates, where="id = ?", where_params=(meeting_id,))
         return self.get_meeting(meeting_id)
 
-    def get_meeting_summary(self, meeting_id: str, *, enrich: bool = True) -> dict[str, Any]:
+    def get_meeting_summary(
+        self, meeting_id: str, *, enrich: bool = True
+    ) -> dict[str, Any]:
         row = self.db.select_one("meetings", where="id = ?", where_params=(meeting_id,))
         if not row:
             raise ValueError(f"会议 '{meeting_id}' 不存在")
@@ -213,17 +241,27 @@ class MeetingService:
             "updated_at": row.get("updated_at"),
         }
 
-    def get_meeting(self, meeting_id: str, *, include_events: bool = False, events_limit: int = 500) -> dict[str, Any]:
+    def get_meeting(
+        self, meeting_id: str, *, include_events: bool = False, events_limit: int = 500
+    ) -> dict[str, Any]:
         data = self.get_meeting_summary(meeting_id)
         data["artifacts"] = self.list_artifacts(meeting_id)
         if include_events:
             data["events"] = self.list_events(meeting_id, limit=events_limit, tail=True)
         return data
 
-    async def start_meeting(self, meeting_id: str, event_sink: Callable[[dict[str, Any]], None] | None = None) -> dict[str, Any]:
+    async def start_meeting(
+        self,
+        meeting_id: str,
+        event_sink: Callable[[dict[str, Any]], None] | None = None,
+    ) -> dict[str, Any]:
         meeting = self.get_meeting_summary(meeting_id)
         if meeting["status"] == MeetingStatus.RUNNING.value:
-            return {"meeting_id": meeting_id, "started": False, "message": "会议已在进行中"}
+            return {
+                "meeting_id": meeting_id,
+                "started": False,
+                "message": "会议已在进行中",
+            }
 
         assistant = self.agent_service.ensure_meeting_assistant()
         if assistant is None:
@@ -287,7 +325,11 @@ class MeetingService:
             assistant = self.agent_service.get_agent(meeting["assistant_agent_id"])
             if assistant is None:
                 raise ValueError("会议助手不存在")
-            participants = [agent for agent in self._get_agents(meeting["participants"]) if agent.id != assistant.id]
+            participants = [
+                agent
+                for agent in self._get_agents(meeting["participants"])
+                if agent.id != assistant.id
+            ]
             provider = self._resolve_provider(assistant.provider_id)
 
             def stream_writer(event: StreamEvent):
@@ -317,7 +359,7 @@ class MeetingService:
                     {
                         "id": agent.id,
                         "name": agent.name,
-                        "role": agent.role,
+                        "role": agent.name,
                         "system_prompt": self._participant_prompt(agent, meeting),
                         "provider_id": agent.provider_id,
                     }
@@ -342,14 +384,21 @@ class MeetingService:
             graph = build_meeting_graph(strategy=meeting["meeting_type"])
             final_state = await graph.ainvoke(
                 state_input,
-                config={"configurable": {"thread_id": f"meeting:{meeting_id}", "run_ctx": run_ctx}},
+                config={
+                    "configurable": {
+                        "thread_id": f"meeting:{meeting_id}",
+                        "run_ctx": run_ctx,
+                    }
+                },
             )
             minutes = final_state.get("final_minutes", "") if final_state else ""
             report = final_state.get("deliverable_output", "") if final_state else ""
             result = {
                 "minutes": minutes,
                 "report": report,
-                "round_results": final_state.get("round_results", []) if final_state else [],
+                "round_results": final_state.get("round_results", [])
+                if final_state
+                else [],
                 "completed_at": datetime.now().isoformat(),
             }
             if minutes:
@@ -418,7 +467,14 @@ class MeetingService:
                 where="id = ?",
                 where_params=(task_id,),
             )
-            self.add_event(meeting_id, "error", role="system", speaker="会议助理", content=str(e), payload={"message": str(e)})
+            self.add_event(
+                meeting_id,
+                "error",
+                role="system",
+                speaker="会议助理",
+                content=str(e),
+                payload={"message": str(e)},
+            )
 
     def submit_input(self, meeting_id: str, text: str) -> dict[str, Any]:
         meeting = self.get_meeting_status(meeting_id)
@@ -435,7 +491,9 @@ class MeetingService:
         )
         return event
 
-    async def respond_hitl(self, meeting_id: str, data: dict[str, Any]) -> dict[str, Any]:
+    async def respond_hitl(
+        self, meeting_id: str, data: dict[str, Any]
+    ) -> dict[str, Any]:
         interaction_id = str(data.get("interaction_id") or "")
         if not interaction_id:
             raise ValueError("缺少 interaction_id")
@@ -451,7 +509,11 @@ class MeetingService:
             MeetingStatus.FAILED.value,
             MeetingStatus.CANCELLED.value,
         }:
-            next_status = MeetingStatus.CANCELLED.value if result.get("action_key") == "cancel" else MeetingStatus.RUNNING.value
+            next_status = (
+                MeetingStatus.CANCELLED.value
+                if result.get("action_key") == "cancel"
+                else MeetingStatus.RUNNING.value
+            )
             self.db.update(
                 "meetings",
                 {"status": next_status, "updated_at": datetime.now().isoformat()},
@@ -462,7 +524,10 @@ class MeetingService:
 
     def continue_meeting(self, meeting_id: str, data: dict[str, Any]) -> dict[str, Any]:
         meeting = self.get_meeting(meeting_id)
-        if meeting["status"] not in {MeetingStatus.COMPLETED.value, MeetingStatus.FAILED.value}:
+        if meeting["status"] not in {
+            MeetingStatus.COMPLETED.value,
+            MeetingStatus.FAILED.value,
+        }:
             raise ValueError("只有已结束或失败的会议可以续会")
         review = str(data.get("review_comment") or "").strip()
         extra_topic = str(data.get("additional_topic") or "").strip()
@@ -471,11 +536,13 @@ class MeetingService:
         settings = dict(meeting.get("settings") or {})
         settings["rounds"] = max(1, int(data.get("additional_rounds") or 1))
         continuations = list(settings.get("continuations") or [])
-        continuations.append({
-            "review_comment": review,
-            "additional_topic": extra_topic,
-            "created_at": datetime.now().isoformat(),
-        })
+        continuations.append(
+            {
+                "review_comment": review,
+                "additional_topic": extra_topic,
+                "created_at": datetime.now().isoformat(),
+            }
+        )
         settings["continuations"] = continuations
         goal = meeting["goal"]
         if extra_topic:
@@ -501,7 +568,8 @@ class MeetingService:
             "user_message",
             role="user",
             speaker="用户",
-            content=f"续会意见：{review or '无'}" + (f"\n追加议题：{extra_topic}" if extra_topic else ""),
+            content=f"续会意见：{review or '无'}"
+            + (f"\n追加议题：{extra_topic}" if extra_topic else ""),
             payload={"continuation": True},
         )
         return self.get_meeting(meeting_id)
@@ -546,7 +614,14 @@ class MeetingService:
         )
         return [self._row_to_artifact(row).to_dict() for row in rows]
 
-    def add_artifact(self, meeting_id: str, title: str, artifact_type: str, content: str, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+    def add_artifact(
+        self,
+        meeting_id: str,
+        title: str,
+        artifact_type: str,
+        content: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         row = {
             "id": f"mart_{uuid.uuid4().hex[:12]}",
             "meeting_id": meeting_id,
@@ -557,7 +632,14 @@ class MeetingService:
             "created_at": datetime.now().isoformat(),
         }
         self.db.insert("meeting_artifacts", row)
-        self.add_event(meeting_id, "artifact", role="assistant", speaker="会议助理", content=title, payload=row)
+        self.add_event(
+            meeting_id,
+            "artifact",
+            role="assistant",
+            speaker="会议助理",
+            content=title,
+            payload=row,
+        )
         return self._row_to_artifact(row).to_dict()
 
     def add_event(
@@ -588,7 +670,11 @@ class MeetingService:
     def _handle_graph_event(self, meeting_id: str, event: dict[str, Any]) -> None:
         data = dict(event.get("data") or {})
         event_type = str(event.get("event") or data.get("event") or "log")
-        speaker = data.get("agent_name") or data.get("speaker") or ("会议助理" if event_type != "user_message" else "用户")
+        speaker = (
+            data.get("agent_name")
+            or data.get("speaker")
+            or ("会议助理" if event_type != "user_message" else "用户")
+        )
         current_round = int(data.get("round") or 0)
 
         if event_type in {"text_delta", "reasoning"}:
@@ -598,14 +684,22 @@ class MeetingService:
             input_t = int(data.get("input") or 0)
             output_t = int(data.get("output") or 0)
             total_t = int(data.get("total") or input_t + output_t)
-            meeting = self.db.select_one("meetings", where="id = ?", where_params=(meeting_id,))
+            meeting = self.db.select_one(
+                "meetings", where="id = ?", where_params=(meeting_id,)
+            )
             if meeting:
-                self.db.update("meetings", {
-                    "input_tokens": int(meeting.get("input_tokens") or 0) + input_t,
-                    "output_tokens": int(meeting.get("output_tokens") or 0) + output_t,
-                    "total_tokens": int(meeting.get("total_tokens") or 0) + total_t,
-                    "updated_at": datetime.now().isoformat(),
-                }, where="id = ?", where_params=(meeting_id,))
+                self.db.update(
+                    "meetings",
+                    {
+                        "input_tokens": int(meeting.get("input_tokens") or 0) + input_t,
+                        "output_tokens": int(meeting.get("output_tokens") or 0)
+                        + output_t,
+                        "total_tokens": int(meeting.get("total_tokens") or 0) + total_t,
+                        "updated_at": datetime.now().isoformat(),
+                    },
+                    where="id = ?",
+                    where_params=(meeting_id,),
+                )
             return
 
         content = (
@@ -643,7 +737,9 @@ class MeetingService:
             updates["status"] = MeetingStatus.WAITING_FEEDBACK.value
         self.db.update("meetings", updates, where="id = ?", where_params=(meeting_id,))
 
-    def recent_user_inputs(self, meeting_id: str, after_seq: int = 0) -> list[dict[str, Any]]:
+    def recent_user_inputs(
+        self, meeting_id: str, after_seq: int = 0
+    ) -> list[dict[str, Any]]:
         rows = self.db.execute(
             """
             SELECT rowid AS seq, *
@@ -660,8 +756,51 @@ class MeetingService:
             result.append(item)
         return result
 
-    def _enrich_meeting(self, meeting: dict[str, Any]) -> dict[str, Any]:
-        meeting["type_info"] = next((item for item in MEETING_TYPES if item["type"] == meeting.get("meeting_type")), None)
+    def _pending_hitl_cards_by_meeting(self) -> dict[str, list[dict[str, Any]]]:
+        cards_by_meeting: dict[str, list[dict[str, Any]]] = {}
+        try:
+            for card in HITLService(self.db).list_pending():
+                meeting_id = (card.get("meta") or {}).get("meeting_id")
+                if meeting_id:
+                    cards_by_meeting.setdefault(meeting_id, []).append(card)
+        except Exception:
+            pass
+        try:
+            from astrbot.core.langgraph.interaction_manager import (
+                get_interaction_manager,
+            )
+
+            for state in get_interaction_manager().get_pending_interactions():
+                card = state.card.to_dict()
+                meeting_id = card.get("meta", {}).get("meeting_id")
+                if not meeting_id:
+                    continue
+                if any(
+                    existing.get("interaction_id") == card.get("interaction_id")
+                    for existing in cards_by_meeting.get(meeting_id, [])
+                ):
+                    continue
+                card["thread_id"] = state.thread_id
+                card["channel"] = state.channel
+                cards_by_meeting.setdefault(meeting_id, []).append(card)
+        except Exception:
+            pass
+        return cards_by_meeting
+
+    def _enrich_meeting(
+        self,
+        meeting: dict[str, Any],
+        *,
+        cards_by_meeting: dict[str, list[dict[str, Any]]] | None = None,
+    ) -> dict[str, Any]:
+        meeting["type_info"] = next(
+            (
+                item
+                for item in MEETING_TYPES
+                if item["type"] == meeting.get("meeting_type")
+            ),
+            None,
+        )
         meeting["has_hitl"] = False
         if meeting.get("status") in {
             MeetingStatus.COMPLETED.value,
@@ -669,32 +808,26 @@ class MeetingService:
             MeetingStatus.CANCELLED.value,
         }:
             return meeting
-        try:
-            for card in HITLService(self.db).list_pending():
-                meta = card.get("meta") or {}
-                if meta.get("meeting_id") == meeting.get("id"):
-                    meeting["has_hitl"] = True
-                    meeting["active_hitl"] = card
-                    return meeting
-        except Exception:
-            pass
-        try:
-            from astrbot.core.langgraph.interaction_manager import get_interaction_manager
-
-            for state in get_interaction_manager().get_pending_interactions():
-                card = state.card.to_dict()
-                if card.get("meta", {}).get("meeting_id") == meeting.get("id"):
-                    meeting["has_hitl"] = True
-                    meeting["active_hitl"] = card
-                    break
-        except Exception:
-            pass
-        if not meeting.get("has_hitl") and meeting.get("status") == MeetingStatus.WAITING_FEEDBACK.value:
+        hitl_cards = (
+            (cards_by_meeting or {}).get(meeting.get("id", ""), [])
+            if cards_by_meeting is not None
+            else self._pending_hitl_cards_by_meeting().get(meeting.get("id", ""), [])
+        )
+        if hitl_cards:
+            meeting["has_hitl"] = True
+            meeting["active_hitl"] = hitl_cards[0]
+        if (
+            not meeting.get("has_hitl")
+            and meeting.get("status") == MeetingStatus.WAITING_FEEDBACK.value
+        ):
             meeting["status"] = MeetingStatus.RUNNING.value
             try:
                 self.db.update(
                     "meetings",
-                    {"status": MeetingStatus.RUNNING.value, "updated_at": datetime.now().isoformat()},
+                    {
+                        "status": MeetingStatus.RUNNING.value,
+                        "updated_at": datetime.now().isoformat(),
+                    },
                     where="id = ?",
                     where_params=(meeting.get("id"),),
                 )
@@ -703,26 +836,37 @@ class MeetingService:
         return meeting
 
     def _assistant_prompt(self, assistant, meeting: dict[str, Any]) -> str:
-        type_info = next((item for item in MEETING_TYPES if item["type"] == meeting.get("meeting_type")), MEETING_TYPES[2])
-        return "\n".join([
-            assistant.backstory or "",
-            "你是 NiceBot Meeting 的唯一会议助理和主持人。",
-            f"会议类型：{type_info['name']}。",
-            f"主持重点：{type_info['description']}",
-            f"目标产出：{type_info['output']}。",
-            "你必须按四个阶段推进：会议目标确定、会议材料准备、会议开展、会议结束。",
-            "遇到关键信息缺失、目标冲突、决策风险或用户需要确认的事项时，发起人工确认。",
-            "用户可能在会议室随时发言，你需要把这些发言纳入后续主持、追问、总结和报告。",
-        ])
+        type_info = next(
+            (
+                item
+                for item in MEETING_TYPES
+                if item["type"] == meeting.get("meeting_type")
+            ),
+            MEETING_TYPES[2],
+        )
+        return "\n".join(
+            [
+                assistant.soul or "",
+                "你是 NiceBot Meeting 的唯一会议助理和主持人。",
+                f"会议类型：{type_info['name']}。",
+                f"主持重点：{type_info['description']}",
+                f"目标产出：{type_info['output']}。",
+                "你必须按四个阶段推进：会议目标确定、会议材料准备、会议开展、会议结束。",
+                "遇到关键信息缺失、目标冲突、决策风险或用户需要确认的事项时，发起人工确认。",
+                "用户可能在会议室随时发言，你需要把这些发言纳入后续主持、追问、总结和报告。",
+            ]
+        )
 
     def _participant_prompt(self, agent, meeting: dict[str, Any]) -> str:
-        return "\n".join([
-            f"你正在参加一场由会议助理主持的虚拟会议。会议目标：{meeting['goal']}",
-            f"预期产出：{meeting.get('expected_output') or '由会议助理根据会议类型确定'}",
-            f"你的角色：{agent.role or agent.name}",
-            agent.backstory or "",
-            "请围绕会议目标提供专业观点，回应前文讨论，避免偏题。",
-        ])
+        return "\n".join(
+            [
+                f"你正在参加一场由会议助理主持的虚拟会议。会议目标：{meeting['goal']}",
+                f"预期产出：{meeting.get('expected_output') or '由会议助理根据会议类型确定'}",
+                f"你的角色：{agent.name}",
+                agent.soul or "",
+                "请围绕会议目标提供专业观点，回应前文讨论，避免偏题。",
+            ]
+        )
 
     def _get_agents(self, agent_ids: list[str]):
         agents = []
@@ -774,8 +918,12 @@ class MeetingService:
             output_tokens=int(row.get("output_tokens") or 0),
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
-            started_at=datetime.fromisoformat(row["started_at"]) if row.get("started_at") else None,
-            completed_at=datetime.fromisoformat(row["completed_at"]) if row.get("completed_at") else None,
+            started_at=datetime.fromisoformat(row["started_at"])
+            if row.get("started_at")
+            else None,
+            completed_at=datetime.fromisoformat(row["completed_at"])
+            if row.get("completed_at")
+            else None,
         )
 
     def _row_to_event(self, row: dict[str, Any]) -> MeetingEvent:

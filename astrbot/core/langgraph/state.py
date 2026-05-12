@@ -130,11 +130,13 @@ class TaskStatus(str, Enum):
     CREATED = "created"
     DISPATCHED = "dispatched"
     RUNNING = "running"
+    PAUSE_REQUESTED = "pause_requested"
     PAUSED = "paused"
     RESUMING = "resuming"
     WAITING_FEEDBACK = "waiting_feedback"
     DONE = "done"
     FAILED = "failed"
+    RETRYABLE_FAILED = "retryable_failed"
     CANCELLED = "cancelled"
 
 

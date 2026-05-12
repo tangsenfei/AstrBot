@@ -140,7 +140,7 @@ class GenericAgentRuntimeService:
             "updated_at": now,
         }
         self.db.insert("generic_agent_runs", row)
-        self._insert_event(run_id, "queued", "已加入 GenericAgent 队列", row)
+        self._insert_event(run_id, "queued", "已加入智能RPA队列", row)
         self._refresh_queue_positions()
         self._ensure_worker()
         return self.get_run(run_id)
@@ -186,7 +186,9 @@ class GenericAgentRuntimeService:
             params.append(source)
         keyword = str(q or "").strip()
         if keyword:
-            conditions.append("(goal LIKE ? OR summary LIKE ? OR error LIKE ? OR constraints LIKE ? OR workspace_path LIKE ?)")
+            conditions.append(
+                "(goal LIKE ? OR summary LIKE ? OR error LIKE ? OR constraints LIKE ? OR workspace_path LIKE ?)"
+            )
             params.extend([f"%{keyword}%"] * 5)
         where = " AND ".join(conditions)
         page = max(1, int(page or 1))
@@ -383,8 +385,7 @@ class GenericAgentRuntimeService:
         skill = skill_service.create_skill(
             {
                 "name": review["title"],
-                "description": review.get("description")
-                or "GenericAgent 自进化沉淀技能",
+                "description": review.get("description") or "智能RPA自进化沉淀技能",
                 "source": "genericagent",
                 "category": "genericagent",
                 "disclosure_level": "instructions",
@@ -480,9 +481,7 @@ class GenericAgentRuntimeService:
             runtime_dir = self._prepare_runtime_copy(config)
             mykey = self._write_mykey(runtime_dir, config)
             if not mykey:
-                raise ValueError(
-                    "GenericAgent LLM 配置为空，请先在工作台配置 llm_config"
-                )
+                raise ValueError("智能RPA LLM 配置为空，请先在工作台配置 llm_config")
             self._write_filtered_tool_schema(runtime_dir)
             output_text = await self._run_generic_agent_process(
                 run_id, runtime_dir, run, config
@@ -504,7 +503,11 @@ class GenericAgentRuntimeService:
                 final_output,
                 include_final_output=status == "completed",
             )
-            summary = "" if error_message else self._extract_summary(final_output or output_text)
+            summary = (
+                ""
+                if error_message
+                else self._extract_summary(final_output or output_text)
+            )
             self._update_run(
                 run_id,
                 {
@@ -573,9 +576,7 @@ class GenericAgentRuntimeService:
             output_path = runtime_dir / "temp" / run_id / "output.txt"
             output_text = ""
             if output_path.exists():
-                output_text = output_path.read_text(
-                    encoding="utf-8", errors="replace"
-                )
+                output_text = output_path.read_text(encoding="utf-8", errors="replace")
 
             if output_text and self._looks_like_completed_task_output(output_text):
                 self._complete_interrupted_run_from_output(
@@ -583,10 +584,9 @@ class GenericAgentRuntimeService:
                 )
                 continue
 
+            message = "智能RPA进程已结束，但未检测到最终输出"
             if not pid:
-                continue
-
-            message = "GenericAgent 进程已结束，但未检测到最终输出"
+                message = "智能RPA运行进程状态丢失，已标记为失败"
             self._update_run(
                 run_id,
                 {
@@ -597,7 +597,9 @@ class GenericAgentRuntimeService:
                     "completed_at": self._now(),
                 },
             )
-            self._insert_event(run_id, "error", "恢复中断运行失败", {"message": message})
+            self._insert_event(
+                run_id, "error", "恢复中断运行失败", {"message": message}
+            )
 
         self._refresh_queue_positions()
 
@@ -614,7 +616,9 @@ class GenericAgentRuntimeService:
             final_output,
             include_final_output=status == "completed",
         )
-        summary = "" if error_message else self._extract_summary(final_output or output_text)
+        summary = (
+            "" if error_message else self._extract_summary(final_output or output_text)
+        )
         self._update_run(
             run_id,
             {
@@ -730,9 +734,7 @@ class GenericAgentRuntimeService:
         self._current_process = process
         self._current_run_id = run_id
         self._update_run(run_id, {"pid": process.pid, "progress": 10})
-        self._insert_event(
-            run_id, "process", "GenericAgent 进程已启动", {"pid": process.pid}
-        )
+        self._insert_event(run_id, "process", "智能RPA进程已启动", {"pid": process.pid})
 
         start = asyncio.get_running_loop().time()
         max_seconds = int(config.get("max_run_seconds") or 1800)
@@ -781,7 +783,7 @@ class GenericAgentRuntimeService:
                         self._insert_event(
                             run_id,
                             "process",
-                            "GenericAgent 已输出最终结果",
+                            "智能RPA已输出最终结果",
                             {},
                         )
                         self._update_run(run_id, {"progress": 95})
@@ -816,9 +818,7 @@ class GenericAgentRuntimeService:
             and not completed_output
         ):
             stderr_text = "".join(stdout_buffer)[-4000:]
-            raise ValueError(
-                stderr_text or f"GenericAgent 退出码: {process.returncode}"
-            )
+            raise ValueError(stderr_text or f"智能RPA退出码: {process.returncode}")
         return final_output or "".join(stdout_buffer)
 
     def _record_agent_delta(self, run_id: str, delta: str) -> None:
@@ -899,7 +899,7 @@ class GenericAgentRuntimeService:
             if provider_cfg:
                 return provider_cfg
             raise ValueError(
-                f"无法从 NiceBot Provider '{llm_config.get('provider_id')}' 生成 GenericAgent LLM 配置，"
+                f"无法从 NiceBot Provider '{llm_config.get('provider_id')}' 生成智能RPA LLM 配置，"
                 "请检查该 Provider 是否启用，并且包含 key、api_base 和 model。"
             )
 
@@ -938,8 +938,10 @@ class GenericAgentRuntimeService:
             session["apibase"] = session.pop("base_url")
         if session.get("model"):
             session["model"] = self._scalar_text(session["model"])
-        if session and not all(session.get(key) for key in ("apikey", "apibase", "model")):
-            raise ValueError("GenericAgent LLM 配置缺少 apikey、apibase 或 model")
+        if session and not all(
+            session.get(key) for key in ("apikey", "apibase", "model")
+        ):
+            raise ValueError("智能RPA LLM 配置缺少 apikey、apibase 或 model")
         return {session_type: session} if session else {}
 
     def _provider_config_to_generic_agent(
@@ -1037,7 +1039,7 @@ class GenericAgentRuntimeService:
         )
         constraints = run.get("constraints") or "无额外约束"
         return (
-            "你是 NiceBot 内置的 GenericAgent OS 操作专家。请在当前工作目录中完成任务。\n\n"
+            "你是 NiceBot 内置的智能RPA OS 操作专家。请在当前工作目录中完成任务。\n\n"
             f"目标:\n{run['goal']}\n\n"
             f"约束:\n{constraints}\n\n"
             f"期望产物:\n{expected_text}\n\n"
@@ -1065,10 +1067,10 @@ class GenericAgentRuntimeService:
                     )
                     artifacts.append(
                         {
-                            "name": "GenericAgent 最终输出",
+                            "name": "智能RPA最终输出",
                             "path": str(path),
                             "size": path.stat().st_size,
-                            "summary": "GenericAgent 的最终回复",
+                            "summary": "智能RPA的最终回复",
                             "artifact_type": "final_output",
                             "content": output_content[:60000],
                         }
@@ -1106,14 +1108,14 @@ class GenericAgentRuntimeService:
             if not content.strip():
                 continue
             review_id = f"gasr_{uuid.uuid4().hex[:12]}"
-            title = f"GenericAgent 经验: {path.stem}"
+            title = f"智能RPA经验: {path.stem}"
             self.db.insert(
                 "generic_agent_skill_reviews",
                 {
                     "id": review_id,
                     "run_id": run_id,
                     "title": title[:120],
-                    "description": "GenericAgent 在任务完成后更新的记忆/技能文件",
+                    "description": "智能RPA在任务完成后更新的记忆/技能文件",
                     "content": content[:20000],
                     "source_path": str(path),
                     "status": "pending",
@@ -1135,7 +1137,7 @@ class GenericAgentRuntimeService:
         cleaned = re.sub(r"<summary>|</summary>", "", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"```.*?```", "", cleaned, flags=re.DOTALL)
         cleaned = re.sub(r"\s+", " ", cleaned).strip()
-        return cleaned[:600] or "GenericAgent 任务已结束"
+        return cleaned[:600] or "智能RPA任务已结束"
 
     @classmethod
     def _classify_final_output_error(cls, text: str) -> str:
@@ -1143,7 +1145,7 @@ class GenericAgentRuntimeService:
             return ""
         lower = (text or "").lower()
         if "connectionerror" in lower or "apiconnectionerror" in lower:
-            return "LLM 连接失败：无法连接到模型服务，请检查 GenericAgent Provider 的 endpoint、网络或代理配置。"
+            return "LLM 连接失败：无法连接到模型服务，请检查智能RPA Provider 的 endpoint、网络或代理配置。"
         if "timeout" in lower:
             return "LLM 请求超时：模型服务长时间未响应，请检查网络、代理或 Provider 超时配置。"
         if "http 401" in lower or "unauthorized" in lower:
@@ -1155,7 +1157,7 @@ class GenericAgentRuntimeService:
         if "http 5" in lower:
             return "LLM 服务端错误：Provider 暂时不可用，请稍后重试或切换模型。"
         if "!!!error:" in lower:
-            return "LLM 调用失败：GenericAgent 未得到有效模型输出，请检查 Provider 配置。"
+            return "LLM 调用失败：智能RPA未得到有效模型输出，请检查 Provider 配置。"
         return ""
 
     @staticmethod
@@ -1328,10 +1330,13 @@ class GenericAgentRuntimeService:
         path = str(artifact.get("path") or "")
         is_final = (
             artifact_type == "final_output"
-            or artifact.get("name") == "GenericAgent 最终输出"
+            or artifact.get("name") in {"智能RPA最终输出", "GenericAgent 最终输出"}
             or re.search(r"(^|[\\/])output\.txt$", path, re.IGNORECASE)
         )
-        return bool(is_final and cls._is_error_only_final_output(str(artifact.get("content") or "")))
+        return bool(
+            is_final
+            and cls._is_error_only_final_output(str(artifact.get("content") or ""))
+        )
 
     @staticmethod
     def _final_output_from_run_artifacts(run: dict[str, Any]) -> str:
@@ -1339,7 +1344,10 @@ class GenericAgentRuntimeService:
             if not isinstance(artifact, dict):
                 continue
             artifact_type = artifact.get("artifact_type") or artifact.get("type")
-            if artifact_type == "final_output" or artifact.get("name") == "GenericAgent 最终输出":
+            if artifact_type == "final_output" or artifact.get("name") in {
+                "智能RPA最终输出",
+                "GenericAgent 最终输出",
+            }:
                 return str(artifact.get("content") or "")
         return ""
 
@@ -1349,7 +1357,9 @@ class GenericAgentRuntimeService:
         provider_config: dict[str, Any] = {}
         if hasattr(self.context, "get_provider_by_id"):
             provider = self.context.get_provider_by_id(provider_id)
-            provider_config = getattr(provider, "provider_config", {}) if provider else {}
+            provider_config = (
+                getattr(provider, "provider_config", {}) if provider else {}
+            )
         if hasattr(self.context, "provider_manager"):
             manager_config = (
                 self.context.provider_manager.get_provider_config_by_id(
@@ -1524,7 +1534,12 @@ class GenericAgentRuntimeService:
         text = line.strip()
         if not text:
             return False
-        if text in {"### [WORKING MEMORY]", "<history>", "</history>", "code run output:"}:
+        if text in {
+            "### [WORKING MEMORY]",
+            "<history>",
+            "</history>",
+            "code run output:",
+        }:
             return False
         if re.match(r"^Current turn:\s*\d+", text):
             return False

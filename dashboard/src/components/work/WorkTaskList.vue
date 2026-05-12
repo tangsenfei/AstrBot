@@ -13,6 +13,12 @@
             <span>{{ statusLabel(task.status) }}</span>
           </span>
           <span class="task-name">{{ task.name }}</span>
+          <span class="task-mode-badge" :class="`mode-${taskMode(task)}`">
+            <v-icon :icon="taskModeIcon(taskMode(task))" size="15" />
+            <v-tooltip activator="parent" location="top">
+              {{ taskModeLabel(taskMode(task)) }}
+            </v-tooltip>
+          </span>
           <span class="task-top-time">{{ formatCreatedTime(task.created_at) }}</span>
           <v-chip v-if="needsHuman(task)" color="warning" size="x-small" variant="flat">
             HITL
@@ -84,6 +90,7 @@ function statusLabel(status: string) {
   const map: Record<string, string> = {
     pending: '等待中',
     running: '执行中',
+    pause_requested: '暂停中',
     paused: '已暂停',
     waiting_feedback: '等待确认',
     completed: '已完成',
@@ -97,6 +104,8 @@ function statusColor(status: string) {
   const map: Record<string, string> = {
     pending: 'grey',
     running: 'primary',
+    pause_requested: 'warning',
+    paused: 'warning',
     waiting_feedback: 'warning',
     completed: 'success',
     failed: 'error',
@@ -109,12 +118,37 @@ function statusIcon(status: string) {
   const map: Record<string, string> = {
     pending: 'mdi-clock-outline',
     running: 'mdi-progress-clock',
+    pause_requested: 'mdi-pause-circle-outline',
+    paused: 'mdi-pause-circle-outline',
     waiting_feedback: 'mdi-account-question-outline',
     completed: 'mdi-check-circle-outline',
     failed: 'mdi-alert-circle-outline',
     cancelled: 'mdi-cancel',
   };
   return map[status] || 'mdi-circle-outline';
+}
+
+function taskMode(task: any) {
+  const mode = task?.task_mode || task?.plan_config?.task_mode || 'normal';
+  return ['quick', 'normal', 'deep'].includes(mode) ? mode : 'normal';
+}
+
+function taskModeLabel(mode: string) {
+  const map: Record<string, string> = {
+    quick: '快速',
+    normal: '常规',
+    deep: '深度',
+  };
+  return map[mode] || '常规';
+}
+
+function taskModeIcon(mode: string) {
+  const map: Record<string, string> = {
+    quick: 'mdi-lightning-bolt',
+    normal: 'mdi-tune-variant',
+    deep: 'mdi-microscope',
+  };
+  return map[mode] || 'mdi-tune-variant';
 }
 
 function taskKindLabel(kind: string) {
@@ -239,6 +273,12 @@ function formatDuration(started_at: string, completed_at: string) {
   background: rgba(var(--v-theme-warning), 0.12);
 }
 
+.task-status-badge.status-pause_requested,
+.task-status-badge.status-paused {
+  color: rgb(var(--v-theme-warning));
+  background: rgba(var(--v-theme-warning), 0.12);
+}
+
 .task-status-badge.status-completed {
   color: rgb(var(--v-theme-success));
   background: rgba(var(--v-theme-success), 0.1);
@@ -259,7 +299,29 @@ function formatDuration(started_at: string, completed_at: string) {
   font-family: 'Courier New', monospace;
   font-size: 11px;
   color: rgba(var(--v-theme-on-surface), 0.48);
+}
+
+.task-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  flex-shrink: 0;
   margin-left: auto;
+  color: rgb(var(--v-theme-primary));
+  background: rgba(var(--v-theme-primary), 0.08);
+}
+
+.task-mode-badge.mode-quick {
+  color: rgb(var(--v-theme-warning));
+  background: rgba(var(--v-theme-warning), 0.12);
+}
+
+.task-mode-badge.mode-deep {
+  color: rgb(var(--v-theme-info));
+  background: rgba(var(--v-theme-info), 0.12);
 }
 
 .task-name {

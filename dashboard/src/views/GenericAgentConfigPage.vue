@@ -7,7 +7,7 @@
         </div>
         <div>
           <div class="eyebrow">OS Agent</div>
-          <h1>GenericAgent 配置</h1>
+          <h1>智能RPA 配置</h1>
           <p>作为 NiceBot 内置 OS 操作专家运行，统一管理模型、工具权限、技能审核和集成状态。</p>
         </div>
       </div>
@@ -55,7 +55,7 @@
       <div class="status-cell">
         <span>模型健康</span>
         <strong>{{ llmHealthLabel(status?.llm_health) }}</strong>
-        <small v-if="status?.last_llm_error">{{ status.last_llm_error }}</small>
+        <small v-if="status?.last_llm_error">{{ smartRpaDisplayText(status.last_llm_error) }}</small>
       </div>
     </section>
 
@@ -64,7 +64,7 @@
         <div class="panel-heading">
           <div>
             <h2>LLM Provider</h2>
-            <p>只选择 NiceBot 已配置 Provider 和模型，运行时由后端生成 GenericAgent 所需配置。</p>
+            <p>只选择 NiceBot 已配置 Provider 和模型，运行时由后端生成智能RPA所需配置。</p>
           </div>
           <v-btn color="primary" variant="flat" :loading="savingConfig" @click="saveConfig">
             保存模型
@@ -174,7 +174,7 @@
       <div class="panel-heading">
         <div>
           <h2>工具权限</h2>
-          <p>GenericAgent 自行选择工具，但实际可见范围由这里的全局开关决定。</p>
+          <p>智能RPA自行选择工具，但实际可见范围由这里的全局开关决定。</p>
         </div>
         <v-btn color="primary" variant="tonal" :loading="savingTools" @click="saveTools">
           保存工具
@@ -209,7 +209,7 @@
       <div class="panel-heading">
         <div>
           <h2>技能审核</h2>
-          <p>GenericAgent 沉淀出的经验先进入审核区，通过后同步到 NiceBot 技能库。</p>
+          <p>智能RPA沉淀出的经验先进入审核区，通过后同步到 NiceBot 技能库。</p>
         </div>
         <v-chip variant="tonal" color="primary" size="small">
           待审核 {{ reviewCount('pending') }}
@@ -231,7 +231,7 @@
                 {{ reviewStatusLabel(review.status) }}
               </v-chip>
             </div>
-            <p>{{ review.description || review.source_path || 'GenericAgent 生成的技能候选' }}</p>
+            <p>{{ review.description || review.source_path || '智能RPA生成的技能候选' }}</p>
             <div class="review-meta">
               <span>{{ formatDate(review.created_at) }}</span>
               <span v-if="review.synced_skill_id">NiceBot Skill: {{ review.synced_skill_id }}</span>
@@ -406,7 +406,7 @@ async function loadAll() {
     await Promise.all([loadConfig(), loadTools(), loadReviews(), loadProviders()]);
     if (llmForm.provider_id) await loadModels(false);
   } catch (error: any) {
-    showError(error, '加载 GenericAgent 配置失败');
+    showError(error, '加载智能RPA配置失败');
   } finally {
     loading.value = false;
   }
@@ -499,10 +499,10 @@ async function saveConfig() {
         max_tokens: llmForm.max_tokens,
       }),
     });
-    successText.value = 'GenericAgent 模型配置已保存。';
+    successText.value = '智能RPA模型配置已保存。';
     await loadConfig();
   } catch (error: any) {
-    showError(error, '保存 GenericAgent 配置失败');
+    showError(error, '保存智能RPA配置失败');
   } finally {
     savingConfig.value = false;
   }
@@ -567,12 +567,16 @@ function scalarText(value: any) {
   return String(value || '').trim();
 }
 
+function smartRpaDisplayText(value?: string) {
+  return String(value || '').replace(/GenericAgent/g, '智能RPA');
+}
+
 function providerLabel(providerId: string) {
   return providerOptions.value.find((item) => item.value === providerId)?.title || providerId;
 }
 
 function toolCopy(tool: ToolPolicy) {
-  return toolMeta[tool.tool_name]?.copy || tool.description || 'GenericAgent 扩展工具';
+  return toolMeta[tool.tool_name]?.copy || tool.description || '智能RPA扩展工具';
 }
 
 function riskLabel(toolName: string) {
