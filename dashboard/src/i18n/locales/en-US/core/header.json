@@ -1,5 +1,12 @@
 {
   "logoTitle": "AstrBot Dashboard",
+  "tabs": {
+    "overview": "Overview",
+    "chat": "Chat",
+    "work": "Work",
+    "archive": "Archive",
+    "setting": "Settings"
+  },
   "buttons": {
     "update": "Update",
     "account": "Account",

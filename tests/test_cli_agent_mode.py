@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import sys
 from pathlib import Path
 
@@ -120,10 +119,10 @@ def test_cli_agent_acp_clients_get_default_bridge_command(tmp_path: Path):
     )
 
     assert client["command"] == "npx"
-    assert client["args"] == ["-y", "@zed-industries/claude-code-acp"]
+    assert client["args"] == ["-y", "@agentclientprotocol/claude-agent-acp"]
 
 
-def test_cli_agent_session_can_run_local_stdio_message(tmp_path: Path):
+def test_cli_agent_service_rejects_native_stdio(tmp_path: Path):
     from astrbot.builtin_stars.agent_system.database import Database
     from astrbot.builtin_stars.agent_system.services.cli_agent_service import (
         CliAgentService,
@@ -133,34 +132,21 @@ def test_cli_agent_session_can_run_local_stdio_message(tmp_path: Path):
     db.create_tables()
     service = CliAgentService(db)
 
-    client = service.create_client(
-        {
-            "name": "Echo Local",
-            "agent_kind": "custom",
-            "location_kind": "local",
-            "transport_kind": "native_stdio",
-            "command": sys.executable,
-            "args": ["-c", "import sys; print('CLI:' + sys.stdin.read().strip().upper())"],
-        }
-    )
-    workspace = service.create_workspace(
-        {
-            "name": "Tmp",
-            "root_path": str(tmp_path),
-            "location_kind": "local",
-        }
-    )
-    session = service.create_session(
-        {
-            "client_id": client["id"],
-            "workspace_id": workspace["id"],
-            "title": "Echo",
-        }
-    )
-
-    result = asyncio.run(service.send_message(session["id"], "hello cli"))
-    messages = service.list_messages(session["id"])
-
-    assert result["assistant_message"]["content"] == "CLI:HELLO CLI"
-    assert [message["role"] for message in messages] == ["user", "assistant"]
-    assert [event["event_type"] for event in service.list_events(session["id"])] == ["message", "message"]
+    try:
+        service.create_client(
+            {
+                "name": "Echo Local",
+                "agent_kind": "custom",
+                "location_kind": "local",
+                "transport_kind": "native_stdio",
+                "command": sys.executable,
+                "args": [
+                    "-c",
+                    "import sys; print('CLI:' + sys.stdin.read().strip().upper())",
+                ],
+            }
+        )
+    except ValueError as exc:
+        assert "transport_kind" in str(exc)
+    else:
+        raise AssertionError("native_stdio should be rejected")

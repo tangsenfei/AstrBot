@@ -191,6 +191,7 @@ function kindLabel(kind: string) {
   const map: Record<string, string> = {
     text_delta: '输出', reasoning: '思考', tool_call: '使用工具',
     tool_result: '工具结果', error: '错误', artifact: '交付物',
+    user_message: '用户发言',
   };
   return map[kind] || kind;
 }
@@ -476,6 +477,18 @@ const items = computed<TimelineItem[]>(() => {
     } else if (event === 'token') {
       flushTextBuffer();
       continue;
+    } else if (event === 'user_message') {
+      flushTextBuffer();
+      pushItem({
+        id: log.id || `log-${i}`,
+        kind: 'user_message',
+        icon: 'mdi-account-voice',
+        title: data.speaker || data.agent_label || '用户',
+        text: String(data.text || data.content || log.message || ''),
+        created_at: log.created_at,
+        duration_ms: dur ? Math.min(dur, 30000) : undefined,
+        collapsible: false,
+      });
     } else if (event === 'phase') {
       flushTextBuffer();
       continue;
@@ -702,6 +715,7 @@ function formatHitlResult(data: any) {
 .badge-error { color: rgb(var(--v-theme-error)); background: rgba(var(--v-theme-error), 0.1); }
 .badge-artifact { color: rgb(var(--v-theme-success)); background: rgba(var(--v-theme-success), 0.1); }
 .badge-interaction { color: rgb(var(--v-theme-warning)); background: rgba(var(--v-theme-warning), 0.12); }
+.badge-user_message { color: rgb(var(--v-theme-primary)); background: rgba(var(--v-theme-primary), 0.1); }
 .badge-log { color: rgba(var(--v-theme-on-surface), 0.5); background: rgba(var(--v-theme-on-surface), 0.06); }
 
 .tl-subtitle {
@@ -843,4 +857,5 @@ function formatHitlResult(data: any) {
 .kind-token .tl-node { color: rgb(var(--v-theme-primary)); background: rgba(var(--v-theme-primary), 0.08); }
 .kind-phase .tl-node { color: rgb(var(--v-theme-primary)); background: rgba(var(--v-theme-primary), 0.08); }
 .kind-artifact .tl-node { color: rgb(var(--v-theme-success)); background: rgba(var(--v-theme-success), 0.1); }
+.kind-user_message .tl-node { color: rgb(var(--v-theme-primary)); background: rgba(var(--v-theme-primary), 0.1); }
 </style>

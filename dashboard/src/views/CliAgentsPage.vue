@@ -5,9 +5,14 @@
         <h1>CLI Agent</h1>
         <p>管理 Claude、Codex 等本地或远程 CLI 客户端，并为 Chat 页面提供入口。</p>
       </div>
-      <v-btn color="primary" prepend-icon="mdi-plus" @click="openClientDialog()">
-        新建客户端
-      </v-btn>
+      <div class="header-actions">
+        <v-btn variant="tonal" prepend-icon="mdi-check-network-outline" :loading="checkingAll" @click="checkAllClients">
+          一键检测
+        </v-btn>
+        <v-btn color="primary" prepend-icon="mdi-plus" @click="openClientDialog()">
+          新建客户端
+        </v-btn>
+      </div>
     </header>
 
     <v-alert v-if="errorText" class="mb-4" type="error" variant="tonal" closable @click:close="errorText = ''">
@@ -143,48 +148,55 @@
           <div class="dialog-row">
             <v-select v-model="clientForm.agent_kind" :items="agentKindOptions" label="类型" variant="outlined" />
             <v-select v-model="clientForm.location_kind" :items="locationOptions" label="位置" variant="outlined" />
-            <v-select v-model="clientForm.transport_kind" :items="transportOptions" label="传输" variant="outlined" />
           </div>
-          <v-text-field
-            v-model="clientForm.command"
-            label="命令"
-            variant="outlined"
-            :placeholder="clientForm.transport_kind === 'acp_stdio' ? '留空将使用 npx Zed ACP bridge' : 'claude、codex 或 more.com'"
-          />
-          <v-text-field
-            v-model="clientForm.executable_path"
-            label="可执行文件路径"
-            variant="outlined"
-            placeholder="可选，优先于命令"
-          />
-          <v-text-field
-            v-model="clientForm.args_text"
-            label="默认参数"
-            variant="outlined"
-            placeholder="每个参数用空格分隔；含空格的复杂参数建议写入包装脚本"
-          />
-          <v-alert type="info" variant="tonal" density="compact">
-            ACP STDIO 用于 Claude/Codex 正式接入；原生 STDIO 仅适合 more.com、echo 脚本等调试客户端。
-          </v-alert>
           <v-text-field
             v-if="clientForm.location_kind === 'remote'"
-            v-model="clientForm.remote_url"
-            label="远程地址"
+            v-model="clientForm.relay_url"
+            label="Relay 地址"
             variant="outlined"
-            placeholder="ws:// 或 https://"
+            placeholder="ws:// 或 wss://"
           />
-          <div class="dialog-row">
-            <v-select v-model="clientForm.auth_type" :items="authTypeOptions" label="认证方式" variant="outlined" />
-            <v-select v-model="clientForm.permission_policy" :items="permissionOptions" label="权限策略" variant="outlined" />
-          </div>
-          <v-textarea
-            v-model="clientForm.env_text"
-            label="环境变量 JSON"
+          <v-text-field
+            v-if="clientForm.location_kind === 'remote'"
+            v-model="clientForm.auth_secret"
+            label="Relay Shared Secret"
+            type="password"
             variant="outlined"
-            rows="4"
-            placeholder='{"ANTHROPIC_API_KEY":"..."}'
+            autocomplete="new-password"
           />
-          <v-switch v-model="clientForm.enabled" color="primary" hide-details label="在 Chat 页面显示入口" />
+          <v-expansion-panels variant="accordion">
+            <v-expansion-panel title="高级选项">
+              <v-expansion-panel-text class="dialog-grid">
+                <v-select v-model="clientForm.permission_policy" :items="permissionOptions" label="权限策略" variant="outlined" />
+                <v-text-field
+                  v-model="clientForm.command"
+                  label="自定义命令"
+                  variant="outlined"
+                  placeholder="留空将自动检测或使用 ACP bridge"
+                />
+                <v-text-field
+                  v-model="clientForm.executable_path"
+                  label="可执行文件路径"
+                  variant="outlined"
+                  placeholder="可选，优先于命令"
+                />
+                <v-text-field
+                  v-model="clientForm.args_text"
+                  label="默认参数"
+                  variant="outlined"
+                  placeholder="每个参数用空格分隔；含空格的复杂参数建议写入包装脚本"
+                />
+                <v-textarea
+                  v-model="clientForm.env_text"
+                  label="环境变量 JSON"
+                  variant="outlined"
+                  rows="4"
+                  placeholder='{"ANTHROPIC_API_KEY":"..."}'
+                />
+                <v-switch v-model="clientForm.enabled" color="primary" hide-details label="在 Chat 页面显示入口" />
+              </v-expansion-panel-text>
+            </v-expansion-panel>
+          </v-expansion-panels>
         </v-card-text>
         <v-card-actions>
           <v-spacer />
@@ -235,7 +247,9 @@ type CliClient = {
   args?: string[];
   executable_path?: string;
   remote_url?: string;
+  relay_url?: string;
   auth_type?: string;
+  auth_secret?: string;
   env?: Record<string, string>;
   permission_policy?: string;
   enabled: boolean;
@@ -257,6 +271,7 @@ const clients = ref<CliClient[]>([]);
 const workspaces = ref<CliWorkspace[]>([]);
 const loadingClients = ref(false);
 const loadingWorkspaces = ref(false);
+const checkingAll = ref(false);
 const savingClient = ref(false);
 const savingWorkspace = ref(false);
 const errorText = ref('');
@@ -272,12 +287,13 @@ const clientForm = reactive({
   name: '',
   agent_kind: 'claude',
   location_kind: 'local' as 'local' | 'remote',
-  transport_kind: 'native_stdio',
+  transport_kind: 'acp_stdio',
   command: '',
   executable_path: '',
   args_text: '',
-  remote_url: '',
+  relay_url: '',
   auth_type: 'none',
+  auth_secret: '',
   permission_policy: 'ask',
   env_text: '',
   enabled: true,
@@ -290,25 +306,43 @@ const workspaceForm = reactive({
   default_client_id: null as string | null,
 });
 
-const agentKindOptions = [
+const detectedAgents = ref<Record<string, any>>({});
+const baseAgentKindOptions = [
   { title: 'Claude', value: 'claude' },
   { title: 'Codex', value: 'codex' },
+  { title: 'Qwen', value: 'qwen' },
+  { title: 'CodeBuddy', value: 'codebuddy' },
+  { title: 'Goose', value: 'goose' },
+  { title: 'Auggie', value: 'auggie' },
+  { title: 'Kimi', value: 'kimi' },
+  { title: 'OpenCode', value: 'opencode' },
+  { title: 'Copilot', value: 'copilot' },
+  { title: 'Qoder', value: 'qoder' },
+  { title: 'Cursor', value: 'cursor' },
+  { title: 'Vibe', value: 'vibe' },
+  { title: 'Kiro', value: 'kiro' },
+  { title: 'Hermes', value: 'hermes' },
+  { title: 'Snow', value: 'snow' },
+  { title: 'Droid', value: 'droid' },
   { title: '自定义', value: 'custom' },
 ];
+const agentKindOptions = computed(() =>
+  baseAgentKindOptions.map((item) => {
+    const detected = detectedAgents.value[item.value];
+    if (!detected) return item;
+    return {
+      ...item,
+      title: `${item.title}${detected.installed ? ' ✓' : ''}`,
+    };
+  }),
+);
 const locationOptions = [
   { title: '本地', value: 'local' },
   { title: '远程', value: 'remote' },
 ];
 const transportOptions = [
-  { title: '原生 STDIO', value: 'native_stdio' },
   { title: 'ACP STDIO', value: 'acp_stdio' },
   { title: '远程 WebSocket', value: 'remote_ws' },
-  { title: '远程 HTTP SSE', value: 'remote_http_sse' },
-];
-const authTypeOptions = [
-  { title: '无', value: 'none' },
-  { title: 'Token', value: 'token' },
-  { title: 'API Key', value: 'api_key' },
 ];
 const permissionOptions = [
   { title: '每次询问', value: 'ask' },
@@ -337,8 +371,19 @@ const filteredWorkspaces = computed(() => {
 });
 
 onMounted(async () => {
-  await Promise.all([loadClients(), loadWorkspaces()]);
+  await Promise.all([loadDetectedAgents(), loadClients(), loadWorkspaces()]);
 });
+
+async function loadDetectedAgents() {
+  try {
+    const response = await axios.get('/api/plug/cli-agents/detect');
+    const data = response.data?.data;
+    const items = Array.isArray(data) ? data : [];
+    detectedAgents.value = Object.fromEntries(items.map((item: any) => [item.agent_id, item]));
+  } catch {
+    detectedAgents.value = {};
+  }
+}
 
 async function loadClients() {
   loadingClients.value = true;
@@ -375,8 +420,9 @@ function openClientDialog(client?: CliClient) {
   clientForm.command = client?.command || '';
   clientForm.executable_path = client?.executable_path || '';
   clientForm.args_text = (client?.args || []).join(' ');
-  clientForm.remote_url = client?.remote_url || '';
+  clientForm.relay_url = client?.relay_url || client?.remote_url || '';
   clientForm.auth_type = client?.auth_type || 'none';
+  clientForm.auth_secret = client?.auth_secret || '';
   clientForm.permission_policy = client?.permission_policy || 'ask';
   clientForm.env_text = client?.env ? JSON.stringify(client.env, null, 2) : '';
   clientForm.enabled = client?.enabled ?? true;
@@ -390,12 +436,14 @@ async function saveClient() {
       name: clientForm.name.trim(),
       agent_kind: clientForm.agent_kind,
       location_kind: clientForm.location_kind,
-      transport_kind: clientForm.transport_kind,
+      transport_kind: clientForm.location_kind === 'remote' ? 'remote_ws' : 'acp_stdio',
       command: clientForm.command.trim(),
       executable_path: clientForm.executable_path.trim(),
       args: splitArgs(clientForm.args_text),
-      remote_url: clientForm.remote_url.trim(),
+      relay_url: clientForm.relay_url.trim(),
+      remote_url: clientForm.relay_url.trim(),
       auth_type: clientForm.auth_type,
+      auth_secret: clientForm.auth_secret,
       permission_policy: clientForm.permission_policy,
       env: parseEnv(clientForm.env_text),
       enabled: clientForm.enabled,
@@ -429,6 +477,18 @@ async function checkClient(client: CliClient) {
     await loadClients();
   } catch (error: any) {
     showError(error, '检测客户端失败');
+  }
+}
+
+async function checkAllClients() {
+  checkingAll.value = true;
+  try {
+    await axios.post('/api/plug/cli-agents/clients/check-all');
+    await loadClients();
+  } catch (error: any) {
+    showError(error, '一键检测失败');
+  } finally {
+    checkingAll.value = false;
   }
 }
 
@@ -503,12 +563,13 @@ function clientName(clientId?: string | null) {
 }
 
 function clientDisplayTarget(client: CliClient) {
-  if (client.location_kind === 'remote') return client.remote_url || '未配置远程地址';
+  if (client.location_kind === 'remote') return client.relay_url || client.remote_url || '未配置 Relay 地址';
   return client.executable_path || client.command || '未配置命令';
 }
 
 function agentKindLabel(kind: string) {
-  return agentKindOptions.find((item) => item.value === kind)?.title || kind;
+  const option = baseAgentKindOptions.find((item) => item.value === kind);
+  return option?.title || kind;
 }
 
 function transportLabel(kind: string) {
@@ -553,6 +614,14 @@ function showError(error: any, fallback: string) {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 16px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .page-header h1 {

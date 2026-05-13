@@ -31,6 +31,9 @@ PERSISTED_EVENTS = {
     "error",
     "hitl_resolved",
     "user_message",
+    "agent_call_start",
+    "agent_call_end",
+    "token",
 }
 TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 
@@ -90,6 +93,34 @@ class MeetingRuntime:
     @property
     def active_count(self) -> int:
         return sum(1 for task in self._tasks.values() if not task.done())
+
+    async def cancel(
+        self,
+        meeting_id: str,
+        service_factory: Callable[[], Any],
+    ) -> dict[str, Any]:
+        task = self._tasks.pop(meeting_id, None)
+        if task and not task.done():
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
+        service = service_factory()
+        meeting = service.cancel_meeting(meeting_id)
+        self._publish(
+            meeting_id,
+            {
+                "id": f"runtime_cancelled_{uuid.uuid4().hex[:8]}",
+                "event_type": "done",
+                "role": "system",
+                "speaker": "会议助理",
+                "round": int(meeting.get("current_round") or 0),
+                "content": "会议已取消",
+                "payload": {"status": "cancelled"},
+                "created_at": datetime.now().isoformat(),
+            },
+        )
+        return meeting
 
     def subscribe(self, meeting_id: str) -> asyncio.Queue:
         queue: asyncio.Queue = asyncio.Queue(maxsize=500)
@@ -267,7 +298,12 @@ def normalize_stream_event(meeting_id: str, event: dict[str, Any]) -> dict[str, 
     if event.get("timestamp") and not data.get("timestamp"):
         data["timestamp"] = event.get("timestamp")
     event_type = str(event.get("event") or data.get("event") or "log")
-    speaker = data.get("agent_name") or data.get("speaker") or ("用户" if event_type == "user_message" else "会议助理")
+    speaker = (
+        data.get("agent_name")
+        or data.get("agent_label")
+        or data.get("speaker")
+        or ("用户" if event_type == "user_message" else "会议助理")
+    )
     current_round = int(data.get("round") or 0)
     content = (
         data.get("text")
@@ -281,6 +317,10 @@ def normalize_stream_event(meeting_id: str, event: dict[str, Any]) -> dict[str, 
         or data.get("title")
         or ""
     )
+    if event_type == "token" and not content:
+        input_t = int(data.get("input") or data.get("input_tokens") or 0)
+        output_t = int(data.get("output") or data.get("output_tokens") or 0)
+        content = f"输入 {input_t} / 输出 {output_t}"
     return {
         "id": f"live_{event_type}_{uuid.uuid4().hex[:12]}",
         "meeting_id": meeting_id,
@@ -316,7 +356,6 @@ def persist_graph_event_batch(db_path: Path, meeting_id: str, events: list[dict[
             token_input += input_t
             token_output += output_t
             token_total += total_t
-            continue
         if event_type in LOW_VALUE_EVENTS:
             continue
         if event_type not in PERSISTED_EVENTS:
@@ -350,61 +389,89 @@ def persist_graph_event_batch(db_path: Path, meeting_id: str, events: list[dict[
             if interaction_id:
                 interaction_ids.append(interaction_id)
 
-    conn = sqlite3.connect(str(db_path), timeout=5)
-    try:
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA busy_timeout=5000")
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("BEGIN")
-        if rows:
-            conn.executemany(
-                """
-                INSERT INTO meeting_events
-                (id, meeting_id, event_type, role, speaker, round, content, payload, created_at)
-                VALUES (:id, :meeting_id, :event_type, :role, :speaker, :round, :content, :payload, :created_at)
-                """,
-                rows,
-            )
-        if interaction_ids:
-            placeholders = ",".join("?" for _ in interaction_ids)
-            pending_count = conn.execute(
-                f"""
-                SELECT COUNT(*) AS count
-                FROM hitl_requests
-                WHERE id IN ({placeholders}) AND status = 'pending'
-                """,
-                tuple(interaction_ids),
-            ).fetchone()["count"]
-            if pending_count:
-                updates["status"] = "waiting_feedback"
-        if token_input or token_output or token_total:
-            conn.execute(
-                """
-                UPDATE meetings
-                SET input_tokens = COALESCE(input_tokens, 0) + ?,
-                    output_tokens = COALESCE(output_tokens, 0) + ?,
-                    total_tokens = COALESCE(total_tokens, 0) + ?,
-                    updated_at = ?
-                WHERE id = ?
-                """,
-                (token_input, token_output, token_total, now, meeting_id),
-            )
-        if updates:
-            current = conn.execute("SELECT status FROM meetings WHERE id = ?", (meeting_id,)).fetchone()
-            if current and current["status"] in TERMINAL_STATUSES:
-                updates.pop("status", None)
-                updates.pop("stage", None)
-                updates.pop("progress", None)
-            updates["updated_at"] = now
-            set_clause = ", ".join(f"{key} = ?" for key in updates.keys())
-            if set_clause:
-                conn.execute(
-                    f"UPDATE meetings SET {set_clause} WHERE id = ?",
-                    tuple(updates.values()) + (meeting_id,),
+    _persist_with_retry(db_path, meeting_id, rows, interaction_ids, updates, token_input, token_output, token_total, now)
+
+
+def _persist_with_retry(
+    db_path: Path,
+    meeting_id: str,
+    rows: list[dict[str, Any]],
+    interaction_ids: list[str],
+    updates: dict[str, Any],
+    token_input: int,
+    token_output: int,
+    token_total: int,
+    now: str,
+) -> None:
+    max_attempts = 5
+    base_delay = 0.05
+    last_exc: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        conn = sqlite3.connect(str(db_path), timeout=10)
+        try:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA busy_timeout=10000")
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("BEGIN IMMEDIATE")
+            if rows:
+                conn.executemany(
+                    """
+                    INSERT INTO meeting_events
+                    (id, meeting_id, event_type, role, speaker, round, content, payload, created_at)
+                    VALUES (:id, :meeting_id, :event_type, :role, :speaker, :round, :content, :payload, :created_at)
+                    """,
+                    rows,
                 )
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
+            if interaction_ids:
+                placeholders = ",".join("?" for _ in interaction_ids)
+                pending_count = conn.execute(
+                    f"""
+                    SELECT COUNT(*) AS count
+                    FROM hitl_requests
+                    WHERE id IN ({placeholders}) AND status = 'pending'
+                    """,
+                    tuple(interaction_ids),
+                ).fetchone()["count"]
+                if pending_count:
+                    updates["status"] = "waiting_feedback"
+            if token_input or token_output or token_total:
+                conn.execute(
+                    """
+                    UPDATE meetings
+                    SET input_tokens = COALESCE(input_tokens, 0) + ?,
+                        output_tokens = COALESCE(output_tokens, 0) + ?,
+                        total_tokens = COALESCE(total_tokens, 0) + ?,
+                        updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (token_input, token_output, token_total, now, meeting_id),
+                )
+            if updates:
+                current = conn.execute("SELECT status FROM meetings WHERE id = ?", (meeting_id,)).fetchone()
+                if current and current["status"] in TERMINAL_STATUSES:
+                    updates.pop("status", None)
+                    updates.pop("stage", None)
+                    updates.pop("progress", None)
+                updates["updated_at"] = now
+                set_clause = ", ".join(f"{key} = ?" for key in updates.keys())
+                if set_clause:
+                    conn.execute(
+                        f"UPDATE meetings SET {set_clause} WHERE id = ?",
+                        tuple(updates.values()) + (meeting_id,),
+                    )
+            conn.commit()
+            return
+        except sqlite3.OperationalError as exc:
+            last_exc = exc
+            conn.rollback()
+            if "locked" in str(exc).lower() and attempt < max_attempts:
+                time.sleep(base_delay * (2 ** (attempt - 1)))
+                continue
+            raise
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+    if last_exc:
+        raise last_exc

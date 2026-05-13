@@ -921,7 +921,7 @@ onBeforeUnmount(() => {
 });
 
 watch(
-  () => route.params.conversationId,
+  () => [route.params.conversationId, route.params.clientId],
   async () => {
     const routeSessionId = getRouteSessionId();
     if (routeSessionId === "models") {
@@ -954,6 +954,9 @@ watch(activeMessages, () => {
 });
 
 function getRouteSessionId() {
+  const rawClientId = route.params.clientId;
+  const clientId = Array.isArray(rawClientId) ? rawClientId[0] : rawClientId || "";
+  if (clientId) return `cli-agent-${clientId}`;
   const raw = route.params.conversationId;
   return Array.isArray(raw) ? raw[0] : raw || "";
 }
@@ -1022,7 +1025,10 @@ async function openCliAgentWorkspace(client: CliAgentClient) {
   selectedProjectId.value = null;
   currSessionId.value = "";
   replyTarget.value = null;
-  const targetPath = `${basePath()}/cli-agent-${client.id}`;
+  const targetPath =
+    basePath() === "/chat"
+      ? `${basePath()}/cli-agent/${client.id}`
+      : `${basePath()}/cli-agent-${client.id}`;
   if (route.path !== targetPath) {
     await router.push(targetPath);
   }
@@ -1049,15 +1055,16 @@ function clientIcon(kind: string) {
 function agentKindLabel(kind: string) {
   if (kind === "claude") return "Claude";
   if (kind === "codex") return "Codex";
+  if (kind === "qwen") return "Qwen";
+  if (kind === "goose") return "Goose";
+  if (kind === "opencode") return "OpenCode";
   return "自定义";
 }
 
 function transportLabel(kind: string) {
   const labels: Record<string, string> = {
-    native_stdio: "原生 STDIO",
     acp_stdio: "ACP STDIO",
     remote_ws: "远程 WebSocket",
-    remote_http_sse: "远程 HTTP SSE",
   };
   return labels[kind] || kind;
 }

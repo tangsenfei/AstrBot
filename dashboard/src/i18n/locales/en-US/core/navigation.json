@@ -23,8 +23,8 @@
   "sessionManagement": "Custom Rules",
   "console": "Console",
   "trace": "Trace",
-  "alkaid": "Alkaid Lab",
   "knowledgeBase": "Knowledge Base",
+  "archive": "Archive",
   "settings": "Settings",
   "groups": {
     "more": "More Features"

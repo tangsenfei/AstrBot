@@ -12,6 +12,11 @@
         </v-btn>
       </header>
 
+      <AgentStatusBar
+        :connected="streamConnected"
+        :client-name="client.name"
+      />
+
       <section ref="messagesContainer" class="cli-agent-messages">
         <div v-if="loading" class="center-state">
           <v-progress-circular indeterminate size="30" width="3" />
@@ -40,21 +45,54 @@
         <v-alert v-if="errorText" class="cli-agent-error" type="error" variant="tonal" density="compact" closable @click:close="errorText = ''">
           {{ errorText }}
         </v-alert>
+        <v-alert v-if="statusText" class="cli-agent-status" type="info" variant="tonal" density="compact" closable @click:close="statusText = ''">
+          {{ statusText }}
+        </v-alert>
+        <div v-if="modelOptions.length || modeOptions.length" class="cli-agent-control-row">
+          <v-select
+            v-if="modelOptions.length"
+            v-model="selectedModel"
+            :items="modelOptions"
+            item-title="label"
+            item-value="value"
+            density="compact"
+            hide-details
+            variant="outlined"
+            label="模型"
+            class="cli-agent-control-select"
+            :disabled="sending || recovering"
+            @update:model-value="changeModel"
+          />
+          <v-select
+            v-if="modeOptions.length"
+            v-model="selectedMode"
+            :items="modeOptions"
+            item-title="label"
+            item-value="value"
+            density="compact"
+            hide-details
+            variant="outlined"
+            label="模式"
+            class="cli-agent-control-select"
+            :disabled="sending || recovering"
+            @update:model-value="changeMode"
+          />
+        </div>
         <v-textarea
           v-model="draft"
           rows="2"
           auto-grow
           hide-details
           variant="outlined"
-          :disabled="!activeSession || sending"
+          :disabled="!activeSession || sending || recovering"
           placeholder="向当前 CLI Agent 会话发送消息..."
           @keydown.ctrl.enter.prevent="sendMessage"
           @keydown.meta.enter.prevent="sendMessage"
         />
         <v-btn
           color="primary"
-          :disabled="!activeSession || !draft.trim()"
-          :loading="sending"
+          :disabled="!activeSession || !draft.trim() || sending || recovering"
+          :loading="sending || recovering"
           @click="sendMessage"
         >
           <v-icon start>mdi-send</v-icon>
@@ -138,13 +176,21 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <PermissionDialog
+      :request="pendingPermission"
+      @respond="respondPermission"
+    />
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import axios from 'axios';
+import AgentStatusBar from '@/components/chat/AgentStatusBar.vue';
 import ChatMessageList from '@/components/chat/ChatMessageList.vue';
+import PermissionDialog from '@/components/chat/PermissionDialog.vue';
+import { useCliAgentStream } from '@/composables/useCliAgentStream';
 import type { ChatRecord } from '@/composables/useMessages';
 import { useCustomizerStore } from '@/stores/customizer';
 
@@ -154,6 +200,9 @@ type CliAgentClient = {
   agent_kind: string;
   location_kind: 'local' | 'remote';
   transport_kind: string;
+  cached_capabilities?: Record<string, any>;
+  cached_models?: Record<string, any>;
+  cached_modes?: Record<string, any>;
 };
 
 type CliWorkspace = {
@@ -173,7 +222,7 @@ type CliSession = {
 
 type CliMessage = {
   id: string;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'tool';
   content: string;
   created_at?: string;
 };
@@ -184,11 +233,9 @@ defineEmits<{ manage: [] }>();
 const workspaces = ref<CliWorkspace[]>([]);
 const sessions = ref<CliSession[]>([]);
 const messages = ref<CliMessage[]>([]);
-const errorText = ref('');
 const selectedWorkspaceId = ref('');
 const selectedSessionId = ref('');
 const loading = ref(false);
-const sending = ref(false);
 const savingWorkspace = ref(false);
 const savingSession = ref(false);
 const draft = ref('');
@@ -199,6 +246,27 @@ const workspaceForm = reactive({ name: '', root_path: '', description: '' });
 const sessionForm = reactive({ title: '' });
 const messageEditDraft = ref('');
 const customizer = useCustomizerStore();
+const {
+  isStreaming: sending,
+  connected: streamConnected,
+  modelOptions,
+  modeOptions,
+  currentModelId,
+  currentModeId,
+  pendingPermission,
+  errorText,
+  statusText,
+  recovering,
+  connect: connectStream,
+  disconnect: disconnectStream,
+  applyCapabilitySnapshot,
+  sendMessage: sendStreamMessage,
+  respondPermission,
+  setModel,
+  setMode,
+} = useCliAgentStream(selectedSessionId, messages);
+const selectedModel = ref('');
+const selectedMode = ref('');
 
 const activeSession = computed(() =>
   sessions.value.find((session) => session.id === selectedSessionId.value) || null,
@@ -224,11 +292,24 @@ const chatRecords = computed<ChatRecord[]>(() => {
 });
 
 onMounted(loadAll);
+onBeforeUnmount(disconnectStream);
 watch(() => props.client.id, loadAll);
+watch(currentModelId, (value) => {
+  if (value) selectedModel.value = value;
+});
+watch(currentModeId, (value) => {
+  if (value) selectedMode.value = value;
+});
+watch(
+  () => messages.value.map((message) => message.content).join('\n'),
+  () => scrollToBottom(),
+);
 
 async function loadAll() {
   loading.value = true;
   errorText.value = '';
+  disconnectStream();
+  applyClientCapabilityCache();
   try {
     await loadWorkspaces();
     if (workspaces.value.length && !selectedWorkspaceId.value) {
@@ -243,6 +324,14 @@ async function loadAll() {
   } finally {
     loading.value = false;
   }
+}
+
+function applyClientCapabilityCache() {
+  applyCapabilitySnapshot({
+    agentCapabilities: props.client.cached_capabilities || {},
+    models: props.client.cached_models || {},
+    modes: props.client.cached_modes || {},
+  });
 }
 
 async function loadWorkspaces() {
@@ -281,6 +370,7 @@ async function selectWorkspace(workspaceId: string) {
   selectedWorkspaceId.value = workspaceId;
   selectedSessionId.value = '';
   messages.value = [];
+  disconnectStream();
   await loadSessions();
   if (sessions.value.length) {
     await selectSession(sessions.value[0].id);
@@ -290,6 +380,7 @@ async function selectWorkspace(workspaceId: string) {
 async function selectSession(sessionId: string) {
   selectedSessionId.value = sessionId;
   await loadMessages();
+  connectStream(sessionId);
 }
 
 function openWorkspaceDialog() {
@@ -347,29 +438,38 @@ async function saveSession() {
 
 async function sendMessage() {
   if (!selectedSessionId.value || !draft.value.trim()) return;
-  sending.value = true;
   errorText.value = '';
   const content = draft.value.trim();
   draft.value = '';
   try {
-    const response = await axios.post(`/api/plug/cli-agents/sessions/${selectedSessionId.value}/messages`, {
-      content,
-    });
-    const data = responseData(response);
-    const nextMessages = [data.user_message, data.assistant_message].filter(Boolean);
-    if (nextMessages.length) {
-      messages.value.push(...nextMessages);
-      await scrollToBottom();
-    } else {
-      await loadMessages();
-    }
+    await sendStreamMessage(content);
+    await scrollToBottom();
     await loadSessions();
   } catch (error: any) {
     errorText.value = errorMessage(error);
+    sending.value = false;
     await loadMessages();
     await loadSessions();
-  } finally {
-    sending.value = false;
+  }
+}
+
+async function changeModel(modelId: string) {
+  if (!modelId || modelId === selectedModel.value) return;
+  selectedModel.value = modelId;
+  try {
+    await setModel(modelId);
+  } catch (error: any) {
+    errorText.value = errorMessage(error);
+  }
+}
+
+async function changeMode(modeId: string) {
+  if (!modeId || modeId === selectedMode.value) return;
+  selectedMode.value = modeId;
+  try {
+    await setMode(modeId);
+  } catch (error: any) {
+    errorText.value = errorMessage(error);
   }
 }
 
@@ -382,15 +482,16 @@ async function scrollToBottom() {
 function agentKindLabel(kind: string) {
   if (kind === 'claude') return 'Claude';
   if (kind === 'codex') return 'Codex';
+  if (kind === 'qwen') return 'Qwen';
+  if (kind === 'goose') return 'Goose';
+  if (kind === 'opencode') return 'OpenCode';
   return '自定义';
 }
 
 function transportLabel(kind: string) {
   const labels: Record<string, string> = {
-    native_stdio: '原生 STDIO',
     acp_stdio: 'ACP STDIO',
     remote_ws: '远程 WebSocket',
-    remote_http_sse: '远程 HTTP SSE',
   };
   return labels[kind] || kind;
 }
@@ -407,6 +508,26 @@ function errorMessage(error: any) {
 }
 
 function toChatRecord(message: CliMessage): ChatRecord {
+  if (message.role === 'tool') {
+    const toolContent = parseToolMessageContent(message.content);
+    return {
+      id: message.id,
+      created_at: message.created_at,
+      sender_name: 'Tool',
+      content: {
+        type: 'bot',
+        message: toolContent
+          ? [
+              {
+                type: 'tool_call',
+                tool_calls: toolContent.tool_calls || [],
+                as_reasoning: false,
+              },
+            ]
+          : [{ type: 'plain', text: message.content || '' }],
+      },
+    };
+  }
   return {
     id: message.id,
     created_at: message.created_at,
@@ -416,6 +537,18 @@ function toChatRecord(message: CliMessage): ChatRecord {
       message: [{ type: 'plain', text: message.content || '' }],
     },
   };
+}
+
+function parseToolMessageContent(content: string) {
+  try {
+    const parsed = JSON.parse(content || '{}');
+    if (parsed?.type === 'tool_call' && Array.isArray(parsed.tool_calls)) {
+      return parsed;
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 </script>
 
@@ -492,8 +625,22 @@ function toChatRecord(message: CliMessage): ChatRecord {
   background: rgb(var(--v-theme-background));
 }
 
-.cli-agent-error {
+.cli-agent-error,
+.cli-agent-status {
   grid-column: 1 / -1;
+}
+
+.cli-agent-control-row {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 10px;
+}
+
+.cli-agent-control-select {
+  width: min(240px, 100%);
 }
 
 .cli-agent-side {
@@ -570,6 +717,15 @@ function toChatRecord(message: CliMessage): ChatRecord {
     border-left: 0;
     border-top: 1px solid rgba(var(--v-border-color), 0.16);
     max-height: 280px;
+  }
+
+  .cli-agent-control-row {
+    justify-content: stretch;
+    flex-direction: column;
+  }
+
+  .cli-agent-control-select {
+    width: 100%;
   }
 }
 </style>

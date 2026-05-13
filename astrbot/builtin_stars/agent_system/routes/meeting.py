@@ -30,6 +30,7 @@ def register_meeting_routes(plugin: AgentSystemPlugin) -> None:
         ("/meeting/meetings/<meeting_id>", _get_meeting, ["GET"], "会议详情"),
         ("/meeting/meetings/<meeting_id>", _update_meeting, ["PATCH"], "更新会议"),
         ("/meeting/meetings/<meeting_id>/start", _start_meeting, ["POST"], "启动会议"),
+        ("/meeting/meetings/<meeting_id>/cancel", _cancel_meeting, ["POST"], "取消会议"),
         ("/meeting/meetings/<meeting_id>/events", _meeting_events, ["GET"], "会议事件流"),
         ("/meeting/meetings/<meeting_id>/input", _submit_input, ["POST"], "会议用户发言"),
         ("/meeting/meetings/<meeting_id>/hitl", _respond_hitl, ["POST"], "会议 HITL 响应"),
@@ -85,7 +86,9 @@ async def _list_meeting_summaries():
 async def _create_meeting():
     try:
         data = await request.get_json() or {}
-        return Response().ok(_get_meeting_service().create_meeting(data), "会议创建成功").__dict__
+        meeting = _get_meeting_service().create_meeting(data)
+        await _get_meeting_runtime().start(meeting["id"], _get_meeting_service)
+        return Response().ok(meeting, "会议创建成功，已自动启动").__dict__
     except ValueError as e:
         return Response().error(str(e)).__dict__
     except Exception as e:
@@ -128,6 +131,17 @@ async def _start_meeting(meeting_id: str):
         return Response().ok(result, "会议已启动").__dict__
     except ValueError as e:
         return Response().error(str(e)).__dict__
+
+
+async def _cancel_meeting(meeting_id: str):
+    try:
+        result = await _get_meeting_runtime().cancel(meeting_id, _get_meeting_service)
+        return Response().ok(result, "会议已取消").__dict__
+    except ValueError as e:
+        return Response().error(str(e)).__dict__
+    except Exception as e:
+        logger.error(f"Failed to cancel meeting {meeting_id}: {e}", exc_info=True)
+        return Response().error(str(e)).__dict__
     except Exception as e:
         logger.error(f"Failed to start meeting {meeting_id}: {e}", exc_info=True)
         return Response().error(str(e)).__dict__
@@ -162,7 +176,8 @@ async def _continue_meeting(meeting_id: str):
     try:
         data = await request.get_json() or {}
         meeting = _get_meeting_service().continue_meeting(meeting_id, data)
-        return Response().ok(meeting, "续会已创建，会议可重新开始").__dict__
+        await _get_meeting_runtime().start(meeting_id, _get_meeting_service)
+        return Response().ok(meeting, "续会已创建，已自动启动").__dict__
     except ValueError as e:
         return Response().error(str(e)).__dict__
     except Exception as e:

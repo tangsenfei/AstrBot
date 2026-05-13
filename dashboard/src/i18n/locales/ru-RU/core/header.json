@@ -1,5 +1,12 @@
 {
     "logoTitle": "Панель управления AstrBot",
+    "tabs": {
+        "overview": "Обзор",
+        "chat": "Чат",
+        "work": "Работа",
+        "archive": "Архив",
+        "setting": "Настройки"
+    },
     "buttons": {
         "update": "Обновить",
         "account": "Аккаунт",

@@ -516,11 +516,14 @@ class Database:
                 args TEXT DEFAULT '[]',
                 executable_path TEXT DEFAULT '',
                 remote_url TEXT DEFAULT '',
+                relay_url TEXT DEFAULT '',
                 auth_type TEXT DEFAULT 'none',
                 auth_secret TEXT DEFAULT '',
                 env TEXT DEFAULT '{}',
                 default_workspace_id TEXT DEFAULT NULL,
                 permission_policy TEXT DEFAULT 'ask',
+                retry_policy TEXT DEFAULT '{"max_retries":3,"backoff_ms":1000}',
+                idle_timeout_minutes INTEGER DEFAULT 30,
                 enabled INTEGER DEFAULT 1,
                 status TEXT DEFAULT 'unknown',
                 status_message TEXT DEFAULT '',
@@ -559,6 +562,7 @@ class Database:
                 input_tokens INTEGER DEFAULT 0,
                 output_tokens INTEGER DEFAULT 0,
                 last_error TEXT DEFAULT '',
+                last_heartbeat TEXT DEFAULT '',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 FOREIGN KEY (client_id) REFERENCES cli_agent_clients(id),
@@ -598,6 +602,7 @@ class Database:
                 session_id TEXT NOT NULL,
                 client_id TEXT NOT NULL,
                 request_key TEXT NOT NULL,
+                cache_key TEXT DEFAULT '',
                 title TEXT NOT NULL,
                 body TEXT DEFAULT '',
                 payload TEXT NOT NULL,
@@ -607,6 +612,18 @@ class Database:
                 responded_at TEXT DEFAULT NULL,
                 FOREIGN KEY (session_id) REFERENCES cli_agent_sessions(id) ON DELETE CASCADE,
                 FOREIGN KEY (client_id) REFERENCES cli_agent_clients(id)
+            )
+        """)
+
+        # CLI Agent capability/config cache
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS cli_agent_cache (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                client_id TEXT,
+                created_at TEXT DEFAULT (datetime('now')),
+                expires_at TEXT,
+                FOREIGN KEY (client_id) REFERENCES cli_agent_clients(id) ON DELETE CASCADE
             )
         """)
 
@@ -772,6 +789,15 @@ class Database:
             ("meetings", "task_id", "TEXT DEFAULT ''"),
             ("meetings", "started_at", "TEXT DEFAULT NULL"),
             ("meetings", "completed_at", "TEXT DEFAULT NULL"),
+            ("cli_agent_sessions", "last_heartbeat", "TEXT DEFAULT ''"),
+            ("cli_agent_clients", "relay_url", "TEXT DEFAULT ''"),
+            (
+                "cli_agent_clients",
+                "retry_policy",
+                'TEXT DEFAULT \'{"max_retries":3,"backoff_ms":1000}\'',
+            ),
+            ("cli_agent_clients", "idle_timeout_minutes", "INTEGER DEFAULT 30"),
+            ("cli_agent_permissions", "cache_key", "TEXT DEFAULT ''"),
         ]
 
         for table, column, col_type in migrations:
@@ -957,6 +983,9 @@ class Database:
             "CREATE INDEX IF NOT EXISTS idx_cli_agent_events_session ON cli_agent_events(session_id)",
             "CREATE INDEX IF NOT EXISTS idx_cli_agent_permissions_session ON cli_agent_permissions(session_id)",
             "CREATE INDEX IF NOT EXISTS idx_cli_agent_permissions_status ON cli_agent_permissions(status)",
+            "CREATE INDEX IF NOT EXISTS idx_cli_agent_permissions_cache ON cli_agent_permissions(cache_key)",
+            "CREATE INDEX IF NOT EXISTS idx_cli_agent_cache_client ON cli_agent_cache(client_id)",
+            "CREATE INDEX IF NOT EXISTS idx_cli_agent_cache_expires ON cli_agent_cache(expires_at)",
             "CREATE INDEX IF NOT EXISTS idx_generic_agent_runs_status ON generic_agent_runs(status)",
             "CREATE INDEX IF NOT EXISTS idx_generic_agent_runs_created ON generic_agent_runs(created_at)",
             "CREATE INDEX IF NOT EXISTS idx_generic_agent_runs_parent_task ON generic_agent_runs(parent_task_id)",

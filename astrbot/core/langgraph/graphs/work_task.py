@@ -3148,6 +3148,9 @@ async def _agent_clarify_content(
         "work_context": _context_text(state),
         "history_context": history_context,
         "interrogation_summary": _interrogation_summary_text(state),
+        "interrogation_history": _format_interrogation_history(
+            state.get("interrogation_history") or []
+        ),
     }
     prompt = _render_prompt_template(
         clarification_config.get("content_prompt"), prompt_variables, default_prompt

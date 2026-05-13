@@ -25,6 +25,7 @@ const LAST_OVERVIEW_ROUTE_KEY = 'astrbot:last_overview_route';
 const LAST_CHAT_ROUTE_KEY = 'astrbot:last_chat_route';
 const LAST_WORK_ROUTE_KEY = 'astrbot:last_work_route';
 const LAST_SETTING_ROUTE_KEY = 'astrbot:last_setting_route';
+const LAST_ARCHIVE_ROUTE_KEY = 'astrbot:last_archive_route';
 let dialog = ref(false);
 let accountWarning = ref(false)
 const username = localStorage.getItem('user');
@@ -47,7 +48,8 @@ const isOverviewPath = computed(() =>
   route.path === '/' ||
   route.path === '/dashboard/default'
 );
-const isSettingPath = computed(() => !isOverviewPath.value && !isChatPath.value && !isWorkPath.value);
+const isArchivePath = computed(() => route.path === '/archive');
+const isSettingPath = computed(() => !isOverviewPath.value && !isChatPath.value && !isWorkPath.value && !isArchivePath.value);
 const isImmersivePath = computed(() => isChatPath.value || isWorkPath.value);
 
 // Form validation
@@ -174,6 +176,8 @@ onMounted(() => {
       }
     } else if (isWorkPath.value) {
       sessionStorage.setItem(LAST_WORK_ROUTE_KEY, route.fullPath);
+    } else if (isArchivePath.value) {
+      sessionStorage.setItem(LAST_ARCHIVE_ROUTE_KEY, route.fullPath);
     } else if (isSettingPath.value) {
       sessionStorage.setItem(LAST_SETTING_ROUTE_KEY, route.fullPath);
     } else {
@@ -193,16 +197,16 @@ watch(() => route.fullPath, (newPath) => {
   });
   try {
     // 使用現有的 isChatPath 計算屬性來避免名稱衝突
-    const isChat = isChatPath.value; // 這裡使用已經計算好的 isChatPath
+    const isChat = isChatPath.value;
     const isWork = isWorkPath.value;
     const isOverview = isOverviewPath.value;
+    const isArchive = isArchivePath.value;
     const isSetting = isSettingPath.value;
 
     if (isOverview) {
       sessionStorage.setItem(LAST_OVERVIEW_ROUTE_KEY, newPath);
     }
 
-    // ✅ chat：只存 sessionId
     if (isChat) {
       const parts = newPath.split('/');
       const sessionId = parts[2];
@@ -216,6 +220,10 @@ watch(() => route.fullPath, (newPath) => {
       sessionStorage.setItem(LAST_WORK_ROUTE_KEY, newPath);
     }
 
+    if (isArchive) {
+      sessionStorage.setItem(LAST_ARCHIVE_ROUTE_KEY, newPath);
+    }
+
     if (isSetting) {
       sessionStorage.setItem(LAST_SETTING_ROUTE_KEY, newPath);
     }
@@ -226,12 +234,10 @@ watch(() => route.fullPath, (newPath) => {
 });
 
 const currentMode = computed({
-  get: () => (isSettingPath.value ? 'setting' : isWorkPath.value ? 'work' : isChatPath.value ? 'chat' : 'overview'),
-  set: (val: 'overview' | 'chat' | 'work' | 'setting') => {
+  get: () => (isArchivePath.value ? 'archive' : isSettingPath.value ? 'setting' : isWorkPath.value ? 'work' : isChatPath.value ? 'chat' : 'overview'),
+  set: (val: 'overview' | 'chat' | 'work' | 'setting' | 'archive') => {
     try {
-      // 檢查 window 和 sessionStorage 是否存在
       if (typeof window === 'undefined' || typeof sessionStorage === 'undefined') {
-        // 如果在非瀏覽器環境中，不做任何 sessionStorage 操作
         console.warn('sessionStorage is not available in this environment');
         return;
       }
@@ -247,6 +253,8 @@ const currentMode = computed({
           lastWorkRoute === '/cron' ||
           lastWorkRoute === '/generic-agent';
         router.push(validWorkRoute ? lastWorkRoute : '/work');
+      } else if (val === 'archive') {
+        router.push('/archive');
       } else if (val === 'setting') {
         const lastSettingRoute = sessionStorage.getItem(LAST_SETTING_ROUTE_KEY) || '/settings';
         router.push(lastSettingRoute === '/' || lastSettingRoute.startsWith('/dashboard') ? '/settings' : lastSettingRoute);
@@ -258,7 +266,6 @@ const currentMode = computed({
         router.push(lastOverviewRoute === '/' ? '/dashboard/default' : lastOverviewRoute);
       }
     } catch (e) {
-      // 在受限隱私模式等環境中，sessionStorage 操作可能會拋出 SecurityError
       console.warn('Failed to access sessionStorage in currentMode setter:', e);
     }
   }
@@ -333,9 +340,10 @@ const changeLanguage = async (langCode: string) => {
       <span class="logo-text Outfit">{{ brandName.first }}<span class="logo-text bot-text-wrapper">{{ brandName.second }}
         <img v-if="isChristmas" src="@/assets/images/xmas-hat.png" alt="Christmas hat" class="xmas-hat" />
       </span></span>
-      <span class="logo-text logo-text-light Outfit" style="color: grey;" v-if="isChatPath">ChatUI</span>
-      <span class="logo-text logo-text-light Outfit" style="color: grey;" v-else-if="isWorkPath">Work</span>
-      <span class="logo-text logo-text-light Outfit" style="color: grey;" v-else-if="isSettingPath">Setting</span>
+      <span class="logo-text logo-text-light Outfit" style="color: grey;" v-if="isChatPath">{{ t('core.header.tabs.chat') }}</span>
+      <span class="logo-text logo-text-light Outfit" style="color: grey;" v-else-if="isWorkPath">{{ t('core.header.tabs.work') }}</span>
+      <span class="logo-text logo-text-light Outfit" style="color: grey;" v-else-if="isArchivePath">{{ t('core.header.tabs.archive') }}</span>
+      <span class="logo-text logo-text-light Outfit" style="color: grey;" v-else-if="isSettingPath">{{ t('core.header.tabs.setting') }}</span>
     </div>
 
   <v-spacer />
@@ -345,25 +353,29 @@ const changeLanguage = async (langCode: string) => {
   v-model="currentMode"
   mandatory
   variant="outlined"
-  density="compact"
-  class="mr-4 hidden-xs"
+  rounded="lg"
+  class="mr-4 hidden-xs main-mode-toggle"
   color="primary"
 >
-  <v-btn value="overview" size="small">
+  <v-btn value="overview" size="default">
     <v-icon start>mdi-view-dashboard-outline</v-icon>
-    总览
+    {{ t('core.header.tabs.overview') }}
   </v-btn>
-  <v-btn value="chat" size="small">
+  <v-btn value="chat" size="default">
     <v-icon start>mdi-chat</v-icon>
-    聊天
+    {{ t('core.header.tabs.chat') }}
   </v-btn>
-  <v-btn value="work" size="small">
+  <v-btn value="work" size="default">
     <v-icon start>mdi-briefcase-outline</v-icon>
-    工作
+    {{ t('core.header.tabs.work') }}
   </v-btn>
-  <v-btn value="setting" size="small">
+  <v-btn value="archive" size="default">
+    <v-icon start>mdi-archive-outline</v-icon>
+    {{ t('core.header.tabs.archive') }}
+  </v-btn>
+  <v-btn value="setting" size="default">
     <v-icon start>mdi-cog-outline</v-icon>
-    Setting
+    {{ t('core.header.tabs.setting') }}
   </v-btn>
 </v-btn-toggle>
 
@@ -388,28 +400,32 @@ const changeLanguage = async (langCode: string) => {
       <template v-if="$vuetify.display.xs">
         <div class="mobile-mode-toggle-wrapper">
 <v-btn-toggle
-  v-model="currentMode"
-  mandatory
-  variant="outlined"
-  density="compact"
-  class="mobile-mode-toggle"
-  color="primary"
->
-            <v-btn value="overview" size="small">
+            v-model="currentMode"
+            mandatory
+            variant="outlined"
+            rounded="lg"
+            class="mobile-mode-toggle"
+            color="primary"
+          >
+            <v-btn value="overview" size="default">
               <v-icon start>mdi-view-dashboard-outline</v-icon>
-              总览
+              {{ t('core.header.tabs.overview') }}
             </v-btn>
-            <v-btn value="chat" size="small">
+            <v-btn value="chat" size="default">
               <v-icon start>mdi-chat</v-icon>
-              聊天
+              {{ t('core.header.tabs.chat') }}
             </v-btn>
-            <v-btn value="work" size="small">
+            <v-btn value="work" size="default">
               <v-icon start>mdi-briefcase-outline</v-icon>
-              工作
+              {{ t('core.header.tabs.work') }}
             </v-btn>
-            <v-btn value="setting" size="small">
+            <v-btn value="archive" size="default">
+              <v-icon start>mdi-archive-outline</v-icon>
+              {{ t('core.header.tabs.archive') }}
+            </v-btn>
+            <v-btn value="setting" size="default">
               <v-icon start>mdi-cog-outline</v-icon>
-              Setting
+              {{ t('core.header.tabs.setting') }}
             </v-btn>
           </v-btn-toggle>
         </div>
@@ -663,6 +679,16 @@ const changeLanguage = async (langCode: string) => {
 
 .mobile-mode-toggle {
   width: 100%;
+}
+
+.main-mode-toggle .v-btn {
+  font-size: 1rem;
+  font-weight: 600;
+  padding: 0 16px;
+  transition: all 0.25s ease;
+}
+.main-mode-toggle .v-btn .v-icon {
+  font-size: 20px;
 }
 
 .mobile-mode-toggle .v-btn {

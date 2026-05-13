@@ -1,4 +1,4 @@
-/* Auto-generated MDI subset – 405 icons */
+/* Auto-generated MDI subset – 398 icons */
 /* Do not edit manually. Run: pnpm run subset-icons */
 
 @font-face {
@@ -102,6 +102,10 @@
 
 .mdi-archive::before {
   content: "\F003C";
+}
+
+.mdi-archive-outline::before {
+  content: "\F120E";
 }
 
 .mdi-arrow-down::before {
@@ -544,10 +548,6 @@
   content: "\F01D7";
 }
 
-.mdi-dots-hexagon::before {
-  content: "\F15FF";
-}
-
 .mdi-dots-horizontal::before {
   content: "\F01D8";
 }
@@ -700,10 +700,6 @@
   content: "\F022D";
 }
 
-.mdi-filter-remove::before {
-  content: "\F0234";
-}
-
 .mdi-fit-to-screen::before {
   content: "\F18F4";
 }
@@ -842,10 +838,6 @@
 
 .mdi-human-greeting::before {
   content: "\F17C4";
-}
-
-.mdi-identifier::before {
-  content: "\F0EFE";
 }
 
 .mdi-image-outline::before {
@@ -1244,10 +1236,6 @@
   content: "\F045A";
 }
 
-.mdi-reply-outline::before {
-  content: "\F0F20";
-}
-
 .mdi-restart::before {
   content: "\F0709";
 }
@@ -1416,10 +1404,6 @@
   content: "\F04CF";
 }
 
-.mdi-star-four-points-small::before {
-  content: "\F1C55";
-}
-
 .mdi-star-half-full::before {
   content: "\F04D0";
 }
@@ -1492,16 +1476,8 @@
   content: "\F09ED";
 }
 
-.mdi-text-box-search::before {
-  content: "\F0EAE";
-}
-
 .mdi-text-box-search-outline::before {
   content: "\F0EAF";
-}
-
-.mdi-text-search::before {
-  content: "\F13B8";
 }
 
 .mdi-tie::before {
@@ -1566,10 +1542,6 @@
 
 .mdi-upload::before {
   content: "\F0552";
-}
-
-.mdi-vector-intersection::before {
-  content: "\F055D";
 }
 
 .mdi-vector-link::before {

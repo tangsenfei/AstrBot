@@ -78,7 +78,11 @@ const toolCallIcon = computed(() => {
   if (name === "astrbot_execute_ipython" || name === "astrbot_execute_python") {
     return "mdi-code-json";
   }
-  if (name.includes("web_search") || name.includes("tavily")) {
+  if (
+    name.includes("web_search") ||
+    name.includes("websearch") ||
+    name.includes("tavily")
+  ) {
     return "mdi-web";
   }
   if (name === "astrbot_execute_shell") {
@@ -98,6 +102,9 @@ const toolCallDuration = computed(() => {
 
 const formattedResult = computed(() => {
   if (!props.toolCall.result) return "";
+  if (typeof props.toolCall.result !== "string") {
+    return JSON.stringify(props.toolCall.result, null, 2);
+  }
   try {
     const parsed = JSON.parse(props.toolCall.result);
     return JSON.stringify(parsed, null, 2);

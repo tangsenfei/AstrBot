@@ -81,7 +81,11 @@
                 v-for="stage in stages"
                 :key="stage.key"
                 class="stage-chip"
-                :class="stageState(stage.key)"
+                :class="[stageState(stage.key), { selected: selectedMeetingStageKey === stage.key }]"
+                role="button"
+                tabindex="0"
+                @click="selectMeetingStage(stage.key)"
+                @keydown.enter.prevent="selectMeetingStage(stage.key)"
               >
                 <v-icon :icon="stageIcon(stage.key)" size="14" />
                 <span class="stage-label">{{ stage.label }}</span>
@@ -92,8 +96,15 @@
             <v-chip :color="statusColor(selectedMeeting.status)" size="small" variant="tonal">
               {{ statusLabel(selectedMeeting.status) }}
             </v-chip>
-            <v-btn v-if="canStart" color="primary" variant="flat" size="small" :loading="starting" @click="startMeeting">
-              <v-icon start icon="mdi-play" />开始
+            <v-btn
+              v-if="canCancelMeeting"
+              color="error"
+              variant="tonal"
+              size="small"
+              :loading="cancelling"
+              @click="cancelMeeting"
+            >
+              <v-icon start icon="mdi-stop-circle-outline" />取消会议
             </v-btn>
             <v-btn
               v-if="selectedMeeting && ['completed', 'failed'].includes(selectedMeeting.status)"
@@ -104,7 +115,6 @@
             >
               <v-icon start icon="mdi-refresh" />续会
             </v-btn>
-            <v-btn icon="mdi-refresh" size="small" variant="text" @click="loadMeeting" />
           </div>
         </header>
 
@@ -115,7 +125,7 @@
           </v-tab>
           <v-tab value="logs">
             <v-icon start size="16">mdi-text-box-search-outline</v-icon>
-            日志
+            详情
           </v-tab>
           <v-tab value="artifacts">
             <v-icon start size="16">mdi-package-variant-closed</v-icon>
@@ -125,21 +135,15 @@
 
         <section class="detail-body">
           <div v-if="detailTab === 'chatroom'" class="chatroom-wrap">
-            <div v-if="selectedMeeting?.active_hitl" class="inline-hitl">
-              <InteractionCardComponent
-                :card="selectedMeeting.active_hitl"
-                :is-dark="isDark"
-                @respond="respondHitl"
-              />
-            </div>
             <AgentChatPanel
-              class="meeting-chat"
+              class="meeting-chat-panel"
               :messages="chatMessages"
               :sending="submittingInput"
               :show-input="!!selectedMeeting && ['running', 'waiting_feedback'].includes(selectedMeeting.status)"
               input-placeholder="在会议室主动发言，会议助理会在下一轮纳入讨论..."
-              empty-text="会议开始后，会议助理、参会 Agent、工具调用和人工确认会显示在这里"
+              empty-text="会议开展后，主持人、参会 Agent 和用户发言会显示在这里"
               show-round-divider
+              collapse-thinking-by-default
               @send="submitInput"
             />
           </div>
@@ -155,13 +159,33 @@
             <div v-if="!displayArtifacts.length" class="empty-state">会议结束后会在这里显示交付结果</div>
           </div>
 
-          <div v-else class="raw-log-list">
-            <div v-for="log in displayLogs" :key="log.id" class="raw-log-row" :class="{ wide: log.kind === 'text' }">
-              <span>{{ formatDate(log.created_at) }}</span>
-              <strong>{{ log.label }}</strong>
-              <p>{{ log.message }}</p>
+          <div v-else class="node-detail-view">
+            <div v-if="selectedMeetingNode" class="node-detail-header">
+              <span class="node-icon">
+                <v-icon :icon="stageIcon(selectedMeetingNode.key)" size="18" />
+              </span>
+              <div class="node-title-wrap">
+                <span class="node-title">{{ selectedMeetingNode.label }}</span>
+                <span class="node-subtitle">{{ selectedMeetingNode.desc }}</span>
+              </div>
+              <span class="node-meta">
+                <span v-if="selectedMeetingNode.tokenTotal" class="node-token">tokens {{ formatTokens(selectedMeetingNode.tokenTotal) }}</span>
+                <v-chip size="x-small" :color="nodeStateColor(selectedMeetingNode.state)" variant="tonal">{{ nodeStateLabel(selectedMeetingNode.state) }}</v-chip>
+              </span>
             </div>
-            <div v-if="!displayLogs.length" class="empty-state">暂无日志</div>
+
+            <WorkProgressTimeline
+              v-if="selectedMeetingNode"
+              :logs="selectedMeetingNode.logs"
+              :active-cards="activeCardsForStage(selectedMeetingNode.key)"
+              :is-dark="isDark"
+              :loading="selectedMeeting?.status === 'running' && selectedMeetingNode.state === 'active'"
+              agent-label="会议助理"
+              @interaction-respond="respondHitl"
+            />
+            <div v-if="!selectedMeetingNode || (!selectedMeetingNode.logs.length && !activeCardsForStage(selectedMeetingNode.key).length)" class="empty-state">
+              暂无节点详情
+            </div>
           </div>
         </section>
       </template>
@@ -224,7 +248,7 @@
               />
               <v-text-field
                 v-model="meetingForm.settings.rounds"
-                label="讨论轮次"
+                label="最大兜底轮数"
                 type="number"
                 :min="1"
                 :max="6"
@@ -288,8 +312,8 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import axios from 'axios';
 import AgentChatPanel from '@/components/agent/AgentChatPanel.vue';
 import HitlDialog from '@/components/chat/HitlDialog.vue';
-import InteractionCardComponent from '@/components/chat/InteractionCardComponent.vue';
 import MeetingList from '@/components/meeting/MeetingList.vue';
+import WorkProgressTimeline from '@/components/work/WorkProgressTimeline.vue';
 import { usePagedTaskList } from '@/composables/usePagedTaskList';
 import { useSelectedEventStream } from '@/composables/useSelectedEventStream';
 import { useCustomizerStore } from '@/stores/customizer';
@@ -329,6 +353,9 @@ type ChatMessage = {
   type?: string;
   streaming?: boolean;
   created_at?: number;
+  call_id?: string;
+  _stats?: { input: number; output: number; total: number } | null;
+  _execution_time_ms?: number;
 };
 
 type Meeting = {
@@ -376,8 +403,11 @@ const meetingDialog = ref(false);
 const continueDialog = ref(false);
 const hitlDialog = ref(false);
 const starting = ref(false);
+const cancelling = ref(false);
 const submittingInput = ref(false);
 const detailTab = ref('chatroom');
+const selectedMeetingStageKey = ref('running');
+const collapsedMeetingNodeIds = ref<Set<string>>(new Set());
 let listRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 let summaryRefreshTimer: ReturnType<typeof setInterval> | null = null;
 let filterReloadTimer: ReturnType<typeof setTimeout> | null = null;
@@ -403,6 +433,8 @@ const meetingStream = useSelectedEventStream({
     'error',
     'done',
     'user_message',
+    'agent_call_start',
+    'agent_call_end',
     'token',
     'hitl_resolved',
     'log',
@@ -455,21 +487,46 @@ const agentOptions = computed(() => agents.value
   .map(agent => ({ title: `${agent.name}${agent.role ? ` · ${agent.role}` : ''}`, value: agent.id })));
 
 const canStart = computed(() => selectedMeeting.value && ['pending', 'draft', 'failed'].includes(selectedMeeting.value.status));
+const canCancelMeeting = computed(() => selectedMeeting.value && ['pending', 'running', 'waiting_feedback'].includes(selectedMeeting.value.status));
 const canContinue = computed(() => !!continueForm.review_comment.trim() || !!continueForm.additional_topic.trim());
 const currentStageLabel = computed(() => stages.find(stage => stage.key === selectedMeeting.value?.stage)?.label || statusLabel(selectedMeeting.value?.status || ''));
+
+const meetingNodes = computed(() => {
+  const callIdsWithText = new Set(
+    events.value
+      .filter(event => event.event_type === 'text_delta' && eventContent(event).trim())
+      .map(event => String(event.payload?.call_id || ''))
+      .filter(Boolean)
+  );
+  return stages.map(stage => {
+    const stageEvents = events.value
+      .filter(event => stageKeyForEvent(event) === stage.key)
+      .map(event => meetingEventToLog(event, callIdsWithText))
+      .filter(Boolean) as any[];
+    return {
+      ...stage,
+      state: stageState(stage.key),
+      logs: stageEvents,
+      tokenTotal: stageEvents.reduce((sum, log) => {
+        const data = log.data || {};
+        if (data.event !== 'token') return sum;
+        return sum + Number(data.total || data.total_tokens || Number(data.input || 0) + Number(data.output || 0));
+      }, 0),
+    };
+  });
+});
 
 const filteredMeetings = computed(() => {
   return meetings.value;
 });
 
+const selectedMeetingNode = computed(() =>
+  meetingNodes.value.find(node => node.key === selectedMeetingStageKey.value) || meetingNodes.value[0] || null
+);
+
 const chatMessages = computed<ChatMessage[]>(() => {
   const currentEvents = events.value;
-  let result: ChatMessage[];
-  if (cachedMessages.value.length && lastProcessedEventCount.value <= currentEvents.length) {
-    result = mapEventsToMessages(currentEvents.slice(lastProcessedEventCount.value), cachedMessages.value);
-  } else {
-    result = mapEventsToMessages(currentEvents);
-  }
+  const result = mapEventsToMessages(currentEvents);
   cachedMessages.value = result;
   lastProcessedEventCount.value = currentEvents.length;
   return result;
@@ -479,11 +536,6 @@ const displayArtifacts = computed(() => {
   return artifacts.value.filter((artifact) =>
     artifact && (artifact.file_path || artifact.content || artifact.artifact_type === 'file')
   );
-});
-
-const displayLogs = computed(() => {
-  if (detailTab.value !== 'logs') return [];
-  return aggregateLogs(events.value.slice(-1000));
 });
 
 watch([searchText, statusFilter, typeFilter], () => {
@@ -630,12 +682,14 @@ async function selectMeeting(meetingId: string) {
   closeEventSource();
   selectedMeetingId.value = meetingId;
   detailTab.value = 'chatroom';
+  selectedMeetingStageKey.value = 'running';
   events.value = [];
   resetEventIndexes();
   artifacts.value = [];
   cachedMessages.value = [];
   lastProcessedEventCount.value = 0;
   await loadMeeting(meetingId);
+  selectedMeetingStageKey.value = normalizeStageKey(selectedMeeting.value?.stage) || 'running';
   await loadMeetingEvents(meetingId, { tail: true });
   openEventSource(meetingId);
 }
@@ -646,6 +700,9 @@ async function loadMeeting(meetingId = selectedMeetingId.value) {
   if (response.data?.status === 'ok') {
     selectedMeeting.value = response.data.data;
     artifacts.value = selectedMeeting.value?.artifacts || [];
+    if (!selectedMeetingStageKey.value) {
+      selectedMeetingStageKey.value = normalizeStageKey(selectedMeeting.value?.stage) || 'running';
+    }
   }
 }
 
@@ -716,6 +773,23 @@ async function startMeeting() {
   }
 }
 
+async function cancelMeeting() {
+  if (!selectedMeetingId.value || cancelling.value) return;
+  cancelling.value = true;
+  try {
+    const response = await axios.post(`/api/plug/meeting/meetings/${encodeURIComponent(selectedMeetingId.value)}/cancel`);
+    if (response.data?.status === 'ok') {
+      const meeting = response.data.data;
+      selectedMeeting.value = meeting;
+      meetingList.mergeSummaries([meeting]);
+      closeEventSource();
+      await loadMeetingEvents(selectedMeetingId.value, { tail: true });
+    }
+  } finally {
+    cancelling.value = false;
+  }
+}
+
 async function submitInput(message: string) {
   if (!selectedMeetingId.value) return;
   submittingInput.value = true;
@@ -754,6 +828,11 @@ async function continueMeeting() {
   scheduleListRefresh(1000);
 }
 
+function selectMeetingStage(stage: string) {
+  selectedMeetingStageKey.value = normalizeStageKey(stage) || 'goal';
+  detailTab.value = 'logs';
+}
+
 async function openMeetingHitl(meetingId: string) {
   if (selectedMeetingId.value !== meetingId) {
     await selectMeeting(meetingId);
@@ -781,7 +860,6 @@ function handleMeetingStreamEvent(name: string, payload: any) {
   if (name === 'heartbeat') return;
   if (name === 'token' && selectedMeeting.value) {
     scheduleListRefresh(800);
-    return;
   }
   if (name === 'phase' && selectedMeeting.value) {
     const nextStatus = eventPayload.status || selectedMeeting.value.status;
@@ -938,6 +1016,7 @@ function isTerminalStatus(status: string) {
 
 function mapEventsToMessages(items: MeetingEvent[], existingMessages?: ChatMessage[]): ChatMessage[] {
   const messages: ChatMessage[] = existingMessages ? [...existingMessages] : [];
+  const callStats = buildChatCallStats(items);
   const toolIndex = new Map<string, ToolCallInfo>();
   // 如果已有消息，重建 toolIndex
   if (existingMessages) {
@@ -950,6 +1029,7 @@ function mapEventsToMessages(items: MeetingEvent[], existingMessages?: ChatMessa
     }
   }
   for (const event of items) {
+    if (!isChatroomEvent(event)) continue;
     const type = event.event_type || 'log';
     const payload = event.payload || {};
     if (['token', 'artifact', 'hitl_resolved'].includes(type)) continue;
@@ -1047,7 +1127,54 @@ function mapEventsToMessages(items: MeetingEvent[], existingMessages?: ChatMessa
 
     messages.push(baseAssistantMessage(event, content || payload.title || type, normalizeEventType(type)));
   }
+  applyChatCallStats(messages, callStats);
   return messages;
+}
+
+function isChatroomEvent(event: MeetingEvent): boolean {
+  const type = event.event_type || '';
+  if (type === 'user_message') return true;
+  if (stageKeyForEvent(event) !== 'running') return false;
+  return ['text_delta', 'assistant_message', 'reasoning', 'tool_call', 'tool_result', 'error'].includes(type);
+}
+
+function buildChatCallStats(items: MeetingEvent[]) {
+  const stats = new Map<string, { input: number; output: number; total: number; duration_ms?: number }>();
+  for (const event of items) {
+    const payload = event.payload || {};
+    const callId = String(payload.call_id || '');
+    if (!callId) continue;
+    const current = stats.get(callId) || { input: 0, output: 0, total: 0 };
+    if (event.event_type === 'token') {
+      const input = Number(payload.input || payload.input_tokens || 0);
+      const output = Number(payload.output || payload.output_tokens || 0);
+      current.input += Number.isFinite(input) ? input : 0;
+      current.output += Number.isFinite(output) ? output : 0;
+      current.total += Number(payload.total || payload.total_tokens || input + output || 0) || 0;
+    }
+    if (event.event_type === 'agent_call_end') {
+      const duration = Number(payload.duration_ms || 0);
+      if (Number.isFinite(duration) && duration > 0) current.duration_ms = duration;
+    }
+    stats.set(callId, current);
+  }
+  return stats;
+}
+
+function applyChatCallStats(messages: ChatMessage[], stats: Map<string, { input: number; output: number; total: number; duration_ms?: number }>) {
+  for (const message of messages) {
+    if (!message.call_id) continue;
+    const stat = stats.get(message.call_id);
+    if (!stat) continue;
+    if (stat.input || stat.output || stat.total) {
+      message._stats = {
+        input: stat.input,
+        output: stat.output,
+        total: stat.total || stat.input + stat.output,
+      };
+    }
+    if (stat.duration_ms) message._execution_time_ms = stat.duration_ms;
+  }
 }
 
 function eventContent(event: MeetingEvent): string {
@@ -1085,10 +1212,12 @@ function reasoningContent(event: MeetingEvent): string {
 function findOpenSpeech(messages: ChatMessage[], event: MeetingEvent): ChatMessage | undefined {
   const speaker = event.speaker || '会议助理';
   const round = displayRound(event);
+  const callId = String(event.payload?.call_id || '');
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const msg = messages[index];
     if (msg.role !== 'assistant' || msg.type !== 'speech') continue;
     if ((msg.speaker || '会议助理') !== speaker || msg.round !== round) return undefined;
+    if (callId && msg.call_id && msg.call_id !== callId) return undefined;
     if (msg.streaming || !msg.content || msg.thinkingDone === false) return msg;
     return undefined;
   }
@@ -1111,6 +1240,7 @@ function baseAssistantMessage(event: MeetingEvent, content: string, type = 'spee
     round: displayRound(event),
     type,
     created_at: eventTime(event),
+    call_id: String(event.payload?.call_id || '') || undefined,
     toolCalls,
   };
 }
@@ -1123,6 +1253,77 @@ function displayRound(event: MeetingEvent): number | undefined {
 function eventTime(event: MeetingEvent): number {
   const ts = Date.parse(event.created_at || '');
   return Number.isFinite(ts) ? ts : Date.now();
+}
+
+function toggleMeetingNode(key: string) {
+  const next = new Set(collapsedMeetingNodeIds.value);
+  if (next.has(key)) next.delete(key); else next.add(key);
+  collapsedMeetingNodeIds.value = next;
+}
+
+function isMeetingNodeCollapsed(key: string) {
+  return collapsedMeetingNodeIds.value.has(key);
+}
+
+function activeCardsForStage(stage: string) {
+  const card = selectedMeeting.value?.active_hitl;
+  if (!card) return [];
+  const cardStage = card.meta?.stage || card.metadata?.stage || 'goal';
+  return normalizeStageKey(cardStage) === stage ? [card] : [];
+}
+
+function normalizeStageKey(value: string | undefined) {
+  const stage = String(value || '');
+  if (stage === 'finalizing' || stage === 'finalize') return 'completed';
+  if (['goal', 'materials', 'running', 'completed'].includes(stage)) return stage;
+  return '';
+}
+
+function stageKeyForEvent(event: MeetingEvent) {
+  const payload = event.payload || {};
+  const explicitStage = normalizeStageKey(payload.stage || payload.phase || payload.stage_id || payload.node_id);
+  if (explicitStage) return explicitStage;
+  const type = event.event_type || '';
+  if (type === 'user_message') return 'running';
+  if (type === 'artifact') {
+    return payload.artifact_type === 'brief' ? 'materials' : 'completed';
+  }
+  if (displayRound(event)) return 'running';
+  if (['agent_call_start', 'agent_call_end', 'text_delta', 'reasoning', 'assistant_message', 'tool_call', 'tool_result', 'token'].includes(type)) {
+    return payload.call_id ? 'running' : 'goal';
+  }
+  return 'goal';
+}
+
+function meetingEventToLog(event: MeetingEvent, callIdsWithText: Set<string>) {
+  const payload = event.payload || {};
+  let type = event.event_type || 'log';
+  const callId = String(payload.call_id || '');
+  if (type === 'assistant_message') {
+    if (callId && callIdsWithText.has(callId)) return null;
+    type = 'text_delta';
+  }
+  const text = eventContent(event);
+  const data = {
+    ...payload,
+    event: type,
+    text,
+    content: text,
+    speaker: event.speaker,
+    agent_label: payload.agent_label || payload.agent_name || event.speaker,
+    agent: payload.agent_label || payload.agent_name || event.speaker,
+    round: displayRound(event),
+    stage_id: stageKeyForEvent(event),
+    node_id: payload.node_id || stageKeyForEvent(event),
+  };
+  return {
+    id: event.id,
+    seq: event.seq,
+    level: type === 'error' ? 'error' : 'info',
+    message: text || payload.title || payload.label || type,
+    data,
+    created_at: event.created_at,
+  };
 }
 
 function normalizeEventType(type: string) {
@@ -1171,6 +1372,22 @@ function stageState(stage: string) {
   if (current === stage || (current === 'finalizing' && stage === 'completed')) return 'active';
   if (currentIndex > index || selectedMeeting.value?.status === 'completed') return 'done';
   return '';
+}
+
+function nodeStateLabel(state: string) {
+  const labels: Record<string, string> = {
+    done: '已完成',
+    active: '进行中',
+  };
+  return labels[state] || '待处理';
+}
+
+function nodeStateColor(state: string) {
+  const colors: Record<string, string> = {
+    done: 'success',
+    active: 'primary',
+  };
+  return colors[state] || 'default';
 }
 
 function stageIcon(stage: string) {
@@ -1477,16 +1694,142 @@ function joinDeltaText(current: string, next: string) {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  gap: 12px;
 }
 
-.inline-hitl {
-  padding: 12px 18px 0;
-  flex-shrink: 0;
-}
-
-.meeting-chat {
+.meeting-chat-panel {
   flex: 1;
   min-height: 0;
+  border: 1px solid var(--work-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--work-panel);
+}
+
+.meeting-node-timeline {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-right: 4px;
+}
+
+.meeting-node-card {
+  border: 1px solid var(--work-border);
+  border-radius: 8px;
+  background: var(--work-panel);
+  overflow: hidden;
+}
+
+.meeting-node-card.active {
+  border-color: rgba(var(--v-theme-primary), 0.38);
+  box-shadow: 0 0 0 2px rgba(var(--v-theme-primary), 0.08);
+}
+
+.meeting-node-card.node-done {
+  border-color: rgba(var(--v-theme-success), 0.24);
+}
+
+.meeting-node-header {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.meeting-node-header:hover {
+  background: rgba(var(--v-theme-on-surface), 0.03);
+}
+
+.node-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgb(var(--v-theme-primary));
+  background: rgba(var(--v-theme-primary), 0.1);
+}
+
+.node-done .node-icon {
+  color: rgb(var(--v-theme-success));
+  background: rgba(var(--v-theme-success), 0.1);
+}
+
+.node-title-wrap {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.node-title {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.node-subtitle {
+  font-size: 12px;
+  color: var(--work-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--work-muted);
+  font-size: 12px;
+}
+
+.node-token {
+  font-family: 'Courier New', monospace;
+  white-space: nowrap;
+}
+
+.meeting-node-body {
+  border-top: 1px solid var(--work-border);
+  padding: 10px 12px 12px;
+  background: rgba(var(--v-theme-on-surface), 0.015);
+}
+
+.meeting-room-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--work-muted);
+}
+
+.meeting-room-caption span:first-child {
+  color: rgb(var(--v-theme-on-surface));
+  font-weight: 700;
+}
+
+.meeting-input-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--work-border);
+  border-radius: 8px;
+  background: var(--work-panel);
+  flex-shrink: 0;
 }
 
 .detail-empty,
@@ -1531,6 +1874,7 @@ function joinDeltaText(current: string, next: string) {
   border: 1px solid var(--work-border);
   background: var(--work-panel-soft);
   color: var(--work-muted);
+  cursor: pointer;
 }
 
 .stage-chip.done {
@@ -1544,6 +1888,11 @@ function joinDeltaText(current: string, next: string) {
   border-color: rgba(var(--v-theme-primary), 0.45);
   color: rgb(var(--v-theme-primary));
   box-shadow: 0 0 0 2px rgba(var(--v-theme-primary), 0.12);
+}
+
+.stage-chip.selected {
+  border-color: rgba(var(--v-theme-primary), 0.7);
+  box-shadow: 0 0 0 2px rgba(var(--v-theme-primary), 0.16);
 }
 
 .stage-label {
@@ -1577,6 +1926,24 @@ function joinDeltaText(current: string, next: string) {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.node-detail-view {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.node-detail-header {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--work-border);
+  border-radius: 8px;
+  background: var(--work-panel);
 }
 
 .artifact-item {
@@ -1655,8 +2022,17 @@ function joinDeltaText(current: string, next: string) {
     padding: 14px;
   }
 
-  .inline-hitl {
-    padding: 12px 14px 0;
+  .meeting-node-header {
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+
+  .node-meta {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+
+  .meeting-input-panel {
+    grid-template-columns: 1fr;
   }
 
   .filter-row {

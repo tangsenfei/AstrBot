@@ -60,7 +60,7 @@
                     v-if="msg.thinking"
                     :parts="[{ type: 'thinking', text: msg.thinking }]"
                     :is-dark="isDark"
-                    :initial-expanded="msg.thinkingDone ? false : true"
+                    :initial-expanded="collapseThinkingByDefault ? false : (msg.thinkingDone ? false : true)"
                     :is-streaming="!msg.thinkingDone"
                     :has-non-reasoning-content="!!msg.content"
                   />
@@ -191,12 +191,14 @@ const props = withDefaults(defineProps<{
   inputPlaceholder?: string
   emptyText?: string
   showRoundDivider?: boolean
+  collapseThinkingByDefault?: boolean
 }>(), {
   sending: false,
   showInput: true,
   inputPlaceholder: '输入消息...',
   emptyText: '暂无消息',
   showRoundDivider: false,
+  collapseThinkingByDefault: false,
 })
 
 const emit = defineEmits<{

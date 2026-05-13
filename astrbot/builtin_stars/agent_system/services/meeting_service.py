@@ -391,6 +391,20 @@ class MeetingService:
                     }
                 },
             )
+            current = self.get_meeting_status(meeting_id)
+            if current.get("status") == MeetingStatus.CANCELLED.value:
+                cancelled_at = datetime.now().isoformat()
+                self.db.update(
+                    "agent_tasks",
+                    {
+                        "status": TaskStatus.CANCELLED.value,
+                        "completed_at": cancelled_at,
+                        "updated_at": cancelled_at,
+                    },
+                    where="id = ?",
+                    where_params=(task_id,),
+                )
+                return
             minutes = final_state.get("final_minutes", "") if final_state else ""
             report = final_state.get("deliverable_output", "") if final_state else ""
             result = {
@@ -490,6 +504,80 @@ class MeetingService:
             payload={"inject": "next_host_turn"},
         )
         return event
+
+    def cancel_meeting(self, meeting_id: str) -> dict[str, Any]:
+        meeting = self.get_meeting_status(meeting_id)
+        if meeting.get("status") in {
+            MeetingStatus.COMPLETED.value,
+            MeetingStatus.FAILED.value,
+            MeetingStatus.CANCELLED.value,
+        }:
+            return self.get_meeting(meeting_id)
+
+        now = datetime.now().isoformat()
+        task_id = str(meeting.get("task_id") or "")
+        self.db.update(
+            "meetings",
+            {
+                "status": MeetingStatus.CANCELLED.value,
+                "stage": "cancelled",
+                "current_speaker": "已取消",
+                "completed_at": now,
+                "updated_at": now,
+            },
+            where="id = ?",
+            where_params=(meeting_id,),
+        )
+        if task_id:
+            self.db.update(
+                "agent_tasks",
+                {
+                    "status": TaskStatus.CANCELLED.value,
+                    "completed_at": now,
+                    "updated_at": now,
+                },
+                where="id = ?",
+                where_params=(task_id,),
+            )
+        self.db.execute(
+            """
+            UPDATE agent_tasks
+            SET status = ?, completed_at = ?, updated_at = ?
+            WHERE meeting_id = ? AND status NOT IN ('completed', 'failed', 'retryable_failed', 'cancelled')
+            """,
+            (TaskStatus.CANCELLED.value, now, now, meeting_id),
+        )
+        self.db.execute(
+            """
+            UPDATE hitl_requests
+            SET status = ?, resolved_at = ?, response = ?
+            WHERE status = 'pending'
+              AND (
+                session_id = ?
+                OR (scope = 'meeting' AND metadata LIKE ?)
+              )
+            """,
+            (
+                MeetingStatus.CANCELLED.value,
+                now,
+                json.dumps({"action_key": "cancel", "status": "cancelled"}, ensure_ascii=False),
+                meeting_id,
+                f"%{meeting_id}%",
+            ),
+        )
+        self.add_event(
+            meeting_id,
+            "phase",
+            role="system",
+            speaker="会议助理",
+            content="用户已取消会议。",
+            payload={
+                "stage": "cancelled",
+                "status": MeetingStatus.CANCELLED.value,
+                "progress": int(meeting.get("progress") or 0),
+            },
+        )
+        return self.get_meeting(meeting_id)
 
     async def respond_hitl(
         self, meeting_id: str, data: dict[str, Any]

@@ -1,5 +1,12 @@
 {
   "logoTitle": "AstrBot 仪表盘",
+  "tabs": {
+    "overview": "总览",
+    "chat": "聊天",
+    "work": "工作",
+    "archive": "档案室",
+    "setting": "设置"
+  },
   "buttons": {
     "update": "更新",
     "account": "账户",

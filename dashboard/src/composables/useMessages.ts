@@ -1068,7 +1068,10 @@ function isEmptyPlainPart(part: MessagePart) {
 }
 
 function isThinkingPart(part: MessagePart) {
-  return part.type === "think" || part.type === "tool_call";
+  return (
+    part.type === "think" ||
+    (part.type === "tool_call" && part.as_reasoning !== false)
+  );
 }
 
 function firstNonEmptyPartIndex(parts: MessagePart[]) {

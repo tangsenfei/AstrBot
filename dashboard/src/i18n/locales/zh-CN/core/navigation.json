@@ -23,8 +23,8 @@
   "sessionManagement": "自定义规则",
   "console": "平台日志",
   "trace": "追踪",
-  "alkaid": "Alkaid",
   "knowledgeBase": "知识库",
+  "archive": "档案室",
   "settings": "设置",
   "groups": {
     "more": "更多功能"

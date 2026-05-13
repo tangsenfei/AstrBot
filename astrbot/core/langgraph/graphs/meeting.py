@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 import uuid
 from typing import Any
@@ -88,13 +89,53 @@ def _emit_phase(run_ctx: GraphRunContext | None, stage: str, progress: int, cont
     )
 
 
-def _wrap_writer(run_ctx: GraphRunContext, agent_name: str, current_round: int):
+def _json_safe(value: Any) -> Any:
+    try:
+        return json.loads(json.dumps(value, ensure_ascii=False, default=str))
+    except Exception:
+        return str(value)
+
+
+def _meeting_llm_input_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    allowed_keys = (
+        "system_prompt",
+        "user_prompt",
+        "messages",
+        "compact_context",
+        "func_tools",
+    )
+    return {key: _json_safe(payload.get(key)) for key in allowed_keys if key in payload}
+
+
+def _wrap_writer(
+    run_ctx: GraphRunContext,
+    agent: dict[str, Any],
+    agent_name: str,
+    current_round: int,
+    call_id: str,
+    call_attempt: int,
+):
     original_writer = run_ctx.writer
+    last_lane = {"value": "reasoning"}
 
     def wrapped_writer(event: StreamEvent):
         if original_writer is None:
             return
         data = dict(event.get("data", {}))
+        event_type = str(event.get("event") or "")
+        if event_type == "reasoning":
+            last_lane["value"] = "reasoning"
+            data.setdefault("lane", "reasoning")
+        elif event_type == "text_delta":
+            last_lane["value"] = "output"
+            data.setdefault("lane", "output")
+        elif event_type in {"tool_call", "tool_result"}:
+            data.setdefault("lane", last_lane["value"] or "reasoning")
+            data.setdefault("tool_call_id", data.get("id") or data.get("call_id") or "")
+        data["call_id"] = call_id
+        data["call_attempt"] = call_attempt
+        data["agent_id"] = agent.get("id") or ""
+        data["agent_label"] = agent_name
         data["agent_name"] = agent_name
         data["round"] = current_round
         original_writer({**event, "data": data})
@@ -110,30 +151,121 @@ async def _agent_call(
     *,
     speaker_name: str,
     current_round: int,
+    node_id: str = "agent_operator",
 ) -> str:
+    call_id = uuid.uuid4().hex
+    call_attempt = 1
+    call_started_at = time.monotonic()
     saved_writer = run_ctx.writer
-    run_ctx.writer = _wrap_writer(run_ctx, speaker_name, current_round)
     agent_state = {
         "system_prompt": agent.get("system_prompt", ""),
         "user_prompt": prompt,
         "messages": [],
         "provider_id": agent.get("provider_id") or state.get("provider_id"),
         "session_id": state.get("session_id", ""),
+        "model": agent.get("model") or agent.get("model_name"),
+        "trace_context": {
+            "call_id": call_id,
+            "call_attempt": call_attempt,
+            "agent_id": agent.get("id") or "",
+            "agent_label": speaker_name,
+            "agent_name": speaker_name,
+            "round": current_round,
+            "stage_id": node_id,
+        },
     }
+    _emit(
+        run_ctx,
+        "agent_call_start",
+        {
+            "call_id": call_id,
+            "call_attempt": call_attempt,
+            "agent_call_status": "running",
+            "agent_id": agent.get("id") or "",
+            "agent_label": speaker_name,
+            "agent_name": speaker_name,
+            "round": current_round,
+            "provider_id": agent_state.get("provider_id") or "",
+            "model": agent_state.get("model") or "",
+            "func_tools": _json_safe(agent_state.get("func_tools") or []),
+            "input_payload": _meeting_llm_input_payload(agent_state),
+        },
+        node_id,
+    )
+    run_ctx.writer = _wrap_writer(
+        run_ctx, agent, speaker_name, current_round, call_id, call_attempt
+    )
     try:
         result = await _agent_operator.execute(agent_state, run_ctx, write_stream=True)
+    except Exception as exc:
+        _emit(
+            run_ctx,
+            "agent_call_end",
+            {
+                "call_id": call_id,
+                "call_attempt": call_attempt,
+                "agent_call_status": "failed",
+                "duration_ms": int((time.monotonic() - call_started_at) * 1000),
+                "agent_id": agent.get("id") or "",
+                "agent_label": speaker_name,
+                "agent_name": speaker_name,
+                "round": current_round,
+                "message": str(exc),
+            },
+            node_id,
+        )
+        raise
     finally:
         run_ctx.writer = saved_writer
     if result.get("error"):
+        _emit(
+            run_ctx,
+            "agent_call_end",
+            {
+                "call_id": call_id,
+                "call_attempt": call_attempt,
+                "agent_call_status": "failed",
+                "duration_ms": int((time.monotonic() - call_started_at) * 1000),
+                "agent_id": agent.get("id") or "",
+                "agent_label": speaker_name,
+                "agent_name": speaker_name,
+                "round": current_round,
+                "message": str(result["error"]),
+            },
+            node_id,
+        )
         return f"[{speaker_name} 执行失败: {result['error']}]"
     final_text = result.get("final_text", "")
     if final_text:
         _emit(
             run_ctx,
             "assistant_message",
-            {"content": final_text, "agent_name": speaker_name, "round": current_round},
-            "agent_operator",
+            {
+                "content": final_text,
+                "agent_id": agent.get("id") or "",
+                "agent_label": speaker_name,
+                "agent_name": speaker_name,
+                "round": current_round,
+                "call_id": call_id,
+                "call_attempt": call_attempt,
+            },
+            node_id,
         )
+    _emit(
+        run_ctx,
+        "agent_call_end",
+        {
+            "call_id": call_id,
+            "call_attempt": call_attempt,
+            "agent_call_status": "completed",
+            "duration_ms": int((time.monotonic() - call_started_at) * 1000),
+            "agent_id": agent.get("id") or "",
+            "agent_label": speaker_name,
+            "agent_name": speaker_name,
+            "round": current_round,
+        },
+        node_id,
+    )
     return final_text
 
 
@@ -167,7 +299,7 @@ def _persist_meeting_updates(state: MeetingState, updates: dict[str, Any]) -> No
 
 async def _maybe_goal_hitl(state: MeetingState, run_ctx: GraphRunContext) -> dict[str, Any]:
     settings = state.get("settings") or {}
-    needs_confirmation = bool(settings.get("require_goal_confirmation")) or not state.get("expected_output")
+    needs_confirmation = bool(settings.get("require_goal_confirmation"))
     if not needs_confirmation:
         return {}
 
@@ -267,6 +399,53 @@ def _consume_user_inputs(state: MeetingState) -> dict[str, Any]:
     return {"round_results": round_results, "last_user_event_seq": last_seq}
 
 
+def _extract_first_json_object(text: str) -> dict[str, Any] | None:
+    raw = str(text or "")
+    if "```" in raw:
+        parts = raw.split("```")
+        for part in parts:
+            candidate = part.strip()
+            if candidate.lower().startswith("json"):
+                candidate = candidate[4:].strip()
+            try:
+                parsed = json.loads(candidate)
+            except Exception:
+                continue
+            if isinstance(parsed, dict):
+                return parsed
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            parsed = json.loads(raw[start : end + 1])
+        except Exception:
+            return None
+        if isinstance(parsed, dict):
+            return parsed
+    return None
+
+
+def _parse_host_decision(text: str) -> dict[str, Any]:
+    parsed = _extract_first_json_object(text)
+    if not parsed:
+        return {"action": "continue", "reason": "主持人决策解析失败，默认继续。"}
+    action = str(
+        parsed.get("action")
+        or parsed.get("decision")
+        or parsed.get("next_action")
+        or ""
+    ).strip().lower()
+    if action not in {"continue", "finalize"}:
+        action = "continue"
+    return {
+        "action": action,
+        "reason": str(parsed.get("reason") or parsed.get("rationale") or ""),
+        "next_round_focus": str(
+            parsed.get("next_round_focus") or parsed.get("focus") or ""
+        ),
+    }
+
+
 async def goal_node(state: MeetingState, config: RunnableConfig) -> dict:
     run_ctx = _get_run_ctx(config)
     if run_ctx is None:
@@ -288,7 +467,15 @@ async def goal_node(state: MeetingState, config: RunnableConfig) -> dict:
         f"用户材料：\n{_material_text(merged.get('materials'))}\n\n"
         "请用简洁开场确认本次会议目标、边界、输入和成功标准。"
     )
-    text = await _agent_call(merged, run_ctx, host, prompt, speaker_name=host.get("name", "会议助理"), current_round=0)
+    text = await _agent_call(
+        merged,
+        run_ctx,
+        host,
+        prompt,
+        speaker_name=host.get("name", "会议助理"),
+        current_round=0,
+        node_id="goal",
+    )
     return {
         **updates,
         "round_results": updates.get("round_results", state.get("round_results", [])) + [f"[目标确定] {text}"],
@@ -313,7 +500,15 @@ async def materials_node(state: MeetingState, config: RunnableConfig) -> dict:
         f"已有上下文：\n{_discussion_context(state, 6)}\n\n"
         "请形成会议材料简报：关键事实、参考信息、已知约束、缺口和会议中要重点校准的问题。"
     )
-    brief = await _agent_call(state, run_ctx, host, prompt, speaker_name=host.get("name", "会议助理"), current_round=0)
+    brief = await _agent_call(
+        state,
+        run_ctx,
+        host,
+        prompt,
+        speaker_name=host.get("name", "会议助理"),
+        current_round=0,
+        node_id="materials",
+    )
     _emit(run_ctx, "artifact", {"title": "会议材料简报", "artifact_type": "brief", "content": brief}, "materials")
     return {
         "materials_brief": brief,
@@ -339,7 +534,15 @@ async def opening_node(state: MeetingState, config: RunnableConfig) -> dict:
         f"材料简报：\n{state.get('materials_brief') or '暂无'}\n\n"
         "请宣布会议进入讨论阶段，给出第一轮讨论问题和发言顺序。"
     )
-    opening_text = await _agent_call(state, run_ctx, host, prompt, speaker_name=host.get("name", "会议助理"), current_round=current_round)
+    opening_text = await _agent_call(
+        state,
+        run_ctx,
+        host,
+        prompt,
+        speaker_name=host.get("name", "会议助理"),
+        current_round=current_round,
+        node_id="running",
+    )
     return {"current_round": current_round, "round_results": state.get("round_results", []) + [f"[开场] {opening_text}"]}
 
 
@@ -371,7 +574,15 @@ async def agent_speak_node(state: MeetingState, config: RunnableConfig) -> dict:
             "请以参会专家身份发表观点，回应前文，并提出对会议目标有帮助的判断。"
         )
         agent_name = participant.get("name", "Agent")
-        speech = await _agent_call(merged, run_ctx, participant, prompt, speaker_name=agent_name, current_round=current_round)
+        speech = await _agent_call(
+            merged,
+            run_ctx,
+            participant,
+            prompt,
+            speaker_name=agent_name,
+            current_round=current_round,
+            node_id="running",
+        )
         round_results.append(f"[{agent_name}] {speech}")
 
     result = {"round_results": round_results, "current_round": current_round + 1}
@@ -401,10 +612,25 @@ async def host_integrate_node(state: MeetingState, config: RunnableConfig) -> di
         f"会议目标：{merged.get('goal') or merged.get('topic')}\n"
         f"预期产出：{merged.get('expected_output') or guidance['final_output']}\n"
         f"最近讨论：\n{_discussion_context(merged, 14)}\n\n"
-        "请总结本轮要点，指出已形成的结论、分歧、风险和下一轮需要追问的问题。"
+        "请总结本轮要点，指出已形成的结论、分歧、风险和下一轮需要追问的问题。\n"
+        "最后必须单独输出一个 JSON 对象用于系统路由，格式如下：\n"
+        '{"action":"continue|finalize","reason":"继续或结束的原因","next_round_focus":"下一轮焦点，结束时可为空"}'
     )
-    summary = await _agent_call(merged, run_ctx, host, prompt, speaker_name=host.get("name", "会议助理"), current_round=current_round)
-    result = {"round_results": round_results + [f"[主持总结] {summary}"]}
+    summary = await _agent_call(
+        merged,
+        run_ctx,
+        host,
+        prompt,
+        speaker_name=host.get("name", "会议助理"),
+        current_round=current_round,
+        node_id="running",
+    )
+    decision = _parse_host_decision(summary)
+    result = {
+        "round_results": round_results + [f"[主持总结] {summary}"],
+        "host_decision": decision,
+        "next_round_focus": decision.get("next_round_focus", ""),
+    }
     if "last_user_event_seq" in consumed:
         result["last_user_event_seq"] = consumed["last_user_event_seq"]
     return result
@@ -434,7 +660,15 @@ async def finalize_node(state: MeetingState, config: RunnableConfig) -> dict:
         f"完整讨论：\n{all_discussion}\n\n"
         "请生成结构化会议纪要，包含：目标、参会观点摘要、关键讨论、共识、分歧、决策、行动项。"
     )
-    final_text = await _agent_call(merged, run_ctx, finalizer, minutes_prompt, speaker_name=finalizer.get("name", "会议助理"), current_round=current_round)
+    final_text = await _agent_call(
+        merged,
+        run_ctx,
+        finalizer,
+        minutes_prompt,
+        speaker_name=finalizer.get("name", "会议助理"),
+        current_round=current_round,
+        node_id="finalizing",
+    )
     logger.info("meeting finalize_node: round_results=%s, final_text_len=%s", len(round_results), len(final_text))
 
     report_prompt = (
@@ -446,7 +680,15 @@ async def finalize_node(state: MeetingState, config: RunnableConfig) -> dict:
         f"完整讨论：\n{all_discussion}\n\n"
         "请直接生成面向业务落地的会议报告，突出结论、依据、下一步和风险，不要写额外说明。"
     )
-    deliverable_text = await _agent_call(merged, run_ctx, finalizer, report_prompt, speaker_name=finalizer.get("name", "会议助理"), current_round=current_round)
+    deliverable_text = await _agent_call(
+        merged,
+        run_ctx,
+        finalizer,
+        report_prompt,
+        speaker_name=finalizer.get("name", "会议助理"),
+        current_round=current_round,
+        node_id="finalizing",
+    )
     result = {"final_minutes": final_text, "deliverable_output": deliverable_text}
     if "last_user_event_seq" in consumed:
         result["last_user_event_seq"] = consumed["last_user_event_seq"]
@@ -454,8 +696,12 @@ async def finalize_node(state: MeetingState, config: RunnableConfig) -> dict:
 
 
 def meeting_router(state: MeetingState) -> str:
-    current = state.get("current_round", 0)
-    if current >= state.get("max_rounds", 2):
+    current = int(state.get("current_round") or 0)
+    max_rounds = max(1, int(state.get("max_rounds") or 2))
+    if current > max_rounds:
+        return "finalize"
+    decision = state.get("host_decision") or {}
+    if str(decision.get("action") or "").strip().lower() == "finalize":
         return "finalize"
     return "next_agent"
 

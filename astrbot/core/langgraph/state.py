@@ -18,6 +18,8 @@ class StreamEvent(TypedDict):
         "artifact",
         "token",
         "interaction",
+        "agent_call_start",
+        "agent_call_end",
     ]
     data: dict[str, Any]
     timestamp: float
@@ -73,6 +75,8 @@ class MeetingState(AgentGraphState):
     round_results: list[str]
     final_minutes: NotRequired[str]
     deliverable_output: NotRequired[str]
+    host_decision: NotRequired[dict[str, Any]]
+    next_round_focus: NotRequired[str]
 
 
 class PlanExecuteState(AgentGraphState):

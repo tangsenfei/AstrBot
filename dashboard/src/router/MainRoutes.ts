@@ -198,15 +198,16 @@ const MainRoutes = {
       ]
     },
     {
-      name: 'KnowledgeBase',
-      path: '/alkaid/knowledge-base',
-      component: () => import('@/views/alkaid/KnowledgeBase.vue'),
-    },
-    {
       name: 'Chat',
       path: '/chat',
       component: () => import('@/views/ChatPage.vue'),
       children: [
+        {
+          path: 'cli-agent/:clientId',
+          name: 'CliAgentChat',
+          component: () => import('@/views/ChatPage.vue'),
+          props: true
+        },
         {
           path: ':conversationId',
           name: 'ChatDetail',
@@ -231,6 +232,12 @@ const MainRoutes = {
       name: 'Meeting',
       path: '/meeting',
       component: () => import('@/views/MeetingPage.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      name: 'Archive',
+      path: '/archive',
+      component: () => import('@/views/ArchivePage.vue'),
       meta: { requiresAuth: true }
     },
     {
